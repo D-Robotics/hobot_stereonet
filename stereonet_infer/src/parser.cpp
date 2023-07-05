@@ -60,7 +60,7 @@ void ParseTensor(std::shared_ptr<DNNTensor> tensor,
 
   auto stereonet_result = std::make_shared<StereonetResult>();
 
-  RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
+  RCLCPP_DEBUG_STREAM(rclcpp::get_logger(""),
     "data[0]: " << data[0]
     << ", scale[0]: " << scale[0]
     << ", width: " << width
@@ -189,7 +189,7 @@ int get_tensor_hw(std::shared_ptr<DNNTensor> tensor, int *height, int *width, in
 int32_t Parse(
     const std::shared_ptr<hobot::dnn_node::DnnNodeOutput> &node_output,
     std::vector<std::shared_ptr<StereonetResult>> &results) {
-  RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
+  RCLCPP_DEBUG_STREAM(rclcpp::get_logger(""),
   "node_output->output_tensors.size(): " << node_output->output_tensors.size());
   ParseTensor(
       node_output->output_tensors[0], results);

@@ -1110,7 +1110,6 @@ int PreProcess::CvtNV12Data2Tensors(
   if (0)
   {
     // 归一化 & 量化
-    count = 0;
     for (auto& data : v_merge_nchw) {
       v_merge_nchw_norm_quant.push_back(Quantize(((float)data - 128.0) / 128.0));
     }
@@ -1123,42 +1122,61 @@ int PreProcess::CvtNV12Data2Tensors(
   }
   
   // norm和quant同时计算，基于stl计算
-  if (1)
+  if (0)
   {
+    printf("before norm_quant: ");
+    for (int idx = 0; idx < 12; idx++) {
+      printf("%d ", v_merge_nchw[idx]);
+    }
+    printf("\n");
+
     // 归一化 & 量化
-    count = 0;
     for (auto& data : v_merge_nchw) {
       v_merge_nchw_norm_quant.push_back(Quantize(((float)data - 128.0) / 128.0));
     }
-
     printf("v_merge_nchw_norm_quant: ");
     for (int idx = 0; idx < 12; idx++) {
-      printf("%d ", v_merge_nchw_norm_quant[idx]);
+      printf("%2x ", v_merge_nchw_norm_quant[idx]);
     }
     printf("\n\n");
+    printf("v_merge_nchw_norm_quant: ");
+    for (int idx = 0; idx < 12; idx++) {
+      printf("%d ", (int)v_merge_nchw_norm_quant[idx]);
+    }
+    printf("\n\n");
+    {
+      auto tp_now = std::chrono::system_clock::now();
+      auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          tp_now - tp_start)
+                          .count();
+      RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess norm and quantize time cost %d ms", interval);
+      tp_start = std::chrono::system_clock::now();
+    }
   }
-
-
+  
   {
-    auto tp_now = std::chrono::system_clock::now();
-    auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        tp_now - tp_start)
-                        .count();
-    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess norm and quantize time cost %d ms", interval);
-    tp_start = std::chrono::system_clock::now();
-  }
+    cv::Mat_<cv::Vec3b>::iterator it = data_merge_nchw.begin<cv::Vec3b>();
+    cv::Mat_<cv::Vec3b>::iterator itend = data_merge_nchw.end<cv::Vec3b>();
+    for (; it != itend; it++)
+    {
+      for (int c = 0; c < data_merge_nchw.channels(); c++) {
+        (*it)[c] = Quantize(((float)(*it)[c] - 128.0) / 128.0);
+      }
+    }
 
-  {
-    std::ofstream ofs("in_data_merge_norm.txt");
-    ofs << ss_norm.str();
-  }
-  {
-    std::ofstream ofs("in_data_merge_quant.txt");
-    ofs << ss_quant.str();
+    {
+      auto tp_now = std::chrono::system_clock::now();
+      auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          tp_now - tp_start)
+                          .count();
+      RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess norm and quantize with cv vec time cost %d ms", interval);
+      tp_start = std::chrono::system_clock::now();
+    }
   }
 
   uint8_t *y = reinterpret_cast<uint8_t *>(dnn_tensor->sysMem[0].virAddr);
-  memcpy(y, v_merge_nchw_norm_quant.data(), v_merge_nchw_norm_quant.size());
+  // memcpy(y, v_merge_nchw_norm_quant.data(), v_merge_nchw_norm_quant.size());
+  memcpy(y, data_merge_nchw.data, data_merge_nchw.rows * data_merge_nchw.cols* data_merge_nchw.channels());
   // {
   //   std::ofstream ofs("in_data_merge_quant.bin");
   //   ofs.write((const char*)v_merge_nchw_norm_quant.data(), v_merge_nchw_norm_quant.size());

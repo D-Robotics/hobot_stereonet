@@ -136,6 +136,7 @@ int StereonetNode::SetNodePara() {
   // Interest，例如目标的检测框）时，算法推理任务类型为ModelRoiInferType
   dnn_node_para_ptr_->model_task_type =
       hobot::dnn_node::ModelTaskType::ModelInferType;
+  dnn_node_para_ptr_->task_num = 4;
 
   return 0;
 }
@@ -797,28 +798,27 @@ int StereonetNode::PostProcess(
   // 后处理开始时间
   auto tp_start = std::chrono::system_clock::now();
 
-  // 3 使用自定义的Parse解析方法，解析算法输出的DNNTensor类型数据
-  // 3.1
+  // 使用自定义的Parse解析方法，解析算法输出的DNNTensor类型数据
   // 创建解析输出数据，输出StereonetNodeOutput是自定义的算法输出数据类型，results的维度等于检测出来的目标数
   std::vector<std::shared_ptr<StereonetResult>>
       results;
 
-  // 3.2 开始解析
-  if (hobot::stereonet::Parse(node_output, results) < 0) {
-    RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"),
-                 "Parse node_output fail!");
-    return -1;
-  }
-
-  {
-    auto tp_now = std::chrono::system_clock::now();
-    auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        tp_now - tp_start)
-                        .count();
-    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
-                  "Parse node_output complete, time cost ms: %d",
-                interval);
-  }
+  // 开始解析
+  // 不做后处理，直接将模型输出发布出去
+  // if (hobot::stereonet::Parse(node_output, results) < 0) {
+  //   RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"),
+  //                "Parse node_output fail!");
+  //   return -1;
+  // }
+  // {
+  //   auto tp_now = std::chrono::system_clock::now();
+  //   auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+  //                       tp_now - tp_start)
+  //                       .count();
+  //   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
+  //                 "Parse node_output complete, time cost ms: %d",
+  //               interval);
+  // }
 
   if (node_output->rt_stat) {
     // 如果算法推理统计有更新，输出算法输入和输出的帧率统计、推理耗时
@@ -845,7 +845,8 @@ int StereonetNode::PostProcess(
                  "Cast dnn node output fail!");
     return -1;
   }
-  
+
+  // 将双目图像的左图转成jpeg，和模型输出一起发布出去
   if (enable_pub_output_ && stereonet_node_output->sp_left_nv12) {
     auto msg = sensor_msgs::msg::Image();
     msg.height = stereonet_node_output->sp_left_nv12->h;
@@ -887,6 +888,16 @@ int StereonetNode::PostProcess(
   } else {
     RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
                   "publish is unable");
+  }
+  
+  {
+    auto tp_now = std::chrono::system_clock::now();
+    auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        tp_now - tp_start)
+                        .count();
+    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
+                  "Msg preparation for pub time cost ms: %d",
+                interval);
   }
 
   return 0;
