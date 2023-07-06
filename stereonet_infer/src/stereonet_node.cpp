@@ -62,7 +62,7 @@ StereonetNode::StereonetNode(const std::string& node_name,
   for (int idx = 0; idx < model_input_count; idx++) {
     hbDNNTensorProperties properties;
     model_->GetInputTensorProperties(properties, idx);
-    RCLCPP_WARN(rclcpp::get_logger("stereonet_node"),
+    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
     "properties: %d, %d, %d, %d",
     properties.validShape.dimensionSize[0],
     properties.validShape.dimensionSize[1],
@@ -81,7 +81,7 @@ StereonetNode::StereonetNode(const std::string& node_name,
     ss << "input_idx: " << input_idx
        << ", tensorType = " << input_model_info_[input_idx].tensorType
        << ", tensorLayout = " << input_model_info_[input_idx].tensorLayout;
-    RCLCPP_WARN(
+    RCLCPP_INFO(
         rclcpp::get_logger(""), "%s", ss.str().c_str());
   }
 
