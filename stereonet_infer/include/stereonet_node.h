@@ -55,6 +55,8 @@ struct StereonetNodeOutput : public hobot::dnn_node::DnnNodeOutput {
 
   std::shared_ptr<cv::Mat> left_nv12 = nullptr;
   std::shared_ptr<BinDataType> sp_left_nv12 = nullptr;
+
+  int preprocess_time_ms = 0;
 };
 
 class StereonetNode : public hobot::dnn_node::DnnNode {
@@ -127,7 +129,6 @@ class StereonetNode : public hobot::dnn_node::DnnNode {
     
   std::string config_file_ = "config/hobot_stereonet_config.json";
   std::string model_file_ = "config/hobot_stereonet.hbm";
-  std::string pkg_path_ = ".";
 
   std::shared_ptr<PreProcess> sp_preprocess_ = nullptr;
 

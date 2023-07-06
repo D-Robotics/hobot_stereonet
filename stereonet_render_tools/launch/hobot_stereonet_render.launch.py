@@ -26,32 +26,13 @@ from ament_index_python import get_package_share_directory
 from ament_index_python.packages import get_package_prefix
 
 def generate_launch_description():
-    pkg_path = os.path.join(
-        get_package_prefix('hobot_stereonet'),
-        "lib/hobot_stereonet")
-    print("hobot_stereonet path is ", pkg_path)
-
-    # args that can be set from the command line or a default will be used
-    config_file_launch_arg = DeclareLaunchArgument(
-        "config_file", default_value=TextSubstitution(text=pkg_path+"/config/hobot_stereonet_config.json")
-    )
-    model_file_launch_arg = DeclareLaunchArgument(
-        "model_file", default_value=TextSubstitution(text=pkg_path+"/config/hobot_stereonet.hbm")
-    )
-
     hobot_stereonet_node = Node(
-        package='hobot_stereonet',
-        executable='hobot_stereonet',
+        package='hobot_stereonet_render',
+        executable='talker',
         output='screen',
-        parameters=[
-            {"config_file": LaunchConfiguration('config_file')},
-            {"model_file": LaunchConfiguration('model_file')}
-        ],
         arguments=['--ros-args', '--log-level', 'warn']
     )
 
     return LaunchDescription([
-        config_file_launch_arg,
-        model_file_launch_arg,
         hobot_stereonet_node
     ])

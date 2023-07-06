@@ -25,16 +25,19 @@ StereonetNode::StereonetNode(const std::string& node_name,
     : hobot::dnn_node::DnnNode(node_name, options) {
   this->declare_parameter<std::string>("config_file", config_file_);
   this->declare_parameter<std::string>("model_file", model_file_);
-  this->declare_parameter<std::string>("pkg_path", pkg_path_);
+  this->declare_parameter<std::string>("sub_hbmem_topic_name", sub_hbmem_topic_name_);
+  this->declare_parameter<std::string>("ros_img_topic_name", ros_img_topic_name_);
 
   this->get_parameter<std::string>("config_file", config_file_);
   this->get_parameter<std::string>("model_file", model_file_);
-  this->get_parameter<std::string>("pkg_path", pkg_path_);
+  this->get_parameter<std::string>("sub_hbmem_topic_name", sub_hbmem_topic_name_);
+  this->get_parameter<std::string>("ros_img_topic_name", ros_img_topic_name_);
 
   RCLCPP_WARN_STREAM(rclcpp::get_logger("stereonet_node"),
     "\n config_file: " << config_file_
     << "\n model_file: " << model_file_
-    << "\n pkg_path: " << pkg_path_);
+    << "\n sub_hbmem_topic_name: " << sub_hbmem_topic_name_
+    << "\n ros_img_topic_name: " << ros_img_topic_name_);
 
   // Init中使用StereonetNode子类实现的SetNodePara()方法进行算法推理的初始化
   if (Init() != 0 ||
@@ -167,6 +170,7 @@ void StereonetNode::RunImgFeedInfer() {
 
   std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
   auto dnn_output = std::make_shared<StereonetNodeOutput>();
+  dnn_output->preprocess_time_ms = interval;
   dnn_output->msg_header = std::make_shared<std_msgs::msg::Header>();
   dnn_output->image_files = sp_feedback_data->image_files;
   if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
@@ -545,6 +549,7 @@ void StereonetNode::RunBinFeedInfer() {
 
   std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
   auto dnn_output = std::make_shared<StereonetNodeOutput>();
+  dnn_output->preprocess_time_ms = interval;
   dnn_output->msg_header = std::make_shared<std_msgs::msg::Header>();
   dnn_output->image_files = sp_feedback_data->image_files;
 
@@ -702,12 +707,6 @@ void StereonetNode::FeedImg(
     return;
   }
 
-  auto tp_now = std::chrono::system_clock::now();
-  auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      tp_now - tp_start)
-                      .count();
-  RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess done, time cost %d ms", interval);
-
   // dnn_output->left_nv12 = std::make_shared<cv::Mat>(model_input_height_ * 3 / 2, model_input_width_, CV_8UC1);
   // memcpy(dnn_output->left_nv12->ptr<uint8_t>(), img_l, model_input_width_ * model_input_height_ * 3 / 2);
 
@@ -767,6 +766,13 @@ void StereonetNode::FeedImg(
     }
   }
 
+  auto tp_now = std::chrono::system_clock::now();
+  auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      tp_now - tp_start)
+                      .count();
+  RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess done, time cost %d ms", interval);
+  dnn_output->preprocess_time_ms = interval;
+
   std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
   if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
@@ -786,15 +792,6 @@ int StereonetNode::PostProcess(
   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
                 "Parse node_output start");
                 
-  if (node_output->rt_stat) {
-    RCLCPP_WARN(rclcpp::get_logger("stereonet_node"),
-                "input fps: %.2f, out fps: %.2f, infer time ms: %d",
-                node_output->rt_stat->input_fps,
-                node_output->rt_stat->output_fps,
-                node_output->rt_stat->infer_time_ms);
-  }
-  // return 0;
-
   // 后处理开始时间
   auto tp_start = std::chrono::system_clock::now();
 
@@ -819,22 +816,6 @@ int StereonetNode::PostProcess(
   //                 "Parse node_output complete, time cost ms: %d",
   //               interval);
   // }
-
-  if (node_output->rt_stat) {
-    // 如果算法推理统计有更新，输出算法输入和输出的帧率统计、推理耗时
-    if (node_output->rt_stat->fps_updated) {
-      // 后处理结束时间
-      auto tp_now = std::chrono::system_clock::now();
-      auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          tp_now - tp_start)
-                          .count();
-      RCLCPP_WARN(rclcpp::get_logger("stereonet_node"),
-                  "input fps: %.2f, out fps: %.2f, infer time ms: %d",
-                  node_output->rt_stat->input_fps,
-                  node_output->rt_stat->output_fps,
-                  node_output->rt_stat->infer_time_ms);
-    }
-  }
 
   tp_start = std::chrono::system_clock::now();
 
@@ -890,14 +871,22 @@ int StereonetNode::PostProcess(
                   "publish is unable");
   }
   
-  {
-    auto tp_now = std::chrono::system_clock::now();
-    auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        tp_now - tp_start)
-                        .count();
-    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
-                  "Msg preparation for pub time cost ms: %d",
-                interval);
+
+  if (node_output->rt_stat) {
+    // 如果算法推理统计有更新，输出算法输入和输出的帧率统计、推理耗时
+    if (node_output->rt_stat->fps_updated) {
+      auto tp_now = std::chrono::system_clock::now();
+      auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          tp_now - tp_start)
+                          .count();
+      RCLCPP_WARN(rclcpp::get_logger("stereonet_node"),
+                  "input fps: %.2f, out fps: %.2f, preprocess time ms: %d, infer time ms: %d, msg preparation for pub time cost ms: %d",
+                  node_output->rt_stat->input_fps,
+                  node_output->rt_stat->output_fps,
+                  stereonet_node_output->preprocess_time_ms,
+                  node_output->rt_stat->infer_time_ms,
+                  interval);
+    }
   }
 
   return 0;
