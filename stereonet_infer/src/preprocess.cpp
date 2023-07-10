@@ -1027,133 +1027,7 @@ int PreProcess::CvtNV12Data2Tensors(
   //   ofs.write((const char*)img_data_nchw, len);
   // }
 
-  // {
-  //     std::stringstream ss_int;
-  //     int count = 0;
-  //     for (auto& data : v_merge_nchw) {
-  //       ss_int << (float)data << " ";
-  //       if (++count >= 1280*720) {
-  //         count = 0;
-  //         ss_int << "\n";
-  //       }
-  //     }
-  //     ss_int << "\n";
-  //     std::ofstream ofs("in_data_merge_int_yuv444.txt");
-  //     ofs << ss_int.str();
-  // }
-
-  std::stringstream ss_norm;
-  std::stringstream ss_quant;
-  int count = 0;
-
-  std::vector<int8_t> v_merge_nchw_norm_quant;
-  // 原始方法
-  if (0)
-  {
-    // 归一化
-    count = 0;
-    std::vector<float> v_merge_nchw_norm;
-    // printf("%d, %f\n", v_merge_nchw[0], ((float)v_merge_nchw[0] - 127.0) / 128.0);
-
-    for (auto& data : v_merge_nchw) {
-      v_merge_nchw_norm.push_back(((float)data - 128.0) / 128.0);
-      // ss_norm << v_merge_nchw_norm.back() << " ";
-      
-      // if (++count >= 1280*720) {
-      //   count = 0;
-      //   ss_norm << "\n";
-      // }
-    }
-    // ss_norm << "\n";
-    printf("v_merge_nchw_norm: ");
-    for (int idx = 0; idx < 12; idx++) {
-      printf("%f ", v_merge_nchw_norm[idx]);
-    }
-    printf("\n\n");
-
-    // {
-    //   std::ofstream ofs("in_data_merge_norm.bin");
-    //   ofs.write((const char*)v_merge_nchw_norm.data(), v_merge_nchw_norm.size() * sizeof(float));
-    // }
-    
-    {
-      auto tp_now = std::chrono::system_clock::now();
-      auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          tp_now - tp_start)
-                          .count();
-      RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess norm time cost %d ms", interval);
-      tp_start = std::chrono::system_clock::now();
-    }
-
-    // 量化
-    count = 0;
-    // std::vector<int8_t> v_merge_nchw_norm_quant;
-    for (auto& data : v_merge_nchw_norm) {
-      v_merge_nchw_norm_quant.push_back(Quantize(data));
-      // ss_quant << (float)v_merge_nchw_norm_quant.back() << " ";
-      // if (++count >= 1280*720) {
-      //   count = 0;
-      //   ss_quant << "\n";
-      // }
-    }
-    // ss_quant << "\n";
-
-    printf("v_merge_nchw_norm_quant: ");
-    for (int idx = 0; idx < 12; idx++) {
-      printf("%d ", v_merge_nchw_norm_quant[idx]);
-    }
-    printf("\n\n");
-  }
-
-
-  // norm和quant同时计算
-  if (0)
-  {
-    // 归一化 & 量化
-    for (auto& data : v_merge_nchw) {
-      v_merge_nchw_norm_quant.push_back(Quantize(((float)data - 128.0) / 128.0));
-    }
-
-    printf("v_merge_nchw_norm_quant: ");
-    for (int idx = 0; idx < 12; idx++) {
-      printf("%d ", v_merge_nchw_norm_quant[idx]);
-    }
-    printf("\n\n");
-  }
-  
-  // norm和quant同时计算，基于stl计算
-  if (0)
-  {
-    printf("before norm_quant: ");
-    for (int idx = 0; idx < 12; idx++) {
-      printf("%d ", v_merge_nchw[idx]);
-    }
-    printf("\n");
-
-    // 归一化 & 量化
-    for (auto& data : v_merge_nchw) {
-      v_merge_nchw_norm_quant.push_back(Quantize(((float)data - 128.0) / 128.0));
-    }
-    printf("v_merge_nchw_norm_quant: ");
-    for (int idx = 0; idx < 12; idx++) {
-      printf("%2x ", v_merge_nchw_norm_quant[idx]);
-    }
-    printf("\n\n");
-    printf("v_merge_nchw_norm_quant: ");
-    for (int idx = 0; idx < 12; idx++) {
-      printf("%d ", (int)v_merge_nchw_norm_quant[idx]);
-    }
-    printf("\n\n");
-    {
-      auto tp_now = std::chrono::system_clock::now();
-      auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          tp_now - tp_start)
-                          .count();
-      RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess norm and quantize time cost %d ms", interval);
-      tp_start = std::chrono::system_clock::now();
-    }
-  }
-  
+  // norm和quant
   {
     cv::Mat_<cv::Vec3b>::iterator it = data_merge_nchw.begin<cv::Vec3b>();
     cv::Mat_<cv::Vec3b>::iterator itend = data_merge_nchw.end<cv::Vec3b>();
@@ -1175,12 +1049,7 @@ int PreProcess::CvtNV12Data2Tensors(
   }
 
   uint8_t *y = reinterpret_cast<uint8_t *>(dnn_tensor->sysMem[0].virAddr);
-  // memcpy(y, v_merge_nchw_norm_quant.data(), v_merge_nchw_norm_quant.size());
   memcpy(y, data_merge_nchw.data, data_merge_nchw.rows * data_merge_nchw.cols* data_merge_nchw.channels());
-  // {
-  //   std::ofstream ofs("in_data_merge_quant.bin");
-  //   ofs.write((const char*)v_merge_nchw_norm_quant.data(), v_merge_nchw_norm_quant.size());
-  // }
 
   hbSysFlushMem(&dnn_tensor->sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
   input_tensors.emplace_back(dnn_tensor);

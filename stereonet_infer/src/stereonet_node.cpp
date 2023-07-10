@@ -698,17 +698,53 @@ void StereonetNode::FeedImg(
   // 3 算法前处理，即创建算法输入数据
   std::vector<std::shared_ptr<DNNTensor>> input_tensors;
   int offset = img_msg->height * img_msg->width * 1.5 * 0.5;
-  const unsigned char* img_l = reinterpret_cast<const unsigned char*>(img_msg->data.data());
-  const unsigned char* img_r = img_l + offset;
   auto tp_start = std::chrono::system_clock::now();
-  if (sp_preprocess_->CvtNV12Data2Tensors(input_tensors, model_, img_l, img_r) < 0) {
+  int w = img_msg->width / 2;
+  int h = img_msg->height;
+  // left img
+  unsigned char *left_buf = reinterpret_cast<unsigned char *>(calloc(1, w*h*1.5));
+  {
+    const unsigned char *tmp_src = reinterpret_cast<const unsigned char*>(img_msg->data.data());
+    unsigned char *tmp_buf = left_buf;
+    for (int idx_h = 0; idx_h < img_msg->height; idx_h++) {
+      memcpy(tmp_buf, tmp_src, w);
+      tmp_buf+= w;
+      tmp_src+= img_msg->width;
+    }
+    for (int idx_h = 0; idx_h < img_msg->height / 2; idx_h++) {
+      memcpy(tmp_buf, tmp_src, w);
+      tmp_buf+= w;
+      tmp_src+= img_msg->width;
+    }
+  }
+
+  // right img
+  unsigned char *right_buf = reinterpret_cast<unsigned char *>(calloc(1, w*h*1.5));
+  {
+    const unsigned char *tmp_src = reinterpret_cast<const unsigned char*>(img_msg->data.data());
+    unsigned char *tmp_buf = right_buf;
+    for (int idx_h = 0; idx_h < img_msg->height; idx_h++) {
+      tmp_src += w;
+      memcpy(tmp_buf, tmp_src, w);
+      tmp_buf += w;
+      tmp_src += w;
+    }
+    for (int idx_h = 0; idx_h < img_msg->height / 2; idx_h++) {
+      tmp_src += w;
+      memcpy(tmp_buf, tmp_src, w);
+      tmp_buf += w;
+      tmp_src += w;
+    }
+  }
+
+  if (sp_preprocess_->CvtNV12Data2Tensors(input_tensors, model_, left_buf, right_buf) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Preprocess fail");
     rclcpp::shutdown();
     return;
   }
 
-  // dnn_output->left_nv12 = std::make_shared<cv::Mat>(model_input_height_ * 3 / 2, model_input_width_, CV_8UC1);
-  // memcpy(dnn_output->left_nv12->ptr<uint8_t>(), img_l, model_input_width_ * model_input_height_ * 3 / 2);
+  free(left_buf);
+  free(right_buf);
 
   if (enable_pub_output_) {
     // 将nv12格式的左图转成jpg格式
@@ -716,7 +752,7 @@ void StereonetNode::FeedImg(
     int w = img_msg->width / 2;
     int h = img_msg->height;
     unsigned char *left_nv12_data = reinterpret_cast<unsigned char *>(calloc(1, w*h*1.5));
-    unsigned char *tmp_src = const_cast<unsigned char*>(img_l);
+    const unsigned char *tmp_src = reinterpret_cast<const unsigned char*>(img_msg->data.data());
     unsigned char *tmp_buf = left_nv12_data;
     for (int idx_h = 0; idx_h < img_msg->height; idx_h++) {
       memcpy(tmp_buf, tmp_src, w);
@@ -861,11 +897,11 @@ int StereonetNode::PostProcess(
                         tp_now - tp_start)
                         .count();
                         
-    ros_img_publisher_->publish(std::move(msg));
-
     RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
-                "publish output with topic: %s, time cost ms: %d",
-                ros_img_topic_name_.data(), interval);
+                "publish output with msg index: %s, topic: %s, time cost ms: %d",
+                stereonet_node_output->msg_header->frame_id.data(), ros_img_topic_name_.data(), interval);
+
+    ros_img_publisher_->publish(std::move(msg));
   } else {
     RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
                   "publish is unable");

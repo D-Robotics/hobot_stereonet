@@ -23,6 +23,8 @@ import sensor_msgs.msg
 from std_msgs.msg import Header  
 # from hbm_img_msgs.msg.HbmMsg1080P import HbmMsg1080P
 
+import time
+
 class MinimalPublisher(Node):
 
     def __init__(self):
@@ -41,6 +43,8 @@ class MinimalPublisher(Node):
 
     def listener_callback(self, msg):
         self.get_logger().info('I heard encoding: "%s"' % msg.encoding)
+
+        start_time = time.time()  
 
         # w = 1280
         # h = 720
@@ -130,7 +134,10 @@ class MinimalPublisher(Node):
         # convertScaleAbs( )可把任意类型的数据转化为CV_8UC1。
         # cv2.applyColorMap用openCV转换成彩色
 
-        self.get_logger().info('applyColorMap')
+        end_time = time.time()  
+        time_cost_ms = (end_time - start_time) * 1000
+        self.get_logger().info(f'applyColorMap time cost {time_cost_ms:.3f} ms')
+
 
         img_pre = Image.fromarray(Z_image_pre_color.astype('uint8')).convert('RGB')
         b, g, r = img_pre.split()
@@ -158,9 +165,16 @@ class MinimalPublisher(Node):
         open_cv_image = np.array(joint) 
         open_cv_image = open_cv_image[:, :, ::-1].copy() 
 
-        self.get_logger().info('paste')
+        end_time = time.time()  
+        time_cost_ms = (end_time - start_time) * 1000
+        self.get_logger().info(f'img joint time cost {time_cost_ms:.3f} ms')
+
 
         img_msg = self.cv2_to_imgmsg(open_cv_image, 'jpeg', header, w, h)  
+
+        end_time = time.time()  
+        time_cost_ms = (end_time - start_time) * 1000
+        self.get_logger().info(f'cv2_to_imgmsg time cost {time_cost_ms:.3f} ms')
 
         self.publisher_.publish(img_msg)
         self.get_logger().info('Publishing')
@@ -302,7 +316,6 @@ class MinimalPublisher(Node):
         return open_cv_image, size1[0], size1[1] + size2[1]
 
     def cv2_to_imgmsg(self, cvim, encoding, header, w, h):
-        import numpy as np
         img_msg = sensor_msgs.msg.Image()
         img_msg.height = h
         img_msg.width = w

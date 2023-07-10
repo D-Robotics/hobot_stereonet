@@ -203,7 +203,7 @@ class PreProcess {
   // zero_point: 0.5
   // min: -128
   // max: 127
-  int8_t Quantize(float32_t value,
+  inline int8_t Quantize(float32_t value,
                   float32_t const scale = 0.0078125,
                   float32_t const zero_point = 0.5,
                   float32_t const min = -128,
