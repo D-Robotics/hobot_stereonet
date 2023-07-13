@@ -116,17 +116,8 @@ class StereonetNode : public hobot::dnn_node::DnnNode {
 
   void RunBinFeedInfer();
   
-  int get_tensor_hw(std::shared_ptr<DNNTensor> tensor, int *height, int *width, int *chn);
+  void RunImglistFeedInfer(std::string left_img_list, std::string right_img_list);
 
-  int Render(
-    const std::shared_ptr<hobot::easy_dnn::DNNTensor> &pyramid,
-    const ai_msgs::msg::PerceptionTargets::UniquePtr &ai_msg);
-
-  int Render(
-    const std::shared_ptr<cv::Mat>& left_nv12,
-    const std::shared_ptr<DNNTensor>& tensor,
-    cv::Mat& bgr_mat);
-    
   std::string config_file_ = "config/hobot_stereonet_config.json";
   std::string model_file_ = "config/hobot_stereonet.hbm";
 

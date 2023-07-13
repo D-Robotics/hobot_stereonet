@@ -116,8 +116,9 @@ StereonetNode::StereonetNode(const std::string& node_name,
   ros_img_publisher_ =
       this->create_publisher<sensor_msgs::msg::Image>(ros_img_topic_name_, 10);
 
+  // RunImglistFeedInfer("left_img.list", "right_img.list");
+
   // RunImgFeedInfer();
-  
   // RunBinFeedInfer();
   // timer_ = this->create_wall_timer(
   //     std::chrono::milliseconds(static_cast<int64_t>(30)),
@@ -745,7 +746,7 @@ void StereonetNode::FeedImg(
 
   free(left_buf);
   free(right_buf);
-
+  
   if (enable_pub_output_) {
     // 将nv12格式的左图转成jpg格式
     // left img
@@ -810,13 +811,173 @@ void StereonetNode::FeedImg(
   dnn_output->preprocess_time_ms = interval;
 
   std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
-  if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
+  if (Run(input_tensors, output_descs, dnn_output, false, -1, -1) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
     return;
   }
 
   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Run infer done");
 }
+
+void StereonetNode::RunImglistFeedInfer(std::string left_img_list, std::string right_img_list) {
+  if (!rclcpp::ok()) {
+    return;
+  }
+
+  RCLCPP_INFO_STREAM(rclcpp::get_logger("stereonet_node"),
+    "Feedback with left_img_list: " << left_img_list
+    << " right_img_list: " << right_img_list);
+
+  std::vector<std::string> left_imgs;
+  std::vector<std::string> right_imgs;
+
+  {
+    std::ifstream ifs(left_img_list);
+    if (!ifs.good()) {
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"), "Open file failed: " << left_img_list);
+      rclcpp::shutdown();
+      return;
+    }
+
+    std::string image_path;
+    while (std::getline(ifs, image_path)) {
+      std::string img_name = image_path;
+      if (access(img_name.c_str(), F_OK) != 0) {
+        RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"), "File is not exist! img_name: " << img_name);
+        rclcpp::shutdown();
+        return;
+      }
+      left_imgs.push_back(img_name);
+      if (!rclcpp::ok()) {
+        return;
+      }
+    }
+    ifs.close();
+  }
+  
+  {
+    std::ifstream ifs(right_img_list);
+    if (!ifs.good()) {
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"), "Open file failed: " << right_img_list);
+      rclcpp::shutdown();
+      return;
+    }
+
+    std::string image_path;
+    while (std::getline(ifs, image_path)) {
+      std::string img_name = image_path;
+      if (access(img_name.c_str(), F_OK) != 0) {
+        RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"), "File is not exist! img_name: " << img_name);
+        rclcpp::shutdown();
+        return;
+      }
+      right_imgs.push_back(img_name);
+      if (!rclcpp::ok()) {
+        return;
+      }
+    }
+    ifs.close();
+  }
+  
+
+  if (left_imgs.size() != right_imgs.size()) {
+    RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"),
+      "Imgs size error! left_imgs.size: " << left_imgs.size()
+      << ", right_imgs.size: " << right_imgs.size());
+    rclcpp::shutdown();
+    return;
+  }
+
+  // 等待可视化端启动成功
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+  size_t img_list_len = left_imgs.size();
+  for (size_t idx = 0; idx < img_list_len; idx++) {
+    RCLCPP_WARN_STREAM(rclcpp::get_logger("stereonet_node"),
+      "Feed " << idx << "/" << img_list_len);
+      
+    if (!rclcpp::ok()) {
+      return;
+    }
+    cv::Mat left_nv12_mat;
+    cv::Mat left_bgr_mat = cv::imread(left_imgs.at(idx), cv::IMREAD_COLOR);
+    {
+      auto ret = Tools::BGRToNv12(left_bgr_mat, left_nv12_mat);
+      if (ret) {
+        RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"),
+          "BGRToNv12 Fail");
+        rclcpp::shutdown();
+        return;
+      }
+    }
+    cv::Mat right_nv12_mat;
+    {
+      cv::Mat bgr_mat = cv::imread(right_imgs.at(idx), cv::IMREAD_COLOR);
+      auto ret = Tools::BGRToNv12(bgr_mat, right_nv12_mat);
+      if (ret) {
+        RCLCPP_ERROR_STREAM(rclcpp::get_logger("stereonet_node"),
+          "BGRToNv12 Fail");
+        rclcpp::shutdown();
+        return;
+      }
+    }
+
+    auto dnn_output = std::make_shared<StereonetNodeOutput>();
+    dnn_output->msg_header = std::make_shared<std_msgs::msg::Header>();
+    dnn_output->msg_header->frame_id = std::to_string(idx);
+
+    std::vector<std::shared_ptr<DNNTensor>> input_tensors;
+    int w = model_input_width_;
+    int h = model_input_height_;
+    
+    // left img
+    unsigned char *left_buf = reinterpret_cast<unsigned char *>(left_nv12_mat.data);
+    // right img
+    unsigned char *right_buf = reinterpret_cast<unsigned char *>(right_nv12_mat.data);
+
+    if (sp_preprocess_->CvtNV12Data2Tensors(input_tensors, model_, left_buf, right_buf) < 0) {
+      RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Preprocess fail");
+      rclcpp::shutdown();
+      return;
+    }
+
+    if (enable_pub_output_) {
+      // 将nv12格式的左图转成jpg格式
+      // left img
+      BinDataType* bin_data = new BinDataType();
+      // 使用opencv的imencode接口将mat转成vector，获取图片size
+      std::vector<int> param;
+      imencode(".jpg", left_bgr_mat, bin_data->jpeg, param);
+
+      dnn_output->sp_left_nv12 = std::shared_ptr<BinDataType>(bin_data, [&](BinDataType* p){
+        if (p) {
+          if (p->data) {
+            delete [](p->data);
+            p->data = nullptr;
+          }
+          delete p;
+          p = nullptr;
+        }
+      });
+      if (!dnn_output->sp_left_nv12) {
+        RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"),
+                      "invalid sp_left_nv12");
+        rclcpp::shutdown();
+        return;
+      }
+    }
+
+    std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
+    if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
+      RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
+      return;
+    }
+
+    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Run infer done");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  }
+}
+
 
 // 推理结果回调，解析算法输出，通过ROS Msg发布消息
 int StereonetNode::PostProcess(
@@ -870,6 +1031,8 @@ int StereonetNode::PostProcess(
     msg.width = stereonet_node_output->sp_left_nv12->w;
     msg.encoding = "jpeg";
     
+    msg.header = *stereonet_node_output->msg_header;
+
     char * infer_out_data = reinterpret_cast<char *>(stereonet_node_output->output_tensors[0]->sysMem[0].virAddr);
     int infer_out_data_len = stereonet_node_output->output_tensors[0]->sysMem[0].memSize;
 
@@ -924,220 +1087,6 @@ int StereonetNode::PostProcess(
                   interval);
     }
   }
-
-  return 0;
-}
-
-int StereonetNode::Render(
-    const std::shared_ptr<hobot::easy_dnn::DNNTensor> &pyramid,
-    const ai_msgs::msg::PerceptionTargets::UniquePtr &ai_msg) {
-  hbDNNTensorProperties properties = pyramid->properties;
-
-  char *y_img = reinterpret_cast<char *>(pyramid->sysMem[0].virAddr);
-  // char *uv_img = reinterpret_cast<char *>(pyramid->sysMem[1].virAddr);
-  auto height = properties.alignedShape.dimensionSize[2];
-  auto width = properties.alignedShape.dimensionSize[3];
-  auto img_y_size = height * width;
-  auto img_uv_size = img_y_size / 2;
-  char *buf = new char[img_y_size + img_uv_size];
-  // memcpy(buf, y_img, img_y_size);
-  // memcpy(buf + img_y_size, uv_img, img_uv_size);
-  memcpy(buf, y_img, img_y_size + img_uv_size);
-  cv::Mat nv12(height * 3 / 2, width, CV_8UC1, buf);
-  cv::Mat mat;
-  cv::cvtColor(nv12, mat, CV_YUV2BGR_NV12);
-  delete[] buf;
-
-  RCLCPP_INFO(rclcpp::get_logger("ImageUtils"),
-              "target size: %d",
-              ai_msg->targets.size());
-  bool hasRois = false;
-  for (size_t idx = 0; idx < ai_msg->targets.size(); idx++) {
-    const auto &target = ai_msg->targets.at(idx);
-    if (target.rois.empty()) {
-      continue;
-    }
-    hasRois = true;
-    RCLCPP_INFO(rclcpp::get_logger("ImageUtils"),
-                "target type: %s, rois.size: %d",
-                target.type.c_str(),
-                target.rois.size());
-
-    static std::vector<cv::Scalar> colors{
-        cv::Scalar(255, 0, 0),    // red
-        cv::Scalar(255, 255, 0),  // yellow
-        cv::Scalar(0, 255, 0),    // green
-        cv::Scalar(0, 0, 255),    // blue
-    };
-
-    auto &color = colors[idx % colors.size()];
-    for (const auto &roi : target.rois) {
-      RCLCPP_INFO(
-          rclcpp::get_logger("ImageUtils"),
-          "roi.type: %s, x_offset: %d y_offset: %d width: %d height: %d",
-          roi.type.c_str(),
-          roi.rect.x_offset,
-          roi.rect.y_offset,
-          roi.rect.width,
-          roi.rect.height);
-      cv::rectangle(mat,
-                    cv::Point(roi.rect.x_offset, roi.rect.y_offset),
-                    cv::Point(roi.rect.x_offset + roi.rect.width,
-                              roi.rect.y_offset + roi.rect.height),
-                    color,
-                    3);
-      std::string roi_type = target.type;
-      if (!roi.type.empty()) {
-        roi_type = roi.type;
-      }
-      if (!roi_type.empty()) {
-        cv::putText(mat,
-                    roi_type,
-                    cv::Point2f(roi.rect.x_offset, roi.rect.y_offset - 10),
-                    cv::HersheyFonts::FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    1.5);
-      }
-    }
-
-    for (const auto &lmk : target.points) {
-      for (const auto &pt : lmk.point) {
-        cv::circle(mat, cv::Point(pt.x, pt.y), 3, color, 3);
-      }
-    }
-  }
-
-  // if (!hasRois) {
-  //   RCLCPP_WARN(rclcpp::get_logger("ImageUtils"),
-  //               "Frame has no roi, skip the rendering");
-  //   return 0;
-  // }
-  std::string saving_path = "render_" + ai_msg->header.frame_id +
-                            ".jpeg";
-  RCLCPP_WARN(rclcpp::get_logger("ImageUtils"),
-              "Draw result to file: %s",
-              saving_path.c_str());
-  cv::imwrite(saving_path, mat);
-  return 0;
-}
-
-
-int StereonetNode::get_tensor_hw(std::shared_ptr<DNNTensor> tensor, int *height, int *width, int *chn) {
-  int h_index = 0;
-  int w_index = 0;
-  int c_index = 0;
-  if (tensor->properties.tensorLayout == HB_DNN_LAYOUT_NHWC) {
-    h_index = 1;
-    w_index = 2;
-    c_index = 3;
-  } else if (tensor->properties.tensorLayout == HB_DNN_LAYOUT_NCHW) {
-    c_index = 1;
-    h_index = 2;
-    w_index = 3;
-  } else {
-    return -1;
-  }
-  *height = tensor->properties.validShape.dimensionSize[h_index];
-  *width = tensor->properties.validShape.dimensionSize[w_index];
-  *chn = tensor->properties.validShape.dimensionSize[c_index];
-  return 0;
-}
-
-int StereonetNode::Render(
-  const std::shared_ptr<cv::Mat>& left_nv12,
-  const std::shared_ptr<DNNTensor>& tensor,
-  cv::Mat& bgr_mat) {
-  int height, width, chn;
-  auto ret = get_tensor_hw(tensor, &height, &width, &chn);
-  if (ret != 0) {
-    RCLCPP_ERROR(rclcpp::get_logger("Yolo5_detection_parser"),
-                 "get_tensor_hw failed");
-  }
-
-  auto *data = reinterpret_cast<int32_t *>(tensor->sysMem[0].virAddr);
-  auto scale = tensor->properties.scale.scaleData;
-  StereonetResult stereonet_result;
-
-  float f = 527.1931762695312; // 相机的焦距
-  float B = 119.89382172; // 相机的baseline
-  // Z = f*B/dis/1000
-  // 深度信息，单位米
-  std::vector<float> result{};
-  // 模型输出的定点转成float后的数据
-  std::stringstream ss_float;
-  std::stringstream ss_int;
-  for (int c = 0; c < chn; ++c) {
-    for (int h = 0; h < height; ++h) {
-      for (int w = 0; w < width; ++w) {
-        int offset = c * (height * width) + h * width + w;
-        // Dequantize
-        float dis = static_cast<float>(data[offset]) * scale[c];
-        // convert to depth
-        result.push_back(f * B / (dis * 16.0 * 12.0) / 1000.0);
-      }
-    }
-  }
-
-  // render
-  cv::Mat img_out_f = cv::Mat(height, width, CV_32FC1);
-  auto *data_img_out_f = img_out_f.ptr<float>();
-  memcpy(data_img_out_f, result.data(), result.size() * sizeof(float));
-
-  cv::Mat img_out_scale_abs;
-  cv::convertScaleAbs(img_out_f, img_out_scale_abs, 11);
-  cv::Mat img_out_color_map;
-  cv::applyColorMap(img_out_scale_abs, img_out_color_map, cv::COLORMAP_JET);
-  
-  {
-    auto& data = img_out_color_map;
-    cv::Mat nv12(height * 3 / 2, width, CV_8UC1, (char*)data.ptr<uint8_t>());
-    // cv::Mat bgr_mat;
-    cv::cvtColor(nv12, bgr_mat, CV_YUV2BGR_NV12);  //  nv12 to bgr
-    cv::imwrite("img_out_color_map.jpg", bgr_mat);
-    // TODO
-    // 拼接left_nv12
-  }
-
-  return 0;
-}
-
-// 使用hobotcv resize nv12格式图片，固定图片宽高比
-int StereonetNode::ResizeNV12Img(const char* in_img_data,
-                  const int& in_img_height,
-                  const int& in_img_width,
-                  const int& scaled_img_height,
-                  const int& scaled_img_width,
-                  cv::Mat& out_img,
-                  float& ratio) {
-  cv::Mat src(
-      in_img_height * 3 / 2, in_img_width, CV_8UC1, (void*)(in_img_data));
-  float ratio_w =
-      static_cast<float>(in_img_width) / static_cast<float>(scaled_img_width);
-  float ratio_h =
-      static_cast<float>(in_img_height) / static_cast<float>(scaled_img_height);
-  float dst_ratio = std::max(ratio_w, ratio_h);
-  int resized_width, resized_height;
-  if (dst_ratio == ratio_w) {
-    resized_width = scaled_img_width;
-    resized_height = static_cast<float>(in_img_height) / dst_ratio;
-  } else if (dst_ratio == ratio_h) {
-    resized_width = static_cast<float>(in_img_width) / dst_ratio;
-    resized_height = scaled_img_height;
-  }
-
-  // hobot_cv要求输出宽度为16的倍数
-  int remain = resized_width % 16;
-  if (remain != 0) {
-    //向下取16倍数，重新计算缩放系数
-    resized_width -= remain;
-    dst_ratio = static_cast<float>(in_img_width) / resized_width;
-    resized_height = static_cast<float>(in_img_height) / dst_ratio;
-  }
-  //高度向下取偶数
-  resized_height =
-      resized_height % 2 == 0 ? resized_height : resized_height - 1;
-  ratio = dst_ratio;
 
   return 0;
 }
