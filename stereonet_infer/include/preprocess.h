@@ -50,8 +50,6 @@ struct FeedbackData {
 
   // norm后的数据
   std::string bin_file {"numpy/img_adapter.bin"};
-  // std::string bin_file {"numpy_0629/img_adapter_nchw.bin"};
-  // std::string bin_file {"/userdata/kao.zhu/nfs/github/tros/j5/tros_ws/dnn_tools/dnn_tools_j5/input_0_arg0[img]_1x720x1280x6_int8_NCHW_NATIVE.bin"};
 };
 
 class Tools {
