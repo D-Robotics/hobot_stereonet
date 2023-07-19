@@ -25,7 +25,7 @@ find_package(ai_msgs REQUIRED)
 find_package(hbm_img_msgs REQUIRED)
 find_package(dnn_node REQUIRED)
 
-# x3|x5ultra|x86
+# x3|rdkultra|x86
 set(PREFIX_PATH x3)
 set(SYS_ROOT ${CMAKE_SYSROOT})
 
@@ -33,10 +33,10 @@ if(PLATFORM_X3)
   message("build platform X3")
   add_definitions(-DPLATFORM_X3)
   set(PREFIX_PATH x3)
-elseif(PLATFORM_X5ultra)
-  message("build platform X5ultra")
-  add_definitions(-DPLATFORM_X5ultra)
-  set(PREFIX_PATH x5ultra)
+elseif(PLATFORM_Rdkultra)
+  message("build platform Rdkultra")
+  add_definitions(-DPLATFORM_Rdkultra)
+  set(PREFIX_PATH rdkultra)
 elseif(PLATFORM_X86)
   message("build platform x86")
   add_definitions(-DPLATFORM_X86)
