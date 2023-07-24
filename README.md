@@ -44,6 +44,8 @@ ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py
 
 ![stereonet_zed](img/stereonet_zed.png)
 
+可以看到对于有光线变化区域，深度学习方法的深度估计准确率更高。
+
 # 接口说明
 
 ## 话题
