@@ -105,7 +105,7 @@ StereonetNode::StereonetNode(const std::string& node_name,
 
   // 创建消息订阅者，从摄像头节点订阅图像消息
   subscription_hbmem_img_ =
-      this->create_subscription_hbmem<hbm_img_msgs::msg::HbmMsg1080P>(
+      this->create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
           sub_hbmem_topic_name_,
           10,
           std::bind(&StereonetNode::FeedImg, this, std::placeholders::_1));

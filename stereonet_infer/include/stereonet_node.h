@@ -93,7 +93,7 @@ class StereonetNode : public hobot::dnn_node::DnnNode {
   std::vector<hbDNNTensorProperties> output_model_info_;
 
   // 图片消息订阅者
-  rclcpp::SubscriptionHbmem<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr 
+  rclcpp::Subscription<hbm_img_msgs::msg::HbmMsg1080P>::ConstSharedPtr 
       subscription_hbmem_img_ = nullptr;
   std::string sub_hbmem_topic_name_ = "hbmem_stereo_img";
 
