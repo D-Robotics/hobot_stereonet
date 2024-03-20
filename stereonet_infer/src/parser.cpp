@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <memory>
+#include <fstream>
 #include "opencv2/core/mat.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/imgproc.hpp"

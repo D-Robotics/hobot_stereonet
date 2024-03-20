@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <iostream>  
+#include <vector>  
+#include <algorithm>  
+#include <iterator>  
+#include <fstream>
+
 #include "preprocess.h"
 
 namespace hobot {
 namespace stereonet {
 
-#include <iostream>  
-#include <vector>  
-#include <algorithm>  
-#include <iterator>  
-  
 // 定义输入数组类型  
 using Array = std::vector<double>;  
   

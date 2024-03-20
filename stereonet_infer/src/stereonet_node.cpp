@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include <string>
+#include <fstream>
 
 #include "stereonet_node.h"
 
