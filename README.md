@@ -1,20 +1,22 @@
-# 功能介绍
+English| [简体中文](./README_cn.md)
 
-双目深度估计算法是使用地平线[OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html)在[SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html)数据集上训练出来的`StereoNet`模型。
+# Function Introduction
 
-算法输入为双目图像数据，分别是左右视图。算法输出为左视图的视差。
+The stereo depth estimation algorithm is a `StereoNet` model trained using the Horizon [OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html) on the [SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) dataset.
 
-此示例使用ZED 2i双目相机作为图像数据输入源，利用BPU进行算法推理，发布包含双目图像左图和感知结果的话题消息，在PC端浏览器上渲染显示算法结果。
+The algorithm takes stereo image data as input, consisting of left and right views. The output of the algorithm is the disparity map of the left view.
 
-# 物料清单
+This example uses the ZED 2i stereo camera as the input source for image data, utilizes BPU for algorithm inference, publishes topic messages containing the left stereo image and perception results, and renders and displays the algorithm results on a PC browser.
 
-ZED 2i双目相机
+# Bill of Materials
 
-# 使用方法
+ZED 2i stereo camera
 
-## 功能安装
+# Instructions
 
-在RDK系统的终端中运行如下指令，即可快速安装：
+## Function Installation
+
+Run the following commands in the terminal of the RDK system for quick installation:
 
 ```bash
 sudo apt update
@@ -24,40 +26,38 @@ sudo apt install -y tros-hobot-stereonet-render
 sudo apt install -y tros-websocket
 ```
 
-## 启动双目图像发布、算法推理和图像可视化
+## Launch Stereo Image Publishing, Algorithm Inference, and Image Visualization
 
-在RDK系统的终端中运行如下指令启动：
+Run the following commands in the terminal of the RDK system to start:
 
 ```shell
-# 配置tros.b环境
+# Configure the tros.b environment
 source /opt/tros/setup.bash
 
-# 启动launch文件
+# Launch the launch file
 ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 
 ```
 
-启动成功后，打开同一网络电脑的浏览器，访问RDK的IP地址，即可看到算法可视化的实时效果：
+After successful launch, open a browser on the same network computer, visit the IP address of RDK, and you will see the real-time visualization of the algorithm:
 
 ![stereonet_rdk](img/stereonet_rdk.png)
 
-相同场景下ZED的深度估计可视化效果如下：
+The depth estimation visualization using ZED in the same scene is as follows:
 
 ![stereonet_zed](img/stereonet_zed.png)
 
-可以看到对于有光线变化区域，深度学习方法的深度估计准确率更高。
+It can be observed that for areas with changes in lighting, the depth estimation accuracy of the deep learning method is higher.
 
-# 接口说明
+# Interface Description## Topic
 
-## 话题
+| Name         | Message Type                            | Description                                |
+| ------------ | ---------------------------------------- | ------------------------------------------ |
+| /image_jpeg  | sensor_msgs/msg/Image                   | Topic for periodically publishing image    |
 
-| 名称         | 消息类型                             | 说明                                     |
-| ------------ | ------------------------------------ | ---------------------------------------- |
-| /image_jpeg  | sensor_msgs/msg/Image                | 周期发布的图像话题             |
+## Parameters
 
-## 参数
+| Name                         | Parameter Value          | Description                |
+| --------------------------- | ------------------------ | -------------------------- |
+| sub_hbmem_topic_name        | Default hbmem_stereo_img | Topic name for subscribing to stereo image messages  |
 
-| 名称                         | 参数值   | 说明     |
-| --------------------------- | ------------------------ | ------------------------------ |
-| sub_hbmem_topic_name        | 默认hbmem_stereo_img | 订阅双目图像消息的话题名                        |
-
-# 常见问题
+# FAQ

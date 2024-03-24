@@ -1,1 +1,3 @@
-可视化node，订阅感知结果，发布渲染后的图像数据，用于在WEB端展示。
+English| [简体中文](./README_cn.md)
+
+Visualize nodes, subscribe to perception results, publish rendered image data for display on the WEB end.
