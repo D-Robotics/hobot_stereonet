@@ -170,12 +170,11 @@ void StereonetNode::RunImgFeedInfer() {
                       .count();
   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess done, time cost %d ms", interval);
 
-  std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
   auto dnn_output = std::make_shared<StereonetNodeOutput>();
   dnn_output->preprocess_time_ms = interval;
   dnn_output->msg_header = std::make_shared<std_msgs::msg::Header>();
   dnn_output->image_files = sp_feedback_data->image_files;
-  if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
+  if (Run(input_tensors, dnn_output, true, -1, -1) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
     return;
   }
@@ -549,7 +548,6 @@ void StereonetNode::RunBinFeedInfer() {
                       .count();
   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess done, time cost %d ms", interval);
 
-  std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
   auto dnn_output = std::make_shared<StereonetNodeOutput>();
   dnn_output->preprocess_time_ms = interval;
   dnn_output->msg_header = std::make_shared<std_msgs::msg::Header>();
@@ -583,7 +581,7 @@ void StereonetNode::RunBinFeedInfer() {
 
 
 
-  if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
+  if (Run(input_tensors, dnn_output, true, -1, -1) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
     return;
   }
@@ -811,8 +809,7 @@ void StereonetNode::FeedImg(
   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"), "Preprocess done, time cost %d ms", interval);
   dnn_output->preprocess_time_ms = interval;
 
-  std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
-  if (Run(input_tensors, output_descs, dnn_output, false, -1, -1) < 0) {
+  if (Run(input_tensors, dnn_output, false, -1, -1) < 0) {
     RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
     return;
   }
@@ -968,8 +965,7 @@ void StereonetNode::RunImglistFeedInfer(std::string left_img_list, std::string r
       }
     }
 
-    std::vector<std::shared_ptr<hobot::dnn_node::OutputDescription>> output_descs{};
-    if (Run(input_tensors, output_descs, dnn_output, true, -1, -1) < 0) {
+    if (Run(input_tensors, dnn_output, true, -1, -1) < 0) {
       RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"), "Run infer fail!");
       return;
     }
