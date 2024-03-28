@@ -32,7 +32,6 @@
 #include "opencv2/imgproc.hpp"
 
 using hobot::dnn_node::DNNTensor;
-using hobot::dnn_node::OutputDescription;
 using hobot::dnn_node::DnnNodeOutput;
 
 namespace hobot {

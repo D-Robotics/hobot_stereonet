@@ -34,7 +34,6 @@ namespace hobot {
 namespace stereonet {
 
 using hobot::dnn_node::DNNInput;
-using hobot::dnn_node::DNNResult;
 using hobot::dnn_node::DNNTensor;
 using hobot::dnn_node::Model;
 using hobot::dnn_node::NV12PyramidInput;
@@ -228,15 +227,6 @@ class PreProcess {
                     std::shared_ptr<DNNTensor> &dnn_tensor,
                     int scaled_img_height, int scaled_img_width);
 
-  std::shared_ptr<DNNTensor> GetNV12Pyramid(const std::string &image_file,
-                                            int scaled_img_height,
-                                            int scaled_img_width);
-  std::shared_ptr<DNNTensor> GetNV12Pyramid(const std::string &image_file,
-                                            int scaled_img_height,
-                                            int scaled_img_width,
-                                            int &original_img_height,
-                                            int &original_img_width);
-  int32_t BGRToNv12(cv::Mat &bgr_mat, cv::Mat &img_nv12);
   cv::Mat NormalizeImage(cv::Mat image, float mean, float std);
 
   // scale: 0.0078125
