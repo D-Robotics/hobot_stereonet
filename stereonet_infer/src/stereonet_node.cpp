@@ -996,20 +996,20 @@ int StereonetNode::PostProcess(
 
   // 开始解析
   // 不做后处理，直接将模型输出发布出去
-  if (hobot::stereonet::Parse(node_output, results) < 0) {
-    RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"),
-                 "Parse node_output fail!");
-    return -1;
-  }
-  {
-    auto tp_now = std::chrono::system_clock::now();
-    auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        tp_now - tp_start)
-                        .count();
-    RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
-                  "Parse node_output complete, time cost ms: %d",
-                interval);
-  }
+  // if (hobot::stereonet::Parse(node_output, results) < 0) {
+  //   RCLCPP_ERROR(rclcpp::get_logger("stereonet_node"),
+  //                "Parse node_output fail!");
+  //   return -1;
+  // }
+  // {
+  //   auto tp_now = std::chrono::system_clock::now();
+  //   auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(
+  //                       tp_now - tp_start)
+  //                       .count();
+  //   RCLCPP_INFO(rclcpp::get_logger("stereonet_node"),
+  //                 "Parse node_output complete, time cost ms: %d",
+  //               interval);
+  // }
 
   tp_start = std::chrono::system_clock::now();
 
