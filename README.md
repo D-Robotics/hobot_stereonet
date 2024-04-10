@@ -18,6 +18,7 @@ ZED 2i stereo camera
 
 Run the following commands in the terminal of the RDK system for quick installation:
 
+tros foxy:
 ```bash
 sudo apt update
 sudo apt install -y tros-hobot-stereonet
@@ -26,13 +27,32 @@ sudo apt install -y tros-hobot-stereonet-render
 sudo apt install -y tros-websocket
 ```
 
+tros humble:
+```bash
+sudo apt update
+sudo apt install -y tros-humble-hobot-stereonet
+sudo apt install -y tros-humble-hobot-stereo-usb-cam
+sudo apt install -y tros-humble-hobot-stereonet-render
+sudo apt install -y tros-humble-websocket
+```
+
 ## Launch Stereo Image Publishing, Algorithm Inference, and Image Visualization
 
 Run the following commands in the terminal of the RDK system to start:
 
+tros foxy:
 ```shell
 # Configure the tros.b environment
 source /opt/tros/setup.bash
+
+# Launch the launch file
+ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 
+```
+
+tros humble:
+```shell
+# Configure the tros.b humble environment
+source /opt/tros/humble/setup.bash
 
 # Launch the launch file
 ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 

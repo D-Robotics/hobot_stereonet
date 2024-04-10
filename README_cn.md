@@ -18,6 +18,7 @@ ZED 2i双目相机
 
 在RDK系统的终端中运行如下指令，即可快速安装：
 
+tros foxy 版本
 ```bash
 sudo apt update
 sudo apt install -y tros-hobot-stereonet
@@ -26,13 +27,32 @@ sudo apt install -y tros-hobot-stereonet-render
 sudo apt install -y tros-websocket
 ```
 
+tros humble 版本
+```bash
+sudo apt update
+sudo apt install -y tros-humble-hobot-stereonet
+sudo apt install -y tros-humble-hobot-stereo-usb-cam
+sudo apt install -y tros-humble-hobot-stereonet-render
+sudo apt install -y tros-humble-websocket
+```
+
 ## 启动双目图像发布、算法推理和图像可视化
 
 在RDK系统的终端中运行如下指令启动：
 
+tros foxy 版本
 ```shell
 # 配置tros.b环境
 source /opt/tros/setup.bash
+
+# 启动launch文件
+ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 
+```
+
+tros humble 版本
+```shell
+# 配置tros.b humble环境
+source /opt/tros/humble/setup.bash
 
 # 启动launch文件
 ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 
