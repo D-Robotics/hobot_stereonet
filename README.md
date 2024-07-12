@@ -1,85 +1,80 @@
-English| [简体中文](./README_cn.md)
+# 功能介绍
 
-# Function Introduction
+双目深度估计算法是使用地平线[OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html)在[SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html)数据集上训练出来的`StereoNet`模型。
 
-The stereo depth estimation algorithm is a `StereoNet` model trained using the Horizon [OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html) on the [SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) dataset.
+算法输入为双目图像数据，分别是左右视图。算法输出为左视图的视差。
 
-The algorithm takes stereo image data as input, consisting of left and right views. The output of the algorithm is the disparity map of the left view.
+此示例使用mipi双目相机作为图像数据输入源，利用BPU进行算法推理，发布包含双目图像左图和感知结果的话题消息，
+在PC端rviz2上渲染算法结果。
 
-This example uses the ZED 2i stereo camera as the input source for image data, utilizes BPU for algorithm inference, publishes topic messages containing the left stereo image and perception results, and renders and displays the algorithm results on a PC browser.
+# 物料清单
 
-# Bill of Materials
+双目相机
 
-ZED 2i stereo camera
+# 使用方法
 
-# Instructions
+## 功能安装
 
-## Function Installation
+在RDK系统的终端中运行如下指令，即可快速安装：
 
-Run the following commands in the terminal of the RDK system for quick installation:
-
-tros foxy:
-```bash
-sudo apt update
-sudo apt install -y tros-hobot-stereonet
-sudo apt install -y tros-hobot-stereo-usb-cam
-sudo apt install -y tros-hobot-stereonet-render
-sudo apt install -y tros-websocket
-```
-
-tros humble:
+tros humble 版本
 ```bash
 sudo apt update
 sudo apt install -y tros-humble-hobot-stereonet
-sudo apt install -y tros-humble-hobot-stereo-usb-cam
-sudo apt install -y tros-humble-hobot-stereonet-render
-sudo apt install -y tros-humble-websocket
 ```
 
-## Launch Stereo Image Publishing, Algorithm Inference, and Image Visualization
+## 启动双目图像发布、算法推理和图像可视化
 
-Run the following commands in the terminal of the RDK system to start:
+在RDK系统的终端中运行如下指令启动：
 
-tros foxy:
+tros humble 版本
 ```shell
-# Configure the tros.b environment
-source /opt/tros/setup.bash
-
-# Launch the launch file
-ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 
-```
-
-tros humble:
-```shell
-# Configure the tros.b humble environment
+# 配置tros.b humble环境
 source /opt/tros/humble/setup.bash
 
-# Launch the launch file
-ros2 launch hobot_stereonet hobot_stereonet_demo.launch.py 
+# 终端1 启动双目模型launch文件
+ros2 launch stereonet_model stereonet_model.launch.py \
+stereo_image_topic:=/image_combine_raw camera_fx:=300.0 camera_cx:=640.0 \
+camera_fy:=300.0 camera_cy:=320.0 base_line:=0.06 stereo_combine_mode:=1
+
+# 终端2 启动mipi双目相机launch文件
+ros2 launch mipi_cam mipi_cam_dual_channel.launch.py mipi_image_width:=1280 mipi_image_height:=640
 ```
 
-After successful launch, open a browser on the same network computer, visit the IP address of RDK, and you will see the real-time visualization of the algorithm:
-
+启动成功后，打开同一网络电脑的rviz2，订阅双目模型节点发布的相关话题，即可看到算法可视化的实时效果：
 ![stereonet_rdk](img/stereonet_rdk.png)
 
-The depth estimation visualization using ZED in the same scene is as follows:
+# 接口说明
 
-![stereonet_zed](img/stereonet_zed.png)
+## 订阅话题
 
-It can be observed that for areas with changes in lighting, the depth estimation accuracy of the deep learning method is higher.
+| 名称         | 消息类型                             | 说明                                     |
+| ------------ | ------------------------------------ | ---------------------------------------- |
+| /image_combine_raw  | sensor_msgs::msg::Image   | 双目相机节点发布的左右目拼接图像话题，用于模型推理深度             |
 
-# Interface Description
 
-## Topic
+## 发布话题
 
-| Name         | Message Type                            | Description                                |
-| ------------ | ---------------------------------------- | ------------------------------------------ |
-| /image_jpeg  | sensor_msgs/msg/Image                   | Topic for periodically publishing image    |
+| 名称         | 消息类型                             | 说明                                     |
+| ------------ | ------------------------------------ | ---------------------------------------- |
+| /StereoNetNode/stereonet_pointcloud2  | sensor_msgs::msg::PointCloud2                | 发布的点云深度话题             |
+| /StereoNetNode/stereonet_depth  | sensor_msgs::msg::Image                | 发布的深度图像，像素值为深度，单位为毫米              |
+| /StereoNetNode/stereonet_visual  | sensor_msgs::msg::Image                | 发布的比较直观的可视化渲染图像             |
 
-## Parameters
+## 参数
 
-| Name                         | Parameter Value          | Description                |
-| --------------------------- | ------------------------ | -------------------------- |
-| sub_hbmem_topic_name        | Default hbmem_stereo_img | Topic name for subscribing to stereo image messages  |
+| 名称                         | 参数值   | 说明     |
+| --------------------------- | ------------------------ | ------------------------------ |
+| stereo_image_topic        | 默认 /image_combine_raw | 订阅双目图像消息的话题名                        |
+| camera_fx        | 默认 300.0 | 双目相机x方向的焦距   
+| camera_cx        | 默认 640.0 | 双目相机中心点x坐标   
+| camera_fy        | 默认 300.0 | 双目相机y方向的焦距   
+| camera_cy        | 默认 320.0 | 双目相机中心点y坐标   
+| base_line        | 默认 0.06 | 双目相机左右目基线距离  
+| stereo_combine_mode        | 默认 1 | 左右目图像往往拼接在一张图上再发布出去，1为上下拼接，0为左右拼接，指示双目算法如何拆分图像   
 
-# FAQ
+
+# 注意事项
+1. 模型的输入尺寸为宽：1280，高640，相机发布的图像分辨率应为1280x640
+2. 双目相机应已做畸变、基线对齐处理
+3. 如果双目相机发布图像的格式为NV12，那么双目图像的拼接方式必须为上下拼接
