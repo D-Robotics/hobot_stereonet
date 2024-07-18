@@ -22,6 +22,8 @@ do {                                                             \
   }                                                              \
 } while (0);
 
+#include <rclcpp/rclcpp.hpp>
+
 struct ScopeProcessTime {
  public:
   ScopeProcessTime(const std::string &name) : name_(name) {
@@ -31,9 +33,9 @@ struct ScopeProcessTime {
   ~ScopeProcessTime() {
     auto end = std::chrono::system_clock::now();
     const std::chrono::duration<float, std::milli> d = end - begin_;
-//    std::cout << name_ << " DONE, consume: "
-//              << std::fixed << std::setprecision(3)
-//              << d.count() << "ms" << std::endl;
+    RCLCPP_DEBUG_STREAM(rclcpp::get_logger(""), name_ << ", consume: "
+              << std::fixed << std::setprecision(3)
+              << d.count() << "ms");
   }
 
  private:
