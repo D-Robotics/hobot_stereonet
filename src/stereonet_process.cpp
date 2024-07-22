@@ -3,11 +3,12 @@
 //
 
 #include <arm_neon.h>
-
+#include <fstream>
 #include <cassert>
 #include <vector>
 
 #include "stereonet_process.h"
+#include "image_conversion.h"
 
 static void Dequantize(float *output,
                        int32_t *input,
@@ -60,6 +61,30 @@ static void Dequantize16(float *output,
   }
 }
 
+static void Dequantize16_neon(float *output,
+                         int16_t *input,
+                         float *input_scale,
+                         int32_t *input_shape,
+                         int32_t *input_aligned_shape) {
+  int32_t channel = input_shape[1];
+  int32_t height = input_shape[2];
+  int32_t width = input_shape[3];
+  for (int32_t c = 0; c < channel; c++) {
+    float scale = input_scale[c];
+    float32x4_t scale_neon = vdupq_n_f32(scale);
+    for (int32_t h = 0; h < height; h++) {
+      for (int32_t w = 0; w < width; w += 4) {
+        int16x4_t input_data_tmp = vld1_s16(input + h * input_aligned_shape[3] + w);
+        float32x4_t input_data_f32 = vcvtq_f32_s32(vmovl_s16(input_data_tmp));
+        float32x4_t result = vmulq_f32(input_data_f32, scale_neon);
+        vst1q_f32(output + h * width + w, result);
+      }
+    }
+    input += input_aligned_shape[2] * input_aligned_shape[3];
+    output += height * width;
+  }
+}
+
 static int32_t nearest_interpolate(float *output_data,
                                    float *input_data,
                                    int16_t *weight,
@@ -100,6 +125,44 @@ static int32_t nearest_interpolate(float *output_data,
   return 0;
 }
 
+static int32_t feature_add(float *spg,
+                           float *feature,
+                           int32_t input_height,
+                           int32_t input_width,
+                           int32_t maxdisp) {
+  for (int i = 0; i < input_height; ++i) {
+    for (int j = 0; j < input_width; ++j) {
+      int index = i * input_width + j;
+      feature[index] += spg[index];
+      if (feature[index] < 0) feature[index] = 0;
+      feature[index] *= maxdisp;
+    }
+  }
+  return 0;
+}
+
+static int32_t feature_add_neon(float *spg,
+                           float *feature,
+                           int32_t input_height,
+                           int32_t input_width,
+                           int32_t maxdisp) {
+  int total_elements = input_height * input_width;
+
+  float32x4_t maxdisp_vec = vdupq_n_f32(maxdisp);
+  float32x4_t zero_vec = vdupq_n_f32(0.0f);
+
+  for (int i = 0; i < total_elements; i += 4) {
+    float32x4_t spg_vec = vld1q_f32(spg + i);
+    float32x4_t feature_vec = vld1q_f32(feature + i);
+    feature_vec = vaddq_f32(feature_vec, spg_vec);
+    feature_vec = vmaxq_f32(feature_vec, zero_vec);
+    feature_vec = vmulq_f32(feature_vec, maxdisp_vec);
+    vst1q_f32(feature + i, feature_vec);
+  }
+
+  return 0;
+}
+
 static int32_t dump_to_color(
     int32_t feat_h, int32_t feat_w,
     std::vector<float> &points,
@@ -111,8 +174,54 @@ static int32_t dump_to_color(
   return 0;
 }
 
-int postprocess(std::vector<hbDNNTensor> &tensors,
+int postprocess2(std::vector<hbDNNTensor> &tensors,
     std::vector<float> &points) {
+  int low_max_stride_ = 2;
+  int maxdisp_ = 192;
+  for (int32_t i = 0; i < 2; i++) {
+    hbSysFlushMem(&(tensors[i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
+  }
+  // get tensor info
+  int16_t *cost_data =
+      reinterpret_cast<int16_t *>(tensors[0].sysMem[0].virAddr);
+  int32_t *cost_valid_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t *cost_aligned_shape =
+      tensors[0].properties.alignedShape.dimensionSize;
+  float *cost_scale = tensors[0].properties.scale.scaleData;
+  int32_t unflod_c = cost_valid_shape[1];
+  int32_t unflod_h = cost_valid_shape[2];
+  int32_t unflod_w = cost_valid_shape[3];
+
+  int32_t *spg_data = reinterpret_cast<int32_t *>(tensors[1].sysMem[0].virAddr);
+  int32_t *spg_valid_shape = tensors[1].properties.validShape.dimensionSize;
+  float *spg_scale = tensors[1].properties.scale.scaleData;
+
+  int32_t spg_unflod_c = spg_valid_shape[1];
+  int32_t spg_unflod_h = spg_valid_shape[2];
+  int32_t spg_unflod_w = spg_valid_shape[3];
+  int32_t *spg_aligned_shape =
+      tensors[0].properties.alignedShape.dimensionSize;
+
+  std::vector<float> feat(unflod_c * unflod_h * unflod_w);
+  Dequantize16_neon(
+      feat.data(), cost_data, cost_scale, cost_valid_shape, cost_aligned_shape);
+
+  std::vector<float> spg(spg_unflod_c * spg_unflod_h * spg_unflod_w);
+  Dequantize(
+      spg.data(), spg_data, spg_scale, spg_valid_shape, spg_aligned_shape);
+
+  int32_t feat_h = unflod_h * low_max_stride_;
+  int32_t feat_w = unflod_w * low_max_stride_;
+  points.resize(feat_h * feat_w, 0.f);
+  cv::Mat feat_mat(unflod_c * unflod_h, unflod_w, CV_32FC1, feat.data());
+  cv::Mat points_mat(feat_h, feat_w, CV_32FC1, points.data());
+  cv::resize(feat_mat, points_mat, cv::Size(feat_w, feat_h));
+  feature_add_neon(spg.data(), points.data(), feat_h, feat_w, maxdisp_);
+  return 0;
+}
+
+int postprocess(std::vector<hbDNNTensor> &tensors,
+                std::vector<float> &points) {
   int low_max_stride_ = 8;
   int maxdisp_ = 192;
   for (int32_t i = 0; i < 2; i++) {
@@ -158,7 +267,7 @@ int postprocess(std::vector<hbDNNTensor> &tensors,
                       unflod_h,
                       unflod_w,
                       low_max_stride_,
-                      low_max_stride_);              
+                      low_max_stride_);
   return 0;
 }
 
@@ -339,31 +448,11 @@ static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_l
   return 0;
 }
 
-void bgr_to_nv12(const cv::Mat &bgr, cv::Mat &nv12) {
-  cv::Mat yuv_mat(bgr.rows * 3 / 2, bgr.cols, CV_8UC1);
-  cv::cvtColor(bgr, yuv_mat, cv::COLOR_BGR2YUV_I420);
-  nv12 = cv::Mat(bgr.rows * 3 / 2, bgr.cols, CV_8UC1);
-  int yLen = bgr.cols * bgr.rows;
-  int uvLen = yLen / 4;
-  memcpy(nv12.data, yuv_mat.data, yLen);
-  const uint8_t *U = yuv_mat.data + yLen;
-  const uint8_t *V = U + uvLen;
-  uint8_t * UV_out = nv12.data + yLen;
-//for (int el = 0; el < uvLen; ++el) {
-//    nv12.data[yLen + 2 * el] = yuv_mat.data[yLen + el];
-//    nv12.data[yLen + 2 * el + 1] = yuv_mat.data[yLen + el + uvLen];
-//  }
-  int height_2 = bgr.rows / 2;
-  int width_2 = bgr.cols / 2;
-  for (int j = 0; j < height_2; ++j) {
-    for (int i = 0; i < width_2; i += 8) {
-      uint8x8_t u = vld1_u8(U + j * width_2 + i);
-      uint8x8_t v = vld1_u8(V + j * width_2 + i);
-
-      uint8x8x2_t uv = vzip_u8(u, v);
-      vst1q_u8(UV_out + j * width_2 * 2 + 2 * i, vcombine_u8(uv.val[0], uv.val[1]));
-    }
-  }
+static void bgr_to_nv12(const cv::Mat &bgr, cv::Mat &nv12) {
+  int width = bgr.cols;
+  int height = bgr.rows;
+  nv12 = cv::Mat(height * 3 / 2, width, CV_8UC1);
+  image_conversion::bgr24_to_nv12_neon(bgr.data, nv12.data, width, height);
 }
 
 int StereonetProcess::stereonet_init(const std::string &model_file_name) {
@@ -539,7 +628,7 @@ int StereonetProcess::stereonet_inference(
   }
 
   ScopeProcessTime t("postprocess");
-  postprocess(output_tensors_[idle_tensor_id], points);
+  postprocess2(output_tensors_[idle_tensor_id], points);
   return StereonetErrorCode::OK;
 }
 

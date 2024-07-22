@@ -8,6 +8,8 @@
 #include <opencv2/opencv.hpp>
 #include <dnn/hb_dnn.h>
 
+#include "image_conversion.h"
+
 #ifndef STEREO_INCLUDE_STEREONET_PROCESS_H_
 #define STEREO_INCLUDE_STEREONET_PROCESS_H_
 

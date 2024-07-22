@@ -41,6 +41,7 @@ add_executable(
         stereonet_model_node
         ${PROJECT_SOURCE_DIR}/src/stereonet_component.cpp
         ${PROJECT_SOURCE_DIR}/src/stereonet_process.cpp
+        ${PROJECT_SOURCE_DIR}/src/image_conversion.cpp
         ${PROJECT_SOURCE_DIR}/src/node.cpp
 )
 
@@ -59,20 +60,22 @@ target_link_libraries(stereonet_model_node
 ament_target_dependencies(stereonet_model_node
         rclcpp
         rclcpp_components
+        cv_bridge
         std_msgs
-        sensor_msgs
-        cv_bridge)
+        sensor_msgs)
 
 add_library(stereonet_model SHARED
         ${PROJECT_SOURCE_DIR}/src/stereonet_component.cpp
-        ${PROJECT_SOURCE_DIR}/src/stereonet_process.cpp)
+        ${PROJECT_SOURCE_DIR}/src/stereonet_process.cpp
+        ${PROJECT_SOURCE_DIR}/src/image_conversion.cpp
+        )
 
 ament_target_dependencies(stereonet_model
         rclcpp
         rclcpp_components
+        cv_bridge
         std_msgs
-        sensor_msgs
-        cv_bridge)
+        sensor_msgs)
 
 target_link_libraries(stereonet_model
         ${rclcpp_LIBRARIES}
@@ -131,7 +134,6 @@ rclcpp_components_register_node(stereonet_model_intra_sub
         PLUGIN "stereonet::StereoNetSubNode"
         EXECUTABLE stereonet_model_intra_sub_node)
 
-# Install executables
 install(
         TARGETS stereonet_model_node stereonet_model stereonet_model_intra_sub_node stereonet_model_intra_sub
         RUNTIME DESTINATION lib/${PROJECT_NAME}

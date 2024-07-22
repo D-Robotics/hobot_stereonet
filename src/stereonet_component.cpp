@@ -1,7 +1,7 @@
 //
 // Created by zhy on 7/1/24.
 //
-
+#include <arm_neon.h>
 #include <rclcpp_components/register_node_macro.hpp>
 #include "stereonet_component.h"
 namespace stereonet {
@@ -311,8 +311,8 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
                    "when stereo_combine_mode is 0, the encoding of image must be bgr8!");
       return;
     }
-    left_sub_img.image_type = sub_image_type::NV12;
-    right_sub_img.image_type = sub_image_type::NV12;
+//    left_sub_img.image_type = sub_image_type::NV12;
+//    right_sub_img.image_type = sub_image_type::NV12;
     left_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
     right_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
     std::memcpy(right_sub_img.image.data, img->data.data(), ylen);
@@ -320,13 +320,14 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
     std::memcpy(right_sub_img.image.data + ylen, img->data.data() + 2 * ylen, uvlen);
     std::memcpy(left_sub_img.image.data + ylen, img->data.data() + 2 * ylen + uvlen, uvlen);
 
-
     {
-      ScopeProcessTime t("nv12->bgr");
-      left_sub_img.image_type = sub_image_type::BGR;
-      right_sub_img.image_type = sub_image_type::BGR;
-      cv::cvtColor(left_sub_img.image, left_sub_img.image, CV_YUV2BGR_NV12);
-      cv::cvtColor(right_sub_img.image, right_sub_img.image, CV_YUV2BGR_NV12);
+      ScopeProcessTime t("nv12->bgr_neon");
+      cv::Mat bgr(img->height, img->width, CV_8UC3);
+      image_conversion::nv12_to_bgr24_neon(img->data.data(), bgr.data, stereo_img_width, stereo_img_height);
+      right_img = bgr(
+          cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
+      left_img = bgr(
+          cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height)).clone();
     }
 
   } else if (encoding == "bgr8" || encoding == "BGR8") {
@@ -671,6 +672,7 @@ void StereoNetNode::inference_by_image() {
   std::vector<float> points;
   cv::Mat left_img = cv::imread(local_image_path_ + "/left.png");
   cv::Mat right_img = cv::imread(local_image_path_ + "/right.png");
+
   current_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
   ts = current_ts * 1e-9;
   left_sub_img.image_type = sub_image_type::BGR;
