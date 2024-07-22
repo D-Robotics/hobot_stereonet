@@ -628,7 +628,7 @@ int StereonetProcess::stereonet_inference(
   }
 
   ScopeProcessTime t("postprocess");
-  postprocess2(output_tensors_[idle_tensor_id], points);
+  postprocess(output_tensors_[idle_tensor_id], points);
   return StereonetErrorCode::OK;
 }
 
