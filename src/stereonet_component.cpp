@@ -58,12 +58,11 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   }
 
   assert(points.size() == img_origin_height * img_origin_width);
-  cv::Mat depth_img(depth_h_, depth_w_, CV_16SC1);
+  cv::Mat depth_img(img_origin_height, img_origin_width, CV_16SC1);
 
   for (int y = 0; y < img_origin_height; ++y) {
     for (int x = 0; x < img_origin_width; ++x) {
-      depth_img.at<uint16_t>(y, x) = 1000 *
-          (camera_fx * base_line) / points[y * img_origin_width + x];
+      depth_img.at<uint16_t>(y, x) = 1000 * (camera_fx * base_line) / points[y * img_origin_width + x];
     }
   }
   image_header.frame_id = std::get<0>(pub_raw_data).frame_id;
