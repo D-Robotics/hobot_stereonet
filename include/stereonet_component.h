@@ -34,7 +34,7 @@ class StereoNetNode : public rclcpp::Node {
   };
 
   using inference_data_t = std::tuple<sub_image, sub_image, double>;
-  using pub_data_t = std::tuple<sub_image, double, std::vector<float>>;
+  using pub_data_t = std::tuple<sub_image, double, std::vector<float>, cv::Mat>;
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
   : rclcpp::Node("StereoNetNode", node_options) {
@@ -101,6 +101,7 @@ class StereoNetNode : public rclcpp::Node {
       local_image_path_,
       stereo_calib_file_path_;
   int stereo_combine_mode_ = 1;
+  void convert_depth(pub_data_t &pub_raw_data);
 };
 }
 #endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_

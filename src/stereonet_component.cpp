@@ -4,6 +4,7 @@
 #include <arm_neon.h>
 #include <rclcpp_components/register_node_macro.hpp>
 #include "stereonet_component.h"
+
 namespace stereonet {
 int StereoNetNode::inference(const inference_data_t &inference_data,
                              std::vector<float> &points) {
@@ -44,27 +45,10 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   const cv::Mat &image = std::get<0>(pub_raw_data).image;
   const double ts = std::get<1>(pub_raw_data);
   const std::vector<float> &points = std::get<2>(pub_raw_data);
-  int img_origin_width;
-  int img_origin_height;
+  const cv::Mat &depth_img = std::get<3>(pub_raw_data);
 
   if (depth_image_pub_->get_subscription_count() < 1) return 0;
 
-  if (std::get<0>(pub_raw_data).image_type == sub_image_type::NV12) {
-    img_origin_width = image.cols;
-    img_origin_height = image.rows * 2 / 3;
-  } else {
-    img_origin_width = image.cols;
-    img_origin_height = image.rows;
-  }
-
-  assert(points.size() == img_origin_height * img_origin_width);
-  cv::Mat depth_img(img_origin_height, img_origin_width, CV_16SC1);
-
-  for (int y = 0; y < img_origin_height; ++y) {
-    for (int x = 0; x < img_origin_width; ++x) {
-      depth_img.at<uint16_t>(y, x) = 1000 * (camera_fx * base_line) / points[y * img_origin_width + x];
-    }
-  }
   image_header.frame_id = std::get<0>(pub_raw_data).frame_id;
   image_header.stamp.sec = ts;
   image_header.stamp.nanosec = (ts - image_header.stamp.sec) * 1e9;
@@ -112,10 +96,11 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
 }
 
 int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
-  int points_size = 0;
   const cv::Mat &image = std::get<0>(pub_raw_data).image;
   const double ts = std::get<1>(pub_raw_data);
   const std::vector<float> &points = std::get<2>(pub_raw_data);
+  const cv::Mat &depth_img = std::get<3>(pub_raw_data);
+  uint16_t *depth_ptr = reinterpret_cast<uint16_t *>(depth_img.data);
 
   if (pointcloud2_pub_->get_subscription_count() < 1) return 0;
 
@@ -133,34 +118,78 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
     img_origin_height = image.rows;
   }
 
-  modifier.resize(points.size() / 4);
-  modifier.setPointCloud2Fields(3,
-                                "x", 1, sensor_msgs::msg::PointField::FLOAT32,
-                                "y", 1, sensor_msgs::msg::PointField::FLOAT32,
-                                "z", 1, sensor_msgs::msg::PointField::FLOAT32);
-  sensor_msgs::PointCloud2Iterator<float> iter_x(point_cloud_msg, "x");
-  sensor_msgs::PointCloud2Iterator<float> iter_y(point_cloud_msg, "y");
-  sensor_msgs::PointCloud2Iterator<float> iter_z(point_cloud_msg, "z");
+  point_cloud_msg.header.frame_id = std::get<0>(pub_raw_data).frame_id;
+  point_cloud_msg.header.stamp.sec = ts;
+  point_cloud_msg.header.stamp.nanosec = (ts - point_cloud_msg.header.stamp.sec) * 1e9;
+  point_cloud_msg.is_dense = false;
+  point_cloud_msg.fields.resize(3);
+  point_cloud_msg.width = (img_origin_width / 2) * (img_origin_height / 2);
+  point_cloud_msg.fields[0].name = "x";
+  point_cloud_msg.fields[0].offset = 0;
+  point_cloud_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
+  point_cloud_msg.fields[0].count = 1;
+
+  point_cloud_msg.fields[1].name = "y";
+  point_cloud_msg.fields[1].offset = 4;
+  point_cloud_msg.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
+  point_cloud_msg.fields[1].count = 1;
+
+  point_cloud_msg.fields[2].name = "z";
+  point_cloud_msg.fields[2].offset = 8;
+  point_cloud_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
+  point_cloud_msg.fields[2].count = 1;
+  point_cloud_msg.height = 1;
+  point_cloud_msg.point_step = 12;  // 每个点包含3个float32
+  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
+  point_cloud_msg.data.resize(point_cloud_msg.row_step * point_cloud_msg.height);
+
+  float *pcd_data_ptr = reinterpret_cast<float *>(point_cloud_msg.data.data());
+
   for (int y = 0; y < img_origin_height; y += 2) {
     for (int x = 0; x < img_origin_width; x += 2) {
-      float depth = (camera_cx * base_line) / points[y * img_origin_width + x];
+      float depth = depth_ptr[y * img_origin_width + x] / 1000.0f;
       //if (depth < depth_min_ || depth > depth_max_) continue;
 
       float X = (x - camera_cx) / camera_fx * depth;
       float Y = (y - camera_cy) / camera_fy * depth;
-
-      *iter_x = X, *iter_y = Y, *iter_z = depth;
-      ++iter_x, ++iter_y, ++iter_z;
-      ++points_size;
+      *pcd_data_ptr++ = X;
+      *pcd_data_ptr++ = Y;
+      *pcd_data_ptr++ = depth;
     }
   }
-  point_cloud_msg.header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  point_cloud_msg.header.stamp.sec = ts;
-  point_cloud_msg.header.stamp.nanosec = (ts - point_cloud_msg.header.stamp.sec) * 1e9;
-  point_cloud_msg.height = 1;
-  point_cloud_msg.is_dense = false;
-  //point_cloud_msg.width = points_size;
-  //point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
+
+//  float32x4_t fx_vec = vdupq_n_f32(1.0f / camera_fx);
+//  float32x4_t fy_vec = vdupq_n_f32(1.0f / camera_fy);
+//  float32x4_t cx_vec = vdupq_n_f32(camera_cx);
+//  float32x4_t cy_vec = vdupq_n_f32(camera_cy);
+//  float32x4_t v1000 = vdupq_n_f32(0.001);
+//  for (uint32_t y = 0; y < img_origin_height; y += 2) {
+//    float32x4_t y_f32 = vdupq_n_f32(static_cast<float>(y));
+//    for (uint32_t x = 0; x < img_origin_width; x += 8) {
+//      uint32_t idx = y * img_origin_width + x;
+//      uint32_t xx[4] = {x, x + 2, x + 4, x + 6};
+//      uint16_t d[4] = {depth_ptr[idx], depth_ptr[idx + 2], depth_ptr[idx + 4], depth_ptr[idx + 6]};
+//      uint16x4_t depth_u16 = vld1_u16(d);
+//      float32x4_t depth_f32 = vcvtq_f32_u32(vmovl_u16(depth_u16));
+//      depth_f32 = vmulq_f32(depth_f32, v1000);
+//      uint32x4_t x_u32 = vld1q_u32(xx);
+//      float32x4_t x_f32 = vcvtq_f32_u32(x_u32);
+//      x_f32 = vmulq_f32(vsubq_f32(x_f32, cx_vec), fx_vec);
+//      y_f32 = vmulq_f32(vsubq_f32(y_f32, cy_vec), fy_vec);
+//      float32x4_t point_x = vmulq_f32(x_f32, depth_f32);
+//      float32x4_t point_y = vmulq_f32(y_f32, depth_f32);
+//      float32x4_t point_z = depth_f32;
+//      float px[4], py[4], pz[4];
+//      vst1q_f32(px, point_x);
+//      vst1q_f32(py, point_y);
+//      vst1q_f32(pz, point_z);
+//      for (int l = 0; l < 4; ++l) {
+//        *pcd_data_ptr++ = px[l];
+//        *pcd_data_ptr++ = py[l];
+//        *pcd_data_ptr++ = pz[l];
+//      }
+//    }
+//  }
   pointcloud2_pub_->publish(point_cloud_msg);
   return 0;
 }
@@ -400,7 +429,8 @@ void StereoNetNode::inference_func() {
         const sub_image &left_sub_img = std::get<0>(inference_data);
         const cv::Mat &left_img = left_sub_img.image;
         const double ts = std::get<2>(inference_data);
-        pub_data_t pub_data = std::make_tuple(left_sub_img, ts, points);
+        cv::Mat depth;
+        pub_data_t pub_data = std::make_tuple(left_sub_img, ts, points, depth);
         pub_func(pub_data);
       }
     }
@@ -408,11 +438,12 @@ void StereoNetNode::inference_func() {
   inference_que_.clear();
 }
 
-void mapping_resolution(StereoNetNode::pub_data_t &pub_raw_data,
-                        int depth_w, int depth_h) {
+
+void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   int img_origin_width, img_origin_height;
   const cv::Mat &image = std::get<0>(pub_raw_data).image;
   std::vector<float> &points = std::get<2>(pub_raw_data);
+  cv::Mat &depth_img = std::get<3>(pub_raw_data);
   std::vector<float> resized_points;
   if (std::get<0>(pub_raw_data).image_type == StereoNetNode::sub_image_type::NV12) {
     img_origin_width = image.cols;
@@ -421,22 +452,37 @@ void mapping_resolution(StereoNetNode::pub_data_t &pub_raw_data,
     img_origin_width = image.cols;
     img_origin_height = image.rows;
   }
-  if (img_origin_width != depth_w || img_origin_height != depth_h) {
+  if (img_origin_width != depth_w_ || img_origin_height != depth_h_) {
     resized_points.resize(img_origin_width * img_origin_height);
     cv::Mat resized_mat(img_origin_height, img_origin_width, CV_32FC1,
                         resized_points.data());
-    cv::Mat origin_mat(depth_h, depth_w, CV_32FC1, points.data());
+    cv::Mat origin_mat(depth_h_, depth_w_, CV_32FC1, points.data());
     cv::resize(origin_mat, resized_mat,
                cv::Size(img_origin_width, img_origin_height));
     points = std::move(resized_points);
   }
+  depth_img = cv::Mat(img_origin_height, img_origin_width, CV_16UC1);
+  uint16_t *depth_data = (uint16_t *)depth_img.data;
+  float factor = 1000 * (camera_fx * base_line);
+  uint32_t num_pixels = img_origin_height * img_origin_width;
+  for (uint32_t i = 0; i < num_pixels; ++i) {
+    depth_data[i] = factor / points[i];
+  }
+//  float32x4_t zero_vec = vdupq_n_f32(0.01f);
+//  float32x4_t factor_vector = vdupq_n_f32(factor);
+//  for (uint32_t i = 0; i < num_pixels; i += 4) {
+//    float32x4_t points_vec = vmaxq_f32(vld1q_f32(&points[i]), zero_vec);
+//    float32x4_t depth_vec = vdivq_f32(factor_vector, points_vec);
+//    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(depth_vec));
+//    vst1_u16(&depth_data[i], depth_int16_vec);
+//  }
 }
 
 void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
   int ret = 0;
   {
-    ScopeProcessTime t("mapping_resolution");
-    mapping_resolution(pub_raw_data, depth_w_, depth_h_);
+    ScopeProcessTime t("convert to depth");
+    convert_depth(pub_raw_data);
   }
   {
     ScopeProcessTime t("pub_depth_image");
