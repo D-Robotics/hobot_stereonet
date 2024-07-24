@@ -95,7 +95,7 @@ class StereoNetNode : public rclcpp::Node {
   cv::Mat Kl, Kr, Dl, Dr, R_rl, t_rl;
 
   int origin_image_width_, origin_image_height_;
-  float depth_min_, depth_max_;
+  float height_min_, height_max_;
   std::string stereonet_model_file_path_,
       stereo_image_topic_,
       local_image_path_,

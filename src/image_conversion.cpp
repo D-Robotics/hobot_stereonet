@@ -13,10 +13,13 @@ void image_conversion::nv12_to_bgr24_neon(uint8_t* nv12, uint8_t* bgr24, int wid
   int8x8_t _v127= vdup_n_s8(127);
   uint8x8_t _v16 = vdup_n_u8(16);
   uint8x8_t _v75 = vdup_n_u8(75);
+  uint8x8_t _vu64 = vdup_n_u8(64);
   int8x8_t _v52 = vdup_n_s8(52);
   int8x8_t _v25 = vdup_n_s8(25);
   int8x8_t _v102 = vdup_n_s8(102);
   int16x8_t _v64 = vdupq_n_s16(64);
+  uint8x8_t _v0 = vdup_n_u8(0);
+
 
   for (int y = 0; y < height; y += 2)
   {
@@ -28,9 +31,10 @@ void image_conversion::nv12_to_bgr24_neon(uint8_t* nv12, uint8_t* bgr24, int wid
 
     for (; nn > 0; nn--)
     {
-      int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vsub_u8(vld1_u8(yptr0), _v16), _v75));
-      int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vsub_u8(vld1_u8(yptr1), _v16), _v75));
-
+//      int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vsub_u8(vld1_u8(yptr0), _v16), _v75));
+//      int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vsub_u8(vld1_u8(yptr1), _v16), _v75));
+      int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr0), _v75));
+      int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr1), _v75));
       int8x8_t _uuvv = vreinterpret_s8_u8(vsub_u8(vld1_u8(uvptr), _v128));
       int8x8x2_t _uuuuvvvv = vtrn_s8(_uuvv, _uuvv);
       int8x8_t _uu = _uuuuvvvv.val[0];

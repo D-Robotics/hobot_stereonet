@@ -34,7 +34,8 @@ source /opt/tros/humble/setup.bash
 
 # 终端1 启动双目模型launch文件
 ros2 launch stereonet_model stereonet_model.launch.py \
-stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True"
+stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
+height_min:=0.1 height_max:=1.0
 
 # 终端2 启动mipi双目相机launch文件
 ros2 launch mipi_cam mipi_cam_dual_channel.launch.py \
@@ -82,6 +83,8 @@ mipi_image_width:=1280 mipi_image_height:=640
 | stereo_image_topic        | 默认 /image_combine_raw | 订阅双目图像消息的话题名                        |
 | need_rectify        | 默认 True | 是否对双目数据做基线对齐和去畸变，相机内外参在config/stereo.yaml文件内指定
 | stereo_combine_mode        | 默认 1 | 左右目图像往往拼接在一张图上再发布出去，1为上下拼接，0为左右拼接，指示双目算法如何拆分图像   
+| height_min        | 默认 -0.2 |  过滤掉相机垂直方向上高度小于height_min的点，单位为米
+| height_max        | 默认 999.9 | 过滤掉相机垂直方向上高度大于height_max的点，单位为米   
 
 # 深度测量
 包内提供了script/evaluate_depth.py交互式脚本，用户可通过鼠标查看对应像素点的深度。

@@ -5,6 +5,11 @@
 #include <rclcpp_components/register_node_macro.hpp>
 #include "stereonet_component.h"
 
+//#include <pcl/point_types.h>
+//#include <pcl/filters/radius_outlier_removal.h>
+//#include <pcl_conversions/pcl_conversions.h>
+
+
 namespace stereonet {
 int StereoNetNode::inference(const inference_data_t &inference_data,
                              std::vector<float> &points) {
@@ -96,6 +101,7 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
 }
 
 int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
+  uint32_t point_size = 0;
   const cv::Mat &image = std::get<0>(pub_raw_data).image;
   const double ts = std::get<1>(pub_raw_data);
   const std::vector<float> &points = std::get<2>(pub_raw_data);
@@ -123,7 +129,6 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   point_cloud_msg.header.stamp.nanosec = (ts - point_cloud_msg.header.stamp.sec) * 1e9;
   point_cloud_msg.is_dense = false;
   point_cloud_msg.fields.resize(3);
-  point_cloud_msg.width = (img_origin_width / 2) * (img_origin_height / 2);
   point_cloud_msg.fields[0].name = "x";
   point_cloud_msg.fields[0].offset = 0;
   point_cloud_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
@@ -139,27 +144,38 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   point_cloud_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
   point_cloud_msg.fields[2].count = 1;
   point_cloud_msg.height = 1;
-  point_cloud_msg.point_step = 12;  // 每个点包含3个float32
-  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
-  point_cloud_msg.data.resize(point_cloud_msg.row_step * point_cloud_msg.height);
+  point_cloud_msg.point_step = 12;
+
+  //  point_cloud_msg.width = (img_origin_width / 2) * (img_origin_height / 2);
+  //  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
+  point_cloud_msg.data.resize(
+      (img_origin_width / 2) * (img_origin_height / 2) * point_cloud_msg.point_step *
+      point_cloud_msg.height);
 
   float *pcd_data_ptr = reinterpret_cast<float *>(point_cloud_msg.data.data());
-
+  float fy;
   for (int y = 0; y < img_origin_height; y += 2) {
+    fy = (camera_cy  - y) / camera_fy;
     for (int x = 0; x < img_origin_width; x += 2) {
       float depth = depth_ptr[y * img_origin_width + x] / 1000.0f;
-      //if (depth < depth_min_ || depth > depth_max_) continue;
-
-      float X = (x - camera_cx) / camera_fx * depth;
-      float Y = (y - camera_cy) / camera_fy * depth;
+      //if (depth < height_min_ || depth > height_max_) continue;
+      float X = (camera_cx - x) / camera_fx * depth;
+      float Y = fy * depth;
+      if (Y < height_min_ || Y > height_max_) {
+        continue;
+      }
+      *pcd_data_ptr++ = depth;
       *pcd_data_ptr++ = X;
       *pcd_data_ptr++ = Y;
-      *pcd_data_ptr++ = depth;
+      point_size++;
     }
   }
-
-//  float32x4_t fx_vec = vdupq_n_f32(1.0f / camera_fx);
-//  float32x4_t fy_vec = vdupq_n_f32(1.0f / camera_fy);
+  point_cloud_msg.width = point_size;
+  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
+  point_cloud_msg.data.resize(point_size * point_cloud_msg.point_step *
+          point_cloud_msg.height);
+//  float32x4_t fx_vec = vdupq_n_f32(1 / camera_fx);
+//  float32x4_t fy_vec = vdupq_n_f32(1 / camera_fy);
 //  float32x4_t cx_vec = vdupq_n_f32(camera_cx);
 //  float32x4_t cy_vec = vdupq_n_f32(camera_cy);
 //  float32x4_t v1000 = vdupq_n_f32(0.001);
@@ -168,29 +184,22 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
 //    for (uint32_t x = 0; x < img_origin_width; x += 8) {
 //      uint32_t idx = y * img_origin_width + x;
 //      uint32_t xx[4] = {x, x + 2, x + 4, x + 6};
-//      uint16_t d[4] = {depth_ptr[idx], depth_ptr[idx + 2], depth_ptr[idx + 4], depth_ptr[idx + 6]};
-//      uint16x4_t depth_u16 = vld1_u16(d);
-//      float32x4_t depth_f32 = vcvtq_f32_u32(vmovl_u16(depth_u16));
-//      depth_f32 = vmulq_f32(depth_f32, v1000);
-//      uint32x4_t x_u32 = vld1q_u32(xx);
-//      float32x4_t x_f32 = vcvtq_f32_u32(x_u32);
+//      uint16x4x2_t d = vld2_u16(&depth_ptr[idx]);
+//      float32x4_t depth_f32 = vmulq_f32(vcvtq_f32_u32(vmovl_u16(d.val[0])), v1000);
+//      float32x4_t x_f32 = vcvtq_f32_u32(vld1q_u32(xx));
 //      x_f32 = vmulq_f32(vsubq_f32(x_f32, cx_vec), fx_vec);
 //      y_f32 = vmulq_f32(vsubq_f32(y_f32, cy_vec), fy_vec);
-//      float32x4_t point_x = vmulq_f32(x_f32, depth_f32);
-//      float32x4_t point_y = vmulq_f32(y_f32, depth_f32);
-//      float32x4_t point_z = depth_f32;
-//      float px[4], py[4], pz[4];
-//      vst1q_f32(px, point_x);
-//      vst1q_f32(py, point_y);
-//      vst1q_f32(pz, point_z);
-//      for (int l = 0; l < 4; ++l) {
-//        *pcd_data_ptr++ = px[l];
-//        *pcd_data_ptr++ = py[l];
-//        *pcd_data_ptr++ = pz[l];
-//      }
+//      float32x4x3_t pts = {vmulq_f32(x_f32, depth_f32),
+//                           vmulq_f32(y_f32, depth_f32),
+//                           depth_f32};
+//      vst3q_f32(pcd_data_ptr, pts);
+//      pcd_data_ptr += 12;
 //    }
 //  }
-  pointcloud2_pub_->publish(point_cloud_msg);
+  {
+    ScopeProcessTime t("pcd publisher");
+    pointcloud2_pub_->publish(point_cloud_msg);
+  }
   return 0;
 }
 //
@@ -225,7 +234,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
 //  for (int y = 0; y < img_origin_height; ++y) {
 //    for (int x = 0; x < img_origin_width; ++x) {
 //      float depth = (camera_cx * base_line) / points[y * img_origin_width + x];
-//      if (depth < depth_min_ || depth > depth_max_) continue;
+//      if (depth < height_min_ || depth > height_max_) continue;
 //      float X = (x - camera_cx) / camera_fx * depth;
 //      float Y = (y - camera_cy) / camera_fy * depth;
 //      points_xyz.emplace_back(X);
@@ -341,21 +350,27 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
     }
 //    left_sub_img.image_type = sub_image_type::NV12;
 //    right_sub_img.image_type = sub_image_type::NV12;
-    left_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
-    right_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
-    std::memcpy(right_sub_img.image.data, img->data.data(), ylen);
-    std::memcpy(left_sub_img.image.data, img->data.data() + ylen, ylen);
-    std::memcpy(right_sub_img.image.data + ylen, img->data.data() + 2 * ylen, uvlen);
-    std::memcpy(left_sub_img.image.data + ylen, img->data.data() + 2 * ylen + uvlen, uvlen);
+//    left_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
+//    right_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
+//    std::memcpy(right_sub_img.image.data, img->data.data(), ylen);
+//    std::memcpy(left_sub_img.image.data, img->data.data() + ylen, ylen);
+//    std::memcpy(right_sub_img.image.data + ylen, img->data.data() + 2 * ylen, uvlen);
+//    std::memcpy(left_sub_img.image.data + ylen, img->data.data() + 2 * ylen + uvlen, uvlen);
 
     {
-      ScopeProcessTime t("nv12->bgr_neon");
+      ScopeProcessTime t("nv12->bgr");
       cv::Mat bgr(img->height, img->width, CV_8UC3);
-      image_conversion::nv12_to_bgr24_neon(img->data.data(), bgr.data, stereo_img_width, stereo_img_height);
+//      cv::Mat nv12(img->height * 3 / 2, img->width, CV_8UC1, img->data.data());
+//      cv::cvtColor(nv12, bgr, cv::COLOR_YUV2BGR_NV12);
+      image_conversion::nv12_to_bgr24_neon(img->data.data(), bgr.data, img->width, img->height);
       right_img = bgr(
           cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
       left_img = bgr(
           cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height)).clone();
+      left_sub_img.image_type = sub_image_type::BGR;
+      right_sub_img.image_type = sub_image_type::BGR;
+      left_sub_img.image = left_img;
+      right_sub_img.image = right_img;
     }
 
   } else if (encoding == "bgr8" || encoding == "BGR8") {
@@ -437,7 +452,6 @@ void StereoNetNode::inference_func() {
   }
   inference_que_.clear();
 }
-
 
 void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   int img_origin_width, img_origin_height;
@@ -611,19 +625,19 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
 }
 
 void StereoNetNode::parameter_configuration() {
-  this->declare_parameter("camera_cx", 480.0f);
+  this->declare_parameter("camera_cx", 479.5f);
   this->get_parameter("camera_cx", camera_cx);
   RCLCPP_INFO_STREAM(this->get_logger(), "camera_cx: " << camera_cx);
 
-  this->declare_parameter("camera_fx", 300.0f);
+  this->declare_parameter("camera_fx", 450.0f);
   this->get_parameter("camera_fx", camera_fx);
   RCLCPP_INFO_STREAM(this->get_logger(), "camera_fx: " << camera_fx);
 
-  this->declare_parameter("camera_cy", 270.0f);
+  this->declare_parameter("camera_cy", 269.5f);
   this->get_parameter("camera_cy", camera_cy);
   RCLCPP_INFO_STREAM(this->get_logger(), "camera_cy: " << camera_cy);
 
-  this->declare_parameter("camera_fy", 300.0f);
+  this->declare_parameter("camera_fy", 450.0f);
   this->get_parameter("camera_fy", camera_fy);
   RCLCPP_INFO_STREAM(this->get_logger(), "camera_fy: " << camera_fy);
 
@@ -635,7 +649,7 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("save_image", save_image_);
   RCLCPP_INFO_STREAM(this->get_logger(), "save_image: " << save_image_);
 
-  this->declare_parameter("base_line", 0.06f);
+  this->declare_parameter("base_line", 0.1f);
   this->get_parameter("base_line", base_line);
   RCLCPP_INFO_STREAM(this->get_logger(), "base_line: " << base_line);
 
@@ -659,13 +673,13 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("local_image_path", local_image_path_);
   RCLCPP_INFO_STREAM(this->get_logger(), "local_image_path_: " << local_image_path_);
 
-  this->declare_parameter("depth_min", depth_min_);
-  this->get_parameter("depth_min", depth_min_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "depth_min_: " << depth_min_);
+  this->declare_parameter("height_min", -0.2);
+  this->get_parameter("height_min", height_min_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "height_min_: " << height_min_);
 
-  this->declare_parameter("depth_max", depth_max_);
-  this->get_parameter("depth_max", depth_max_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "depth_max: " << depth_max_);
+  this->declare_parameter("height_max", 1.f);
+  this->get_parameter("height_max", height_max_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "height_max: " << height_max_);
 
   this->declare_parameter("stereo_combine_mode", stereo_combine_mode_);
   this->get_parameter("stereo_combine_mode", stereo_combine_mode_);
