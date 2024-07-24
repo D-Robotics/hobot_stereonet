@@ -273,7 +273,7 @@ void stereo_rectify(
 
   cv::stereoRectify(Kl, Dl, Kr, Dr,
                     cv::Size(width, height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                    cv::CALIB_ZERO_DISPARITY, 0);
+                    cv::CALIB_ZERO_DISPARITY);
 
   cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(width, height), CV_32FC1, undistmap1l, undistmap2l);
   cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(width, height), CV_32FC1, undistmap1r, undistmap2r);
@@ -281,12 +281,12 @@ void stereo_rectify(
   cv::remap(left_image, rectified_left_image, undistmap1l, undistmap2l, cv::INTER_LINEAR);
   cv::remap(right_image, rectified_right_image, undistmap1r, undistmap2r, cv::INTER_LINEAR);
 
-  rectified_fx = Pl.at<double>(0, 0);
-  rectified_cx = Pl.at<double>(0, 2);
-  rectified_fy = Pl.at<double>(1, 1);
-  rectified_cy = Pl.at<double>(1, 2);
-  const cv::Mat t = Rr * t_rl;
-  baseline = std::abs(t.at<double>(0, 0));
+  rectified_fx = Q.at<double>(2, 3);
+  rectified_fy = Q.at<double>(2, 3);
+  rectified_cx = -Q.at<double>(0, 3);
+  rectified_cy = -Q.at<double>(1, 3);
+  //  const cv::Mat t = Rr * t_rl;
+  baseline = std::abs(1 / Q.at<double>(3, 2));
 }
 
 void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
@@ -733,6 +733,14 @@ void StereoNetNode::inference_by_image() {
   cv::Mat right_img = cv::imread(local_image_path_ + "/right.png");
 
   current_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+  cv::Mat img;
+  cv::vconcat(left_img, right_img, img);
+  uint8_t *nv12 = new uint8_t[img.cols * img.rows * 3 / 2];
+
+  image_conversion::bgr24_to_nv12_neon(img.data, nv12, img.cols, img.rows);
+  image_conversion::nv12_to_bgr24_neon(nv12, img.data, img.cols, img.rows);
+  cv::imwrite("test_noen.png", img);
   ts = current_ts * 1e-9;
   left_sub_img.image_type = sub_image_type::BGR;
   right_sub_img.image_type = sub_image_type::BGR;
