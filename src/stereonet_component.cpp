@@ -733,14 +733,6 @@ void StereoNetNode::inference_by_image() {
   cv::Mat right_img = cv::imread(local_image_path_ + "/right.png");
 
   current_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-  cv::Mat img;
-  cv::vconcat(left_img, right_img, img);
-  uint8_t *nv12 = new uint8_t[img.cols * img.rows * 3 / 2];
-
-  image_conversion::bgr24_to_nv12_neon(img.data, nv12, img.cols, img.rows);
-  image_conversion::nv12_to_bgr24_neon(nv12, img.data, img.cols, img.rows);
-  cv::imwrite("test_noen.png", img);
   ts = current_ts * 1e-9;
   left_sub_img.image_type = sub_image_type::BGR;
   right_sub_img.image_type = sub_image_type::BGR;
