@@ -51,8 +51,7 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   if (depth_image_pub_->get_subscription_count() < 1) return 0;
 
   image_header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  image_header.stamp.sec = ts;
-  image_header.stamp.nanosec = (ts - image_header.stamp.sec) * 1e9;
+  image_header.stamp = std::get<0>(pub_raw_data).stamp;
   img_bridge = cv_bridge::CvImage(image_header, "mono16", depth_img);
   img_bridge.toImageMsg(depth_img_msg);
   depth_image_pub_->publish(depth_img_msg);
@@ -88,11 +87,43 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
                     cv::COLORMAP_JET);
 
   image_header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  image_header.stamp.sec = ts;
-  image_header.stamp.nanosec = (ts - image_header.stamp.sec) * 1e9;
+  image_header.stamp = std::get<0>(pub_raw_data).stamp;
   img_bridge = cv_bridge::CvImage(image_header, "bgr8", visual_img);
   img_bridge.toImageMsg(visual_img_msg);
   visual_image_pub_->publish(visual_img_msg);
+  return 0;
+}
+
+int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
+  if (rectified_image_pub_->get_subscription_count() < 1) return 0;
+  RCLCPP_WARN_ONCE(this->get_logger(),
+    "pub rectified image with topic name [%s]",
+    rectified_image_topic_.data());
+
+  const cv::Mat &image = std::get<0>(pub_raw_data).image;
+  int height = image.rows;
+  int width = image.cols;
+  const uint8_t* nv12_data_ptr = nullptr;
+  cv::Mat nv12_image;
+  if (std::get<0>(pub_raw_data).image_type == sub_image_type::NV12) {
+    nv12_data_ptr = image.ptr<uint8_t>();
+  } else {
+    nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
+    image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
+    nv12_data_ptr = nv12_image.ptr<uint8_t>();
+  }
+  sensor_msgs::msg::Image pub_img_msg;
+  pub_img_msg.header.frame_id = std::get<0>(pub_raw_data).frame_id;
+  pub_img_msg.header.stamp = std::get<0>(pub_raw_data).stamp;
+  pub_img_msg.height = height;
+  pub_img_msg.width = width;
+  pub_img_msg.encoding = "nv12";
+  pub_img_msg.step = width;
+  size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
+  pub_img_msg.data.resize(data_len);
+  memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
+  rectified_image_pub_->publish(pub_img_msg);
+
   return 0;
 }
 
@@ -121,8 +152,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   }
 
   point_cloud_msg.header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  point_cloud_msg.header.stamp.sec = ts;
-  point_cloud_msg.header.stamp.nanosec = (ts - point_cloud_msg.header.stamp.sec) * 1e9;
+  point_cloud_msg.header.stamp = std::get<0>(pub_raw_data).stamp;
   point_cloud_msg.is_dense = false;
   point_cloud_msg.fields.resize(3);
   point_cloud_msg.fields[0].name = "x";
@@ -406,6 +436,8 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 
   left_sub_img.frame_id = img->header.frame_id;
   right_sub_img.frame_id = img->header.frame_id;
+  left_sub_img.stamp = img->header.stamp;
+  right_sub_img.stamp = img->header.stamp;
 
   inference_data_t inference_data = std::make_tuple(left_sub_img, right_sub_img, ts);
   if (inference_que_.size() > 5) {
@@ -433,7 +465,7 @@ void StereoNetNode::inference_func() {
                        camera_fx, camera_cx, camera_fy, camera_cy, base_line);
         left_image = rectified_left_image;
         right_image = rectified_right_image;
-        RCLCPP_INFO_ONCE(this->get_logger(),
+        RCLCPP_WARN_ONCE(this->get_logger(),
             "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
             camera_fx, camera_fy, camera_cx, camera_cy, base_line);
         //  return dump_rectified_image(left_img, right_img, rectified_left_img, rectified_right_img);
@@ -512,6 +544,11 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
     ScopeProcessTime t("pub_visual");
     ret = pub_visual_image(pub_raw_data);
   }
+  {
+    ScopeProcessTime t("pub_rectified");
+    ret = pub_rectified_image(pub_raw_data);
+  }
+  
   if (ret != 0) {
     RCLCPP_ERROR(this->get_logger(), "pub failed, ret: %d", ret);
   }
@@ -771,6 +808,9 @@ void StereoNetNode::pub_sub_configuration() {
 
   visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       "~/stereonet_visual", 10);
+      
+  rectified_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+      rectified_image_topic_, 10);
 }
 }
 

@@ -16,6 +16,7 @@
 #include <sensor_msgs/msg/point_field.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <cv_bridge/cv_bridge.h>
+#include <builtin_interfaces/msg/time.hpp>
 
 namespace stereonet {
 
@@ -29,6 +30,7 @@ class StereoNetNode : public rclcpp::Node {
 
   struct sub_image {
     std::string frame_id;
+    builtin_interfaces::msg::Time stamp;
     cv::Mat image;
     sub_image_type image_type;
   };
@@ -67,6 +69,7 @@ class StereoNetNode : public rclcpp::Node {
   int pub_depth_image(const pub_data_t &);
   int pub_pointcloud2(const pub_data_t &);
   int pub_visual_image(const pub_data_t &);
+  int pub_rectified_image(const pub_data_t &);
 
   void pub_sub_configuration();
 
@@ -104,6 +107,10 @@ class StereoNetNode : public rclcpp::Node {
   float leaf_size_, stdv_;
   int KMean_;
   void convert_depth(pub_data_t &pub_raw_data);
+
+  std::string rectified_image_topic_ = "~/rectified_image";
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
+    rectified_image_pub_ = nullptr;
 };
 }
 #endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_
