@@ -333,14 +333,14 @@ void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
   cv::imwrite("./after.jpg", img_rtf);
 }
 
-void save_images(cv::Mat &left_img, cv::Mat &right_img, builtin_interfaces::msg::Time ts) {
+void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts) {
   static std::atomic_bool directory_created{false};
   if (!directory_created) {
     directory_created = true;
     system("mkdir -p ./images/cam0/data/ ./images/cam1/data/");
   }
-  cv::imwrite("./images/cam0/data/" + std::to_string(ts.sec) + "_" + std::to_string(ts.sec) + ".png", left_img);
-  cv::imwrite("./images/cam1/data/" + std::to_string(ts.sec) + "_" + std::to_string(ts.sec) + ".png", right_img);
+  cv::imwrite("./images/cam0/data/" + std::to_string(ts) + ".png", left_img);
+  cv::imwrite("./images/cam1/data/" + std::to_string(ts) + ".png", right_img);
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
@@ -422,7 +422,7 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
     left_sub_img.image = left_img;
     right_sub_img.image = right_img;
     if (save_image_) {
-      save_images(left_sub_img.image, right_sub_img.image, img->header.stamp);
+      save_images(left_sub_img.image, right_sub_img.image, img->header.stamp.sec * 1e9 + img->header.stamp.nanosec);
       return;
     }
   }
