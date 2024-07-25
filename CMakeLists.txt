@@ -23,10 +23,38 @@ set(SYS_ROOT ${CMAKE_SYSROOT})
 message("PREFIX_PATH is " ${PREFIX_PATH})
 message("SYS_ROOT is " ${SYS_ROOT})
 
+set(PCL_INCLUDE_DIRS ${SYS_ROOT}/usr/include/pcl-1.12/
+                     ${SYS_ROOT}/usr/include/eigen3/  
+                     /opt/ros/humble/include/
+                     /opt/ros/humble/include/message_filters/
+                     /opt/ros/humble/include/pcl_msgs/)
+set(PCL_LIBRARIES 
+pcl_common
+pcl_kdtree
+pcl_octree
+pcl_search
+pcl_sample_consensus
+pcl_filters
+pcl_io
+pcl_features
+pcl_ml
+pcl_segmentation
+pcl_visualization
+pcl_surface
+pcl_registration
+pcl_keypoints
+pcl_tracking
+pcl_recognition
+pcl_stereo
+pcl_apps
+pcl_outofcore
+pcl_people)
+
 include_directories(
         ${OpenCV_INCLUDE_DIRS}
         ${rclcpp_INCLUDE_DIRS}
         ${cv_bridge_INCLUDE_DIRS}/cv_bridge/
+        ${PCL_INCLUDE_DIRS}
 )
 
 include_directories(${SYS_ROOT}/usr/include)
@@ -35,6 +63,7 @@ link_directories(
   ${SYS_ROOT}/usr/lib/hbbpu/
   ${SYS_ROOT}/usr/lib/
   ${SYS_ROOT}/usr/hobot/lib/
+  ${SYS_ROOT}/usr/lib/aarch64-linux-gnu/
 )
 
 add_executable(
@@ -55,7 +84,8 @@ target_link_libraries(stereonet_model_node
         dnn
         cnn_intf
         hbrt_bayes_aarch64
-        pthread)
+        pthread
+        ${PCL_LIBRARIES})
 
 ament_target_dependencies(stereonet_model_node
         rclcpp
@@ -87,7 +117,8 @@ target_link_libraries(stereonet_model
         dnn
         cnn_intf
         hbrt_bayes_aarch64
-        pthread)
+        pthread
+        ${PCL_LIBRARIES})
 
 rclcpp_components_register_node(stereonet_model
         PLUGIN "stereonet::StereoNetNode"

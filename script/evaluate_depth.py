@@ -10,6 +10,7 @@ import math
 import sys
 import os
 
+
 spx = 0
 spy = 0
 def MouseCb(event, x, y, flags, param):
@@ -34,9 +35,17 @@ class DepthVisualizer(Node):
 
     def wrap_color_map(self, color_map, depth):
         global spx, spy
+        camera_cx = 0
+        camera_fx = 0
+        camera_cy = 0
+        camera_fy = 0
+        depth = depth / 1000
         cv2.line(color_map, (spx, 0), (spx, color_map.shape[0] - 1), (255,255,255), 1)
         cv2.line(color_map, (0, spy), (color_map.shape[1] - 1, spy), (255,255,255), 1)
-        cv2.putText(color_map, str(depth) + 'mm', (spx, spy), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        X = (spx - camera_cx) / camera_fx * depth
+        Y = (spy - camera_cy) / camera_fy * depth
+        cv2.putText(color_map, str(depth) + 'm', (spx, spy - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
+        cv2.putText(color_map, '(' + str(spx) + ',' + str(spy) + ')', (spx, spy + 25), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1)
         return color_map
         pass
 

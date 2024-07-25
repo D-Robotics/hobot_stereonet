@@ -60,7 +60,9 @@ def generate_launch_description():
         {'name':'stereonet_model_file_path', 'default_value': stereonet_model_file_path, 'description': 'stereonet_model_file_path'},
         {'name':'local_image_path', 'default_value': local_image_path, 'description': 'local_image_path'},
         {'name':'log_level', 'default_value':'info', 'description': 'log_level'},
-
+        {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
+        {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
+        {'name':'KMean', 'default_value':'10', 'description': 'KMean'}
     ]
 
     def declare_configurable_parameters(parameters):

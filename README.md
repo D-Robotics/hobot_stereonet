@@ -35,7 +35,7 @@ source /opt/tros/humble/setup.bash
 # 终端1 启动双目模型launch文件
 ros2 launch stereonet_model stereonet_model.launch.py \
 stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
-height_min:=0.1 height_max:=1.0
+height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
 
 # 终端2 启动mipi双目相机launch文件
 ros2 launch mipi_cam mipi_cam_dual_channel.launch.py \
@@ -49,7 +49,8 @@ source /opt/tros/humble/setup.bash
 
 # 终端1 启动双目模型launch文件
 ros2 launch stereonet_model stereonet_model_component.launch.py \
-stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" 
+stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
+height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
 
 # 终端2 启动mipi双目相机launch文件
 ros2 launch mipi_cam mipi_cam_dual_channel.launch.py \
@@ -85,6 +86,9 @@ mipi_image_width:=1280 mipi_image_height:=640
 | stereo_combine_mode        | 默认 1 | 左右目图像往往拼接在一张图上再发布出去，1为上下拼接，0为左右拼接，指示双目算法如何拆分图像   
 | height_min        | 默认 -0.2 |  过滤掉相机垂直方向上高度小于height_min的点，单位为米
 | height_max        | 默认 999.9 | 过滤掉相机垂直方向上高度大于height_max的点，单位为米   
+| KMean        | 默认 10 | 过滤稀疏离群点时每个点的临近点的数目，统计每个点与周围最近10个点的距离 
+| stdv        | 默认 0.01 | 过滤稀疏离群点时判断是否为离群点的阈值，将标准差的倍数设置为0.01  
+| leaf_size        | 默认 0.05 | 设置点云的单位密度，表示半径0.05米的三维球内只有一个点   
 
 # 深度测量
 包内提供了script/evaluate_depth.py交互式脚本，用户可通过鼠标查看对应像素点的深度。

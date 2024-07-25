@@ -4,11 +4,7 @@
 #include <arm_neon.h>
 #include <rclcpp_components/register_node_macro.hpp>
 #include "stereonet_component.h"
-
-//#include <pcl/point_types.h>
-//#include <pcl/filters/radius_outlier_removal.h>
-//#include <pcl_conversions/pcl_conversions.h>
-
+#include "pcl_filter.h"
 
 namespace stereonet {
 int StereoNetNode::inference(const inference_data_t &inference_data,
@@ -174,6 +170,12 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
   point_cloud_msg.data.resize(point_size * point_cloud_msg.point_step *
           point_cloud_msg.height);
+  {
+    ScopeProcessTime t("pcl_filter");
+    pcl_filter::applyfilter(point_cloud_msg,
+                            leaf_size_, KMean_, stdv_);
+  }
+
 //  float32x4_t fx_vec = vdupq_n_f32(1 / camera_fx);
 //  float32x4_t fy_vec = vdupq_n_f32(1 / camera_fy);
 //  float32x4_t cx_vec = vdupq_n_f32(camera_cx);
@@ -684,6 +686,18 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("stereo_combine_mode", stereo_combine_mode_);
   this->get_parameter("stereo_combine_mode", stereo_combine_mode_);
   RCLCPP_INFO_STREAM(this->get_logger(), "stereo_combine_mode: " << stereo_combine_mode_);
+
+  this->declare_parameter("leaf_size", leaf_size_);
+  this->get_parameter("leaf_size", leaf_size_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "leaf_size: " << leaf_size_);
+
+  this->declare_parameter("KMean", KMean_);
+  this->get_parameter("KMean", KMean_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "KMean: " << KMean_);
+
+  this->declare_parameter("stdv", stdv_);
+  this->get_parameter("stdv", stdv_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "stdv: " << stdv_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {

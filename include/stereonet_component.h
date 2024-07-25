@@ -101,6 +101,8 @@ class StereoNetNode : public rclcpp::Node {
       local_image_path_,
       stereo_calib_file_path_;
   int stereo_combine_mode_ = 1;
+  float leaf_size_, stdv_;
+  int KMean_;
   void convert_depth(pub_data_t &pub_raw_data);
 };
 }
