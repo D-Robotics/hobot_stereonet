@@ -17,6 +17,7 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <builtin_interfaces/msg/time.hpp>
+#include <rclcpp/time.hpp>
 
 namespace stereonet {
 
@@ -35,8 +36,15 @@ class StereoNetNode : public rclcpp::Node {
     sub_image_type image_type;
   };
 
-  using inference_data_t = std::tuple<sub_image, sub_image, double>;
-  using pub_data_t = std::tuple<sub_image, double, std::vector<float>, cv::Mat>;
+  struct inference_data_t {
+     sub_image left_sub_img;
+     sub_image right_sub_img;
+  };
+  struct pub_data_t {
+    sub_image left_sub_img;
+    std::vector<float> points;
+    cv::Mat depth_img;
+  };
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
   : rclcpp::Node("StereoNetNode", node_options) {

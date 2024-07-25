@@ -11,10 +11,9 @@ int StereoNetNode::inference(const inference_data_t &inference_data,
                              std::vector<float> &points) {
   bool is_nv12;
   cv::Mat resized_left_img, resized_right_img;
-  const cv::Mat &left_img = std::get<0>(inference_data).image;
-  const cv::Mat &right_img = std::get<1>(inference_data).image;
-  const double ts = std::get<2>(inference_data);
-  is_nv12 = std::get<0>(inference_data).image_type == sub_image_type::NV12;
+  const cv::Mat &left_img = inference_data.left_sub_img.image;
+  const cv::Mat &right_img = inference_data.right_sub_img.image;
+  is_nv12 = inference_data.left_sub_img.image_type == sub_image_type::NV12;
   if (is_nv12) {
     if (left_img.rows * 2 / 3 != model_input_h_ || left_img.cols != model_input_w_
         || right_img.rows * 2 / 3 != model_input_h_ || right_img.cols != model_input_w_) {
@@ -43,15 +42,14 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
   std_msgs::msg::Header image_header;
   sensor_msgs::msg::Image depth_img_msg;
-  const cv::Mat &image = std::get<0>(pub_raw_data).image;
-  const double ts = std::get<1>(pub_raw_data);
-  const std::vector<float> &points = std::get<2>(pub_raw_data);
-  const cv::Mat &depth_img = std::get<3>(pub_raw_data);
+  const cv::Mat &image = pub_raw_data.left_sub_img.image;
+  const std::vector<float> &points = pub_raw_data.points;
+  const cv::Mat &depth_img = pub_raw_data.depth_img;
 
   if (depth_image_pub_->get_subscription_count() < 1) return 0;
 
-  image_header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  image_header.stamp = std::get<0>(pub_raw_data).stamp;
+  image_header.frame_id = pub_raw_data.left_sub_img.frame_id;
+  image_header.stamp = pub_raw_data.left_sub_img.stamp;
   img_bridge = cv_bridge::CvImage(image_header, "mono16", depth_img);
   img_bridge.toImageMsg(depth_img_msg);
   depth_image_pub_->publish(depth_img_msg);
@@ -62,14 +60,13 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
   std_msgs::msg::Header image_header;
   sensor_msgs::msg::Image visual_img_msg;
-  const cv::Mat &image = std::get<0>(pub_raw_data).image;
-  const double ts = std::get<1>(pub_raw_data);
-  const std::vector<float> &points = std::get<2>(pub_raw_data);
+  const cv::Mat &image = pub_raw_data.left_sub_img.image;
+  const std::vector<float> &points = pub_raw_data.points;
   cv::Mat bgr_image;
 
   if (visual_image_pub_->get_subscription_count() < 1) return 0;
 
-  if (std::get<0>(pub_raw_data).image_type == sub_image_type::NV12) {
+  if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
     cv::cvtColor(image, bgr_image, cv::COLOR_YUV2BGR_NV12);
   } else {
     bgr_image = image;
@@ -86,8 +83,8 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
                     cv::COLORMAP_JET);
 
-  image_header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  image_header.stamp = std::get<0>(pub_raw_data).stamp;
+  image_header.frame_id = pub_raw_data.left_sub_img.frame_id;
+  image_header.stamp = pub_raw_data.left_sub_img.stamp;
   img_bridge = cv_bridge::CvImage(image_header, "bgr8", visual_img);
   img_bridge.toImageMsg(visual_img_msg);
   visual_image_pub_->publish(visual_img_msg);
@@ -100,12 +97,12 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
     "pub rectified image with topic name [%s]",
     rectified_image_topic_.data());
 
-  const cv::Mat &image = std::get<0>(pub_raw_data).image;
+  const cv::Mat &image = pub_raw_data.left_sub_img.image;
   int height = image.rows;
   int width = image.cols;
   const uint8_t* nv12_data_ptr = nullptr;
   cv::Mat nv12_image;
-  if (std::get<0>(pub_raw_data).image_type == sub_image_type::NV12) {
+  if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
     nv12_data_ptr = image.ptr<uint8_t>();
   } else {
     nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
@@ -113,8 +110,8 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
     nv12_data_ptr = nv12_image.ptr<uint8_t>();
   }
   sensor_msgs::msg::Image pub_img_msg;
-  pub_img_msg.header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  pub_img_msg.header.stamp = std::get<0>(pub_raw_data).stamp;
+  pub_img_msg.header.frame_id = pub_raw_data.left_sub_img.frame_id;
+  pub_img_msg.header.stamp = pub_raw_data.left_sub_img.stamp;
   pub_img_msg.height = height;
   pub_img_msg.width = width;
   pub_img_msg.encoding = "nv12";
@@ -129,10 +126,9 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
 
 int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   uint32_t point_size = 0;
-  const cv::Mat &image = std::get<0>(pub_raw_data).image;
-  const double ts = std::get<1>(pub_raw_data);
-  const std::vector<float> &points = std::get<2>(pub_raw_data);
-  const cv::Mat &depth_img = std::get<3>(pub_raw_data);
+  const cv::Mat &image = pub_raw_data.left_sub_img.image;
+  const std::vector<float> &points = pub_raw_data.points;
+  const cv::Mat &depth_img = pub_raw_data.depth_img;
   uint16_t *depth_ptr = reinterpret_cast<uint16_t *>(depth_img.data);
 
   if (pointcloud2_pub_->get_subscription_count() < 1) return 0;
@@ -143,7 +139,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   int img_origin_width;
   int img_origin_height;
 
-  if (std::get<0>(pub_raw_data).image_type == sub_image_type::NV12) {
+  if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
     img_origin_width = image.cols;
     img_origin_height = image.rows * 2 / 3;
   } else {
@@ -151,8 +147,8 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
     img_origin_height = image.rows;
   }
 
-  point_cloud_msg.header.frame_id = std::get<0>(pub_raw_data).frame_id;
-  point_cloud_msg.header.stamp = std::get<0>(pub_raw_data).stamp;
+  point_cloud_msg.header.frame_id = pub_raw_data.left_sub_img.frame_id;
+  point_cloud_msg.header.stamp = pub_raw_data.left_sub_img.stamp;
   point_cloud_msg.is_dense = false;
   point_cloud_msg.fields.resize(3);
   point_cloud_msg.fields[0].name = "x";
@@ -236,9 +232,8 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
 }
 //
 //int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
-//  const cv::Mat &image = std::get<0>(pub_raw_data).image;
-//  const double ts = std::get<1>(pub_raw_data);
-//  const std::vector<float> &points = std::get<2>(pub_raw_data);
+//  const cv::Mat &image = pub_raw_data.left_sub_img.image;
+//  const std::vector<float> &points = pub_raw_data.points;
 //  std::vector<float> points_xyz;
 //  int img_origin_width = image.cols;
 //  int img_origin_height = image.rows;
@@ -338,29 +333,27 @@ void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
   cv::imwrite("./after.jpg", img_rtf);
 }
 
-void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts) {
+void save_images(cv::Mat &left_img, cv::Mat &right_img, builtin_interfaces::msg::Time ts) {
   static std::atomic_bool directory_created{false};
   if (!directory_created) {
     directory_created = true;
     system("mkdir -p ./images/cam0/data/ ./images/cam1/data/");
   }
-  cv::imwrite("./images/cam0/data/" + std::to_string(ts) + ".png", left_img);
-  cv::imwrite("./images/cam1/data/" + std::to_string(ts) + ".png", right_img);
+  cv::imwrite("./images/cam0/data/" + std::to_string(ts.sec) + "_" + std::to_string(ts.sec) + ".png", left_img);
+  cv::imwrite("./images/cam1/data/" + std::to_string(ts.sec) + "_" + std::to_string(ts.sec) + ".png", right_img);
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
-  double now = std::chrono::high_resolution_clock::now().time_since_epoch().count() * 1e-9;
-  double ts;
   cv::Mat stereo_img, left_img, right_img;
   sub_image left_sub_img, right_sub_img;
   const std::string &encoding = img->encoding;
   int stereo_img_width, stereo_img_height;
-  ts = img->header.stamp.sec;
-  ts += img->header.stamp.nanosec * 1e-9;
+  builtin_interfaces::msg::Time now = this->get_clock()->now();
   RCLCPP_DEBUG(this->get_logger(),
-              "we received stereo msg at: %f, timestamp of stereo is: %f, latency is %f, "
+              "we received stereo msg at: %ld.%ld, timestamp of stereo is: %ld.%ld, latency is %f sec, "
               "encoding: %s, width: %d, height: %d",
-              now, ts, now - ts, encoding.c_str(), img->width, img->height);
+              now.sec, now.nanosec, img->header.stamp.sec, img->header.stamp.nanosec,
+              (rclcpp::Time(now) - rclcpp::Time(img->header.stamp)).seconds(), encoding.c_str(), img->width, img->height);
   if (stereo_combine_mode_ == 0) {
     stereo_img_width = img->width / 2;
     stereo_img_height = img->height;
@@ -429,7 +422,7 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
     left_sub_img.image = left_img;
     right_sub_img.image = right_img;
     if (save_image_) {
-      save_images(left_sub_img.image, right_sub_img.image, ts * 1e9);
+      save_images(left_sub_img.image, right_sub_img.image, img->header.stamp);
       return;
     }
   }
@@ -439,7 +432,7 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   left_sub_img.stamp = img->header.stamp;
   right_sub_img.stamp = img->header.stamp;
 
-  inference_data_t inference_data = std::make_tuple(left_sub_img, right_sub_img, ts);
+  inference_data_t inference_data {left_sub_img, right_sub_img};
   if (inference_que_.size() > 5) {
     RCLCPP_WARN(this->get_logger(), "inference que is full!");
     return;
@@ -455,8 +448,8 @@ void StereoNetNode::inference_func() {
     std::vector<float> points;
     if (inference_que_.get(inference_data)) {
       if (need_rectify_) {
-        cv::Mat &left_image = std::get<0>(inference_data).image;
-        cv::Mat &right_image = std::get<1>(inference_data).image;
+        cv::Mat &left_image = inference_data.left_sub_img.image;
+        cv::Mat &right_image = inference_data.right_sub_img.image;
         ScopeProcessTime t("stereo_rectify");
         stereo_rectify(left_image, right_image,
                        origin_image_width_, origin_image_height_,
@@ -475,11 +468,10 @@ void StereoNetNode::inference_func() {
       if (ret != 0) {
         RCLCPP_ERROR(this->get_logger(), "inference failed.");
       } else {
-        const sub_image &left_sub_img = std::get<0>(inference_data);
+        const sub_image &left_sub_img = inference_data.left_sub_img;
         const cv::Mat &left_img = left_sub_img.image;
-        const double ts = std::get<2>(inference_data);
         cv::Mat depth;
-        pub_data_t pub_data = std::make_tuple(left_sub_img, ts, points, depth);
+        pub_data_t pub_data{left_sub_img, points, depth};
         pub_func(pub_data);
       }
     }
@@ -489,11 +481,11 @@ void StereoNetNode::inference_func() {
 
 void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   int img_origin_width, img_origin_height;
-  const cv::Mat &image = std::get<0>(pub_raw_data).image;
-  std::vector<float> &points = std::get<2>(pub_raw_data);
-  cv::Mat &depth_img = std::get<3>(pub_raw_data);
+  const cv::Mat &image = pub_raw_data.left_sub_img.image;
+  std::vector<float> &points = pub_raw_data.points;
+  cv::Mat &depth_img = pub_raw_data.depth_img;
   std::vector<float> resized_points;
-  if (std::get<0>(pub_raw_data).image_type == StereoNetNode::sub_image_type::NV12) {
+  if (pub_raw_data.left_sub_img.image_type == StereoNetNode::sub_image_type::NV12) {
     img_origin_width = image.cols;
     img_origin_height = image.rows * 2 / 3;
   } else {
@@ -744,7 +736,6 @@ void StereoNetNode::inference_by_usb_camera() {
   cv::Rect right_rect(0, 0, 640, 360),
            left_rect(0, 360, 640, 360);
   uint64_t current_ts;
-  double ts;
 
   capture = new cv::VideoCapture("/dev/video0");
   assert(capture != nullptr);
@@ -762,8 +753,7 @@ void StereoNetNode::inference_by_usb_camera() {
       capture->retrieve(stereo_img);
       left_img = stereo_img(left_rect);
       right_img = stereo_img(right_rect);
-      ts = current_ts * 1e-9;
-      inference_data_t inference_data = std::make_tuple(left_img, right_img, ts);
+      inference_data_t inference_data = std::make_tuple(left_img, right_img);
       inference(inference_data);
     }
   }
@@ -777,21 +767,19 @@ void StereoNetNode::inference_by_image() {
     return;
   }
   sub_image left_sub_img, right_sub_img;
-  double ts;
   uint64_t current_ts;
   std::vector<float> points;
   cv::Mat left_img = cv::imread(local_image_path_ + "/left.png");
   cv::Mat right_img = cv::imread(local_image_path_ + "/right.png");
 
   current_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-  ts = current_ts * 1e-9;
   left_sub_img.image_type = sub_image_type::BGR;
   right_sub_img.image_type = sub_image_type::BGR;
   left_sub_img.image = left_img;
   right_sub_img.image = right_img;
   left_sub_img.frame_id = "default_cam";
   right_sub_img.frame_id = "default_cam";
-  inference_data_t inference_data = std::make_tuple(left_sub_img, right_sub_img, ts);
+  inference_data_t inference_data {left_sub_img, right_sub_img};
   inference_que_.put(inference_data);
 }
 
