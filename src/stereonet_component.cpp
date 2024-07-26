@@ -380,7 +380,6 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
       left_sub_img.image = left_img;
       right_sub_img.image = right_img;
     }
-
   } else if (encoding == "bgr8" || encoding == "BGR8") {
     {
       ScopeProcessTime t("cv_bridge::toCvShare");
@@ -739,27 +738,37 @@ void StereoNetNode::inference_by_usb_camera() {
 }
 
 void StereoNetNode::inference_by_image() {
-  if (inference_que_.size() > 5) {
-    RCLCPP_WARN(this->get_logger(), "inference que is full!");
-    return;
-  }
   std_msgs::msg::Header image_header;
   sub_image left_sub_img, right_sub_img;
-  uint64_t current_ts;
-  std::vector<float> points;
-  cv::Mat left_img = cv::imread(local_image_path_ + "/left.png");
-  cv::Mat right_img = cv::imread(local_image_path_ + "/right.png");
-  image_header.frame_id =  "default_cam";
-  image_header.stamp = this->now();
-  current_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-  left_sub_img.image_type = sub_image_type::BGR;
-  right_sub_img.image_type = sub_image_type::BGR;
-  left_sub_img.image = left_img;
-  right_sub_img.image = right_img;
-  left_sub_img.header = image_header;
-  right_sub_img.header = image_header;
-  inference_data_t inference_data {left_sub_img, right_sub_img};
-  inference_que_.put(inference_data);
+  uint32_t i_num = 0;
+  while (rclcpp::ok()) {
+    std::stringstream iss;
+    std::string image_seq;
+    if (inference_que_.size() > 5) {
+      RCLCPP_WARN(this->get_logger(), "inference que is full!");
+      return;
+    }
+    iss << std::setw(6) << std::setfill('0') << ++i_num;
+    image_seq = iss.str();
+    cv::Mat left_img = cv::imread(local_image_path_ + "/left" + image_seq +".png");
+    cv::Mat right_img = cv::imread(local_image_path_ + "/right"+ image_seq +".png");
+    if (left_img.empty() || right_img.empty()) {
+      RCLCPP_DEBUG_STREAM(get_logger(),
+                          local_image_path_
+                          + "/left" + image_seq + ".png"
+                          + "or right" + image_seq + ".png is not existed!");
+      return;
+    }
+    image_header.frame_id =  "default_cam";
+    image_header.stamp = this->now();
+    left_sub_img.image_type = sub_image_type::BGR;
+    right_sub_img.image_type = sub_image_type::BGR;
+    left_sub_img.image = left_img;
+    right_sub_img.image = right_img;
+    left_sub_img.header = image_header;
+    right_sub_img.header = image_header;
+    inference_que_.put({left_sub_img, right_sub_img});
+  }
 }
 
 void StereoNetNode::pub_sub_configuration() {
