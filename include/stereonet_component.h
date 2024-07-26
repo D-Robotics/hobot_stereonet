@@ -30,10 +30,9 @@ class StereoNetNode : public rclcpp::Node {
   };
 
   struct sub_image {
-    std::string frame_id;
-    builtin_interfaces::msg::Time stamp;
     cv::Mat image;
     sub_image_type image_type;
+    std_msgs::msg::Header header;
   };
 
   struct inference_data_t {
@@ -100,7 +99,6 @@ class StereoNetNode : public rclcpp::Node {
 
   int depth_w_, depth_h_;
   int model_input_w_, model_input_h_;
-  bool point_with_color_, pub_cloud_;
   float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
   bool need_rectify_;
   cv::Mat Kl, Kr, Dl, Dr, R_rl, t_rl;
