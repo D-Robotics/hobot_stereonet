@@ -40,10 +40,7 @@ int StereoNetNode::inference(const inference_data_t &inference_data,
 
 int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
-  std_msgs::msg::Header image_header;
   sensor_msgs::msg::Image depth_img_msg;
-  const cv::Mat &image = pub_raw_data.left_sub_img.image;
-  const std::vector<float> &points = pub_raw_data.points;
   const cv::Mat &depth_img = pub_raw_data.depth_img;
 
   if (depth_image_pub_->get_subscription_count() < 1) return 0;
@@ -57,7 +54,6 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
 
 int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
-  std_msgs::msg::Header image_header;
   sensor_msgs::msg::Image visual_img_msg;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   const std::vector<float> &points = pub_raw_data.points;
@@ -124,7 +120,6 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
 int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   uint32_t point_size = 0;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
-  const std::vector<float> &points = pub_raw_data.points;
   const cv::Mat &depth_img = pub_raw_data.depth_img;
   uint16_t *depth_ptr = reinterpret_cast<uint16_t *>(depth_img.data);
 
@@ -365,22 +360,11 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 //  yuv.write(reinterpret_cast<const char *>(img->data.data()), img->width * img->height * 3/2);
 //  std::exit(0);
   if (encoding == "nv12" || encoding == "NV12") {
-    int ylen = stereo_img_height * stereo_img_width;
-    int uvlen = ylen / 2;
     if (stereo_combine_mode_ == 0) {
       RCLCPP_FATAL(this->get_logger(),
                    "when stereo_combine_mode is 0, the encoding of image must be bgr8!");
       return;
     }
-//    left_sub_img.image_type = sub_image_type::NV12;
-//    right_sub_img.image_type = sub_image_type::NV12;
-//    left_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
-//    right_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
-//    std::memcpy(right_sub_img.image.data, img->data.data(), ylen);
-//    std::memcpy(left_sub_img.image.data, img->data.data() + ylen, ylen);
-//    std::memcpy(right_sub_img.image.data + ylen, img->data.data() + 2 * ylen, uvlen);
-//    std::memcpy(left_sub_img.image.data + ylen, img->data.data() + 2 * ylen + uvlen, uvlen);
-
     {
       ScopeProcessTime t("nv12->bgr");
       cv::Mat bgr(img->height, img->width, CV_8UC3);
