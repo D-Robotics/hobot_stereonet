@@ -4,7 +4,7 @@
   <name>hobot_stereonet</name>
   <version>2.0.1</version>
   <description>TODO: Package description</description>
-  <maintainer email="kao.zhu@horizon.ai">zhukao</maintainer>
+  <maintainer email="kao.zhu@d-robotics.cc">zhukao</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

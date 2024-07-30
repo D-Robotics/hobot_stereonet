@@ -14,7 +14,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='kao.zhu',
-    maintainer_email='kao.zhu@horizon.ai',
+    maintainer_email='kao.zhu@d-robotics.cc',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],

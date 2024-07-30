@@ -2,7 +2,7 @@ English| [简体中文](./README_cn.md)
 
 # Function Introduction
 
-The stereo depth estimation algorithm is a `StereoNet` model trained using the Horizon [OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html) on the [SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) dataset.
+The stereo depth estimation algorithm is a `StereoNet` model trained using the [OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html) on the [SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html) dataset.
 
 The algorithm takes stereo image data as input, consisting of left and right views. The output of the algorithm is the disparity map of the left view.
 

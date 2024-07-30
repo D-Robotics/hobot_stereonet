@@ -4,7 +4,7 @@
   <name>hobot_stereonet_render</name>
   <version>2.0.1</version>
   <description>TODO: Package description</description>
-  <maintainer email="kao.zhu@horizon.ai">kao.zhu</maintainer>
+  <maintainer email="kao.zhu@d-robotics.cc">kao.zhu</maintainer>
   <license>TODO: License declaration</license>
 
   <exec_depend>rclpy</exec_depend>
