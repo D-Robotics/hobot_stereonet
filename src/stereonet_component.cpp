@@ -58,7 +58,6 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   const std::vector<float> &points = pub_raw_data.points;
   cv::Mat bgr_image;
-
   if (visual_image_pub_->get_subscription_count() < 1) return 0;
 
   if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
@@ -187,7 +186,8 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
   point_cloud_msg.data.resize(point_size * point_cloud_msg.point_step *
           point_cloud_msg.height);
-  {
+
+  if (need_pcl_filter_) {
     ScopeProcessTime t("pcl_filter");
     pcl_filter::applyfilter(point_cloud_msg,
                             leaf_size_, KMean_, stdv_);
@@ -656,6 +656,10 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("need_rectify", need_rectify_);
   RCLCPP_INFO_STREAM(this->get_logger(), "need_rectify: " << need_rectify_);
 
+  this->declare_parameter("need_pcl_filter", false);
+  this->get_parameter("need_pcl_filter", need_pcl_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "need_pcl_filter: " << need_pcl_filter_);
+
   this->declare_parameter("save_image", false);
   this->get_parameter("save_image", save_image_);
   RCLCPP_INFO_STREAM(this->get_logger(), "save_image: " << save_image_);
@@ -746,6 +750,7 @@ void StereoNetNode::inference_by_image() {
     std::string image_seq;
     if (inference_que_.size() > 5) {
       RCLCPP_WARN(this->get_logger(), "inference que is full!");
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       return;
     }
     iss << std::setw(6) << std::setfill('0') << ++i_num;

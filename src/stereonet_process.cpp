@@ -174,6 +174,59 @@ static int32_t dump_to_color(
   return 0;
 }
 
+int postprocess3(std::vector<hbDNNTensor> &tensors,
+                 std::vector<float> &points) {
+  int low_max_stride_ = 4;
+  int maxdisp_ = 192;
+  for (int32_t i = 0; i < 3; i++) {
+    hbSysFlushMem(&(tensors[i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
+  }
+  // get tensor info
+  int32_t *cost_data =
+      reinterpret_cast<int32_t *>(tensors[1].sysMem[0].virAddr);
+  int32_t *cost_valid_shape = tensors[1].properties.validShape.dimensionSize;
+  int32_t *cost_aligned_shape =
+      tensors[1].properties.alignedShape.dimensionSize;
+  float *cost_scale = tensors[1].properties.scale.scaleData;
+  int32_t unflod_c = cost_valid_shape[1];
+  int32_t unflod_h = cost_valid_shape[2];
+  int32_t unflod_w = cost_valid_shape[3];
+
+  int16_t *spg_data = reinterpret_cast<int16_t *>(tensors[0].sysMem[0].virAddr);
+  int32_t *spg_valid_shape = tensors[0].properties.validShape.dimensionSize;
+  float *spg_scale = tensors[0].properties.scale.scaleData;
+
+  int32_t spg_unflod_c = spg_valid_shape[1];
+  int32_t spg_unflod_h = spg_valid_shape[2];
+  int32_t spg_unflod_w = spg_valid_shape[3];
+  int32_t *spg_aligned_shape =
+      tensors[0].properties.alignedShape.dimensionSize;
+  std::vector<float> feat(unflod_c * unflod_h * unflod_w);
+  {
+    ScopeProcessTime t("Dequantize feat");
+    Dequantize(
+        feat.data(), cost_data, cost_scale, cost_valid_shape, cost_aligned_shape);
+  }
+  // interpolate
+  int32_t feat_h = unflod_h * low_max_stride_;
+  int32_t feat_w = unflod_w * low_max_stride_;
+  points.resize(feat_h * feat_w, 0.f);
+
+  nearest_interpolate(points.data(),
+                      feat.data(),
+                      spg_data,
+                      spg_scale,
+                      maxdisp_,
+                      unflod_c,
+                      feat_h,
+                      feat_w,
+                      unflod_h,
+                      unflod_w,
+                      low_max_stride_,
+                      low_max_stride_);
+  return 0;
+}
+
 int postprocess2(std::vector<hbDNNTensor> &tensors,
     std::vector<float> &points) {
   int low_max_stride_ = 2;
@@ -245,12 +298,14 @@ int postprocess(std::vector<hbDNNTensor> &tensors,
   int32_t spg_unflod_c = spg_valid_shape[1];
   int32_t spg_unflod_h = spg_valid_shape[2];
   int32_t spg_unflod_w = spg_valid_shape[3];
-  int32_t *spg_aligned_shape =
-      tensors[0].properties.alignedShape.dimensionSize;
 
   std::vector<float> feat(unflod_c * unflod_h * unflod_w);
-  Dequantize(
-      feat.data(), cost_data, cost_scale, cost_valid_shape, cost_aligned_shape);
+  {
+    ScopeProcessTime t("Dequantize feat");
+    Dequantize(
+        feat.data(), cost_data, cost_scale, cost_valid_shape, cost_aligned_shape);
+  }
+
   // interpolate
   int32_t feat_h = unflod_h * low_max_stride_;
   int32_t feat_w = unflod_w * low_max_stride_;

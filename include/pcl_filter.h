@@ -69,9 +69,9 @@ struct pcl_filter {
     auto d2 = std::chrono::duration_cast<std::chrono::milliseconds>(start3 - start2).count();
     auto d3 = std::chrono::duration_cast<std::chrono::milliseconds>(start4 - start3).count();
     RCLCPP_DEBUG(rclcpp::get_logger(""),
-        "ROS to PCL: %d, "
-        "PCL filter: %d, "
-        "PCL to ROS: %d", d1, d2, d3);
+        "ROS to PCL: %dms, "
+        "PCL filter: %dms,, "
+        "PCL to ROS: %dms", d1, d2, d3);
   }
 };
 
