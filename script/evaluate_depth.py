@@ -35,10 +35,10 @@ class DepthVisualizer(Node):
 
     def wrap_color_map(self, color_map, depth):
         global spx, spy
-        camera_cx = 0
-        camera_fx = 0
-        camera_cy = 0
-        camera_fy = 0
+        camera_cx = 567.488464
+        camera_fx = 489.268860
+        camera_cy = 293.104919
+        camera_fy = 489.268860
         depth = depth / 1000
         cv2.line(color_map, (spx, 0), (spx, color_map.shape[0] - 1), (255,255,255), 1)
         cv2.line(color_map, (0, spy), (color_map.shape[1] - 1, spy), (255,255,255), 1)
