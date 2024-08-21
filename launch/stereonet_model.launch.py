@@ -46,13 +46,13 @@ def generate_launch_description():
 
     node_params = [
         {'name':'stereo_image_topic', 'default_value':'/image_combine_raw', 'description': 'stereo_image_topic'},
-        {'name':'camera_cx', 'default_value':'640.0', 'description': 'rectified_camera_cx'},
-        {'name':'camera_cy', 'default_value':'320.0', 'description': 'rectified_camera_cy'},
-        {'name':'camera_fx', 'default_value':'300.0', 'description': 'rectified_camera_fx'},
-        {'name':'camera_fy', 'default_value':'300.0', 'description': 'rectified_camera_fy'},
+        {'name':'camera_cx', 'default_value':'659.710', 'description': 'rectified_camera_cx'},
+        {'name':'camera_cy', 'default_value':'360.584', 'description': 'rectified_camera_cy'},
+        {'name':'camera_fx', 'default_value':'527.1931', 'description': 'rectified_camera_fx'},
+        {'name':'camera_fy', 'default_value':'527.1931', 'description': 'rectified_camera_fy'},
         {'name':'need_rectify', 'default_value':'True', 'description': 'whether need_rectify or not'},
         {'name':'need_pcl_filter', 'default_value':'False', 'description': 'whether need_pcl_filter or not'},
-        {'name':'base_line', 'default_value':'0.06', 'description': 'base_line of stereo'},
+        {'name':'base_line', 'default_value':'0.119893', 'description': 'base_line of stereo'},
         {'name':'height_min', 'default_value':'0.03', 'description': 'height_min'},
         {'name':'height_max', 'default_value':'5.0', 'description': 'height_max'},
         {'name':'save_image', 'default_value':'False', 'description': 'save_image'},

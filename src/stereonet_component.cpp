@@ -110,7 +110,7 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
   pub_img_msg.step = width;
   size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
   pub_img_msg.data.resize(data_len);
-  memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
+  memcpy(pub_img_msg.data.data(), image.data, data_len);
   rectified_image_pub_->publish(pub_img_msg);
 
   return 0;
@@ -276,7 +276,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
 //  return 0;
 //}
 
-void stereo_rectify(
+void StereoNetNode::stereo_rectify(
     const cv::Mat &left_image,
     const cv::Mat &right_image,
     int origin_image_width, int origin_image_height,
@@ -299,16 +299,21 @@ void stereo_rectify(
   cv::remap(left_image, rectified_left_image, undistmap1l, undistmap2l, cv::INTER_LINEAR);
   cv::remap(right_image, rectified_right_image, undistmap1r, undistmap2r, cv::INTER_LINEAR);
 
-  rectified_fx = Q.at<double>(2, 3);
-  rectified_fy = Q.at<double>(2, 3);
-  rectified_cx = -Q.at<double>(0, 3);
-  rectified_cy = -Q.at<double>(1, 3);
-  //  const cv::Mat t = Rr * t_rl;
-  baseline = std::abs(1 / Q.at<double>(3, 2));
+  if (!intrinsic_inited_) {
+    intrinsic_inited_ = true;
+    rectified_fx = Q.at<double>(2, 3);
+    rectified_fy = Q.at<double>(2, 3);
+    rectified_cx = -Q.at<double>(0, 3);
+    rectified_cy = -Q.at<double>(1, 3);
+    //  const cv::Mat t = Rr * t_rl;
+    baseline = std::abs(1 / Q.at<double>(3, 2));
+  }
 }
 
 void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
                           cv::Mat &rectified_left_img, cv::Mat &rectified_right_img) {
+  std::stringstream iss;
+  static std::atomic_int iii {0};
   cv::Mat img_src, img_rtf;
   cv::hconcat(left_img, right_img, img_src);
   cv::hconcat(rectified_left_img, rectified_right_img, img_rtf);
@@ -320,6 +325,10 @@ void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
     b.y = img_rtf.rows / 10 * i;
     cv::line(img_rtf, a, b, cv::Scalar(0, 255, 0), 2);
   }
+  iss << std::setw(6) << std::setfill('0') << iii++;
+  auto image_seq = iss.str();
+  cv::imwrite("./230ai_data/left" + image_seq + "_rectify.png", rectified_left_img);
+  cv::imwrite("./230ai_data/right" + image_seq + "_rectify.png", rectified_right_img);
   cv::imwrite("./before.jpg", img_src);
   cv::imwrite("./after.jpg", img_rtf);
 }
@@ -371,9 +380,9 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 //      cv::Mat nv12(img->height * 3 / 2, img->width, CV_8UC1, img->data.data());
 //      cv::cvtColor(nv12, bgr, cv::COLOR_YUV2BGR_NV12);
       image_conversion::nv12_to_bgr24_neon(img->data.data(), bgr.data, img->width, img->height);
-      right_img = bgr(
-          cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
       left_img = bgr(
+          cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
+      right_img = bgr(
           cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height)).clone();
       left_sub_img.image_type = sub_image_type::BGR;
       right_sub_img.image_type = sub_image_type::BGR;
@@ -393,9 +402,9 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
         right_img = stereo_img(
             cv::Rect(stereo_img_width, 0, stereo_img_width, stereo_img_height)).clone();
       } else if (stereo_combine_mode_ == 1) {
-        right_img = stereo_img(
-            cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
         left_img = stereo_img(
+            cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
+        right_img = stereo_img(
             cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height)).clone();
       }
     }
@@ -438,10 +447,11 @@ void StereoNetNode::inference_func() {
                        camera_fx, camera_cx, camera_fy, camera_cy, base_line);
         left_image = rectified_left_image;
         right_image = rectified_right_image;
+
         RCLCPP_WARN_ONCE(this->get_logger(),
             "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
             camera_fx, camera_fy, camera_cx, camera_cy, base_line);
-        //  return dump_rectified_image(left_img, right_img, rectified_left_img, rectified_right_img);
+        //dump_rectified_image(left_image, right_image, rectified_left_image, rectified_right_image);
       }
 
       ret = inference(inference_data, points);
@@ -753,7 +763,7 @@ void StereoNetNode::inference_by_image() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       return;
     }
-    iss << std::setw(6) << std::setfill('0') << ++i_num;
+    iss << std::setw(6) << std::setfill('0') << i_num++;
     image_seq = iss.str();
     cv::Mat left_img = cv::imread(local_image_path_ + "/left" + image_seq +".png");
     cv::Mat right_img = cv::imread(local_image_path_ + "/right"+ image_seq +".png");

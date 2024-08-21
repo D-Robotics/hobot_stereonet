@@ -626,7 +626,17 @@ int StereonetProcess::stereonet_inference(
   assert(right_img_nv12.rows * right_img_nv12.cols == model_input_h_ * model_input_w_ * 3 / 2);
   assert((right_input_tensor.sysMem[0].memSize +
       right_input_tensor.sysMem[1].memSize) == model_input_h_ * model_input_w_ * 3 / 2);
-  */
+
+
+  static int iii = 0;
+  std::stringstream iss;
+  iss << std::setw(6) << std::setfill('0') << iii++;
+  auto image_seq = iss.str();
+  std::ofstream bin( "./230ai_data/" + image_seq + ".yuv", std::ios::out | std::ios::binary);
+  bin.write((const char*)(left_img_nv12.data), left_input_tensor.sysMem[0].memSize + left_input_tensor.sysMem[1].memSize);
+  bin.write((const char*)right_img_nv12.data, right_input_tensor.sysMem[0].memSize + right_input_tensor.sysMem[1].memSize);
+   */
+
   hbSysWriteMem(&left_input_tensor.sysMem[0],
                 (char *)left_img_nv12.data,
                 left_input_tensor.sysMem[0].memSize);

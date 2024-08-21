@@ -102,6 +102,7 @@ class StereoNetNode : public rclcpp::Node {
   float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
   bool need_rectify_, need_pcl_filter_;
   cv::Mat Kl, Kr, Dl, Dr, R_rl, t_rl;
+  std::atomic_bool intrinsic_inited_{false};
 
   int origin_image_width_, origin_image_height_;
   float height_min_, height_max_;
@@ -117,6 +118,23 @@ class StereoNetNode : public rclcpp::Node {
   std::string rectified_image_topic_ = "~/rectified_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
     rectified_image_pub_ = nullptr;
+  void stereo_rectify(const cv::Mat &left_image,
+                      const cv::Mat &right_image,
+                      int origin_image_width,
+                      int origin_image_height,
+                      cv::Mat &Kl,
+                      cv::Mat &Kr,
+                      cv::Mat &Dl,
+                      cv::Mat &Dr,
+                      cv::Mat &R_rl,
+                      cv::Mat &t_rl,
+                      cv::Mat &rectified_left_image,
+                      cv::Mat &rectified_right_image,
+                      float &rectified_fx,
+                      float &rectified_cx,
+                      float &rectified_fy,
+                      float &rectified_cy,
+                      float &baseline);
 };
 }
 #endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_
