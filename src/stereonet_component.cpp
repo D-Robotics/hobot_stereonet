@@ -2,9 +2,11 @@
 // Created by zhy on 7/1/24.
 //
 #include <arm_neon.h>
+#include <dirent.h>
 #include <rclcpp_components/register_node_macro.hpp>
 #include "stereonet_component.h"
 #include "pcl_filter.h"
+
 
 namespace stereonet {
 int StereoNetNode::inference(const inference_data_t &inference_data,
@@ -276,40 +278,6 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
 //  return 0;
 //}
 
-void StereoNetNode::stereo_rectify(
-    const cv::Mat &left_image,
-    const cv::Mat &right_image,
-    int origin_image_width, int origin_image_height,
-    cv::Mat &Kl, cv::Mat &Kr, cv::Mat &Dl, cv::Mat &Dr, cv::Mat &R_rl, cv::Mat &t_rl,
-    cv::Mat &rectified_left_image, cv::Mat &rectified_right_image,
-    float &rectified_fx, float &rectified_cx, float &rectified_fy, float &rectified_cy, float &baseline) {
-  cv::Mat Rl, Rr, Pl, Pr, Q;
-  cv::Mat undistmap1l, undistmap2l, undistmap1r, undistmap2r;
-
-  int width = left_image.cols;
-  int height = left_image.rows;
-
-  cv::stereoRectify(Kl, Dl, Kr, Dr,
-                    cv::Size(width, height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                    cv::CALIB_ZERO_DISPARITY);
-
-  cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(width, height), CV_32FC1, undistmap1l, undistmap2l);
-  cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(width, height), CV_32FC1, undistmap1r, undistmap2r);
-
-  cv::remap(left_image, rectified_left_image, undistmap1l, undistmap2l, cv::INTER_LINEAR);
-  cv::remap(right_image, rectified_right_image, undistmap1r, undistmap2r, cv::INTER_LINEAR);
-
-  if (!intrinsic_inited_) {
-    intrinsic_inited_ = true;
-    rectified_fx = Q.at<double>(2, 3);
-    rectified_fy = Q.at<double>(2, 3);
-    rectified_cx = -Q.at<double>(0, 3);
-    rectified_cy = -Q.at<double>(1, 3);
-    //  const cv::Mat t = Rr * t_rl;
-    baseline = std::abs(1 / Q.at<double>(3, 2));
-  }
-}
-
 void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
                           cv::Mat &rectified_left_img, cv::Mat &rectified_right_img) {
   std::stringstream iss;
@@ -335,12 +303,22 @@ void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
 
 void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts) {
   static std::atomic_bool directory_created{false};
+  static std::atomic_int i {0};
+  std::stringstream iss;
+  cv::Mat image_combine;
   if (!directory_created) {
     directory_created = true;
-    system("mkdir -p ./images/cam0/data/ ./images/cam1/data/");
+    system("mkdir -p"
+           " ./images/cam0/data/"
+           " ./images/cam1/data/"
+           " ./images/cam_combine/data/");
   }
+  iss << std::setw(3) << std::setfill('0') << i++;
+  auto image_seq = iss.str();
   cv::imwrite("./images/cam0/data/" + std::to_string(ts) + ".png", left_img);
   cv::imwrite("./images/cam1/data/" + std::to_string(ts) + ".png", right_img);
+  cv::vconcat(left_img, right_img, image_combine);
+  cv::imwrite("./images/cam_combine/data/combine_" + image_seq + ".png", image_combine);
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
@@ -412,10 +390,6 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
     right_sub_img.image_type = sub_image_type::BGR;
     left_sub_img.image = left_img;
     right_sub_img.image = right_img;
-    if (save_image_) {
-      save_images(left_sub_img.image, right_sub_img.image, img->header.stamp.sec * 1e9 + img->header.stamp.nanosec);
-      return;
-    }
   }
 
   left_sub_img.header = img->header;
@@ -440,18 +414,20 @@ void StereoNetNode::inference_func() {
         cv::Mat &left_image = inference_data.left_sub_img.image;
         cv::Mat &right_image = inference_data.right_sub_img.image;
         ScopeProcessTime t("stereo_rectify");
-        stereo_rectify(left_image, right_image,
-                       origin_image_width_, origin_image_height_,
-                       Kl, Kr, Dl, Dr, R_rl, t_rl,
-                       rectified_left_image, rectified_right_image,
-                       camera_fx, camera_cx, camera_fy, camera_cy, base_line);
-        left_image = rectified_left_image;
-        right_image = rectified_right_image;
+        for (auto & s : stereo_rectify_list_) {
+          s->Rectify(left_image, right_image, rectified_left_image, rectified_right_image);
+          left_image = rectified_left_image;
+          right_image = rectified_right_image;
+        }
+        //  dump_rectified_image(left_image, right_image, rectified_left_image, rectified_right_image);
+      }
 
-        RCLCPP_WARN_ONCE(this->get_logger(),
-            "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
-            camera_fx, camera_fy, camera_cx, camera_cy, base_line);
-        //dump_rectified_image(left_image, right_image, rectified_left_image, rectified_right_image);
+      if (save_image_) {
+        save_images(inference_data.left_sub_img.image,
+                    inference_data.right_sub_img.image,
+                    inference_data.left_sub_img.header.stamp.sec * 1e9
+                     + inference_data.left_sub_img.header.stamp.nanosec);
+        continue;
       }
 
       ret = inference(inference_data, points);
@@ -573,76 +549,33 @@ int StereoNetNode::stop() {
 
 void StereoNetNode::camera_config_parse(const std::string &file_path,
                                         int model_input_w, int model_input_h) {
-  float width_scale, height_scale;
+  int i = 0;
   cv::FileStorage fs(file_path, cv::FileStorage::READ);
   if (!fs.isOpened()) {
     RCLCPP_WARN_STREAM(this->get_logger(), "Failed to open " << file_path);
     return;
   }
 
-  // Reading cam0 data
-  std::vector<double> cam0_distortion_coeffs;
-  std::vector<double> cam0_intrinsics;
-  std::vector<int> cam0_resolution;
+  do {
+    std::string stereo_no = "stereo" + std::to_string(i++);
+    if (!fs[stereo_no].empty()) {
+      RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify Instance: " << stereo_no);
+      stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
+          fs[stereo_no], model_input_w, model_input_h));
+      if (need_rectify_) {
+        stereo_rectify_list_.back()->GetIntrinsic(camera_cx, camera_cy, camera_fx, camera_fy, base_line);
+      }
+    } else {
+      break;
+    }
+  } while(true);
 
-  fs["cam0"]["distortion_coeffs"] >> cam0_distortion_coeffs;
-  fs["cam0"]["intrinsics"] >> cam0_intrinsics;
-  fs["cam0"]["resolution"] >> cam0_resolution;
-
-  width_scale = model_input_w_ / static_cast<float>(cam0_resolution[0]);
-  height_scale = model_input_h_ / static_cast<float>(cam0_resolution[1]);
-
-  // Reading cam1 data
-  std::vector<std::vector<double>> cam1_T_cn_cnm1;
-  std::vector<double> cam1_distortion_coeffs;
-  std::vector<double> cam1_intrinsics;
-  std::vector<int> cam1_resolution;
-
-  fs["cam1"]["T_cn_cnm1"] >> cam1_T_cn_cnm1;
-  fs["cam1"]["distortion_coeffs"] >> cam1_distortion_coeffs;
-  fs["cam1"]["intrinsics"] >> cam1_intrinsics;
-  fs["cam1"]["resolution"] >> cam1_resolution;
+  if (need_rectify_) {
+    RCLCPP_WARN(this->get_logger(), "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
+           camera_fx, camera_fy, camera_cx, camera_cy, base_line);
+  }
 
   fs.release();
-
-  Dl = cv::Mat(1, 4, CV_64F, cam0_distortion_coeffs.data()).clone();
-  Kl = cv::Mat::zeros(3, 3, CV_64F);
-  Kl.at<double>(0, 0) = cam0_intrinsics[0] * width_scale;
-  Kl.at<double>(0, 2) = cam0_intrinsics[2] * width_scale;
-  Kl.at<double>(1, 1) = cam0_intrinsics[1] * height_scale;
-  Kl.at<double>(1, 2) = cam0_intrinsics[3] * height_scale;
-  Kl.at<double>(2, 2) = 1;
-
-  R_rl = cv::Mat::zeros(3, 3, CV_64F);
-  t_rl = cv::Mat::zeros(3, 1, CV_64F);
-
-  R_rl.at<double>(0, 0) = cam1_T_cn_cnm1[0][0];
-  R_rl.at<double>(0, 1) = cam1_T_cn_cnm1[0][1];
-  R_rl.at<double>(0, 2) = cam1_T_cn_cnm1[0][2];
-  R_rl.at<double>(1, 0) = cam1_T_cn_cnm1[1][0];
-  R_rl.at<double>(1, 1) = cam1_T_cn_cnm1[1][1];
-  R_rl.at<double>(1, 2) = cam1_T_cn_cnm1[1][2];
-  R_rl.at<double>(2, 0) = cam1_T_cn_cnm1[2][0];
-  R_rl.at<double>(2, 1) = cam1_T_cn_cnm1[2][1];
-  R_rl.at<double>(2, 2) = cam1_T_cn_cnm1[2][2];
-
-  t_rl.at<double>(0, 0) = cam1_T_cn_cnm1[0][3];
-  t_rl.at<double>(1, 0) = cam1_T_cn_cnm1[1][3];
-  t_rl.at<double>(2, 0) = cam1_T_cn_cnm1[2][3];
-
-  Dr = cv::Mat(1, 4, CV_64F, cam1_distortion_coeffs.data()).clone();
-
-  Kr = cv::Mat::zeros(3, 3, CV_64F);
-  Kr.at<double>(0, 0) = cam1_intrinsics[0] * width_scale;
-  Kr.at<double>(0, 2) = cam1_intrinsics[2] * width_scale;
-  Kr.at<double>(1, 1) = cam1_intrinsics[1] * height_scale;
-  Kr.at<double>(1, 2) = cam1_intrinsics[3] * height_scale;
-  Kr.at<double>(2, 2) = 1;
-  RCLCPP_INFO_STREAM(this->get_logger(),
-      "\nKl: \n" << Kl << "\nDl:\n" << Dl <<
-                "\nKr: \n" << Kr << "\nDr:\n" << Dr <<
-                "\nR, t: \n" << R_rl << "\n" << t_rl <<
-                "\norigin width, height: " << cam0_resolution[0] << ", " << cam0_resolution[1]);
 }
 
 void StereoNetNode::parameter_configuration() {
@@ -751,35 +684,68 @@ void StereoNetNode::inference_by_usb_camera() {
 */
 }
 
+int get_image(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img) {
+  static uint32_t i_num = 0;
+  std::stringstream iss;
+  std::string image_seq;
+  iss << std::setw(6) << std::setfill('0') << i_num++;
+  image_seq = iss.str();
+  left_img = cv::imread(image_path + "/left" + image_seq +".png");
+  right_img = cv::imread(image_path + "/right"+ image_seq +".png");
+  if (left_img.empty() || right_img.empty()) {
+    return -1;
+  }
+  return 0;
+}
+
+void get_image_file_list(const std::string &image_path, std::vector<std::string> &file_names) {
+  DIR *pDir;
+  struct dirent *ptr;
+  if (!(pDir = opendir(image_path.c_str())))
+    return;
+  while ((ptr = readdir(pDir)) != 0) {
+    if (strcmp(ptr->d_name, ".") != 0 && strcmp(ptr->d_name, "..") != 0) {
+      std::string file_name = ptr->d_name;
+      file_names.push_back(file_name.substr(0, file_name.length() - 4));
+    }
+  }
+  sort(file_names.begin(), file_names.end());
+  closedir(pDir);
+}
+
+int get_image2(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img) {
+  static std::vector<std::string> left_file_names, right_file_names;
+  static uint32_t i_num = 0;
+  if (i_num == 0) {
+    get_image_file_list(image_path + "/cam0/data/", left_file_names);
+    get_image_file_list(image_path + "/cam1/data/", right_file_names);
+  }
+  if (i_num < left_file_names.size()) {
+    left_img = cv::imread(image_path + "/cam0/data/" + left_file_names[i_num] + ".png");
+    right_img = cv::imread(image_path + "/cam1/data/"+ right_file_names[i_num] + ".png");
+    i_num++;
+    return 0;
+  }
+  i_num = 0;
+  return -1;
+}
+
 void StereoNetNode::inference_by_image() {
   std_msgs::msg::Header image_header;
   sub_image left_sub_img, right_sub_img;
-  uint32_t i_num = 0;
   while (rclcpp::ok()) {
-    std::stringstream iss;
-    std::string image_seq;
     if (inference_que_.size() > 5) {
       RCLCPP_WARN(this->get_logger(), "inference que is full!");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      return;
+      continue;
     }
-    iss << std::setw(6) << std::setfill('0') << i_num++;
-    image_seq = iss.str();
-    cv::Mat left_img = cv::imread(local_image_path_ + "/left" + image_seq +".png");
-    cv::Mat right_img = cv::imread(local_image_path_ + "/right"+ image_seq +".png");
-    if (left_img.empty() || right_img.empty()) {
-      RCLCPP_DEBUG_STREAM(get_logger(),
-                          local_image_path_
-                          + "/left" + image_seq + ".png"
-                          + "or right" + image_seq + ".png is not existed!");
+    if (-1 == get_image(local_image_path_, left_sub_img.image, right_sub_img.image)) {
       return;
     }
     image_header.frame_id =  "default_cam";
     image_header.stamp = this->now();
     left_sub_img.image_type = sub_image_type::BGR;
     right_sub_img.image_type = sub_image_type::BGR;
-    left_sub_img.image = left_img;
-    right_sub_img.image = right_img;
     left_sub_img.header = image_header;
     right_sub_img.header = image_header;
     inference_que_.put({left_sub_img, right_sub_img});
