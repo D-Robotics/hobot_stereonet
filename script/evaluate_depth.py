@@ -80,7 +80,7 @@ class DepthVisualizer(Node):
         if spy >= depth_img.shape[0]:
             spy = depth_img.shape[0] - 1
 
-        depth = depth_img[spy][spx] * 100 / 77
+        depth = depth_img[spy][spx]
         normlized_img = (depth_img - depth_img.min()) / depth_img.max() * 255
         color_map = cv2.applyColorMap(normlized_img.astype(np.uint8), cv2.COLORMAP_VIRIDIS)
         color_map = self.wrap_color_map(color_map, depth)
