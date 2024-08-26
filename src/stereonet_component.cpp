@@ -112,7 +112,7 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
   pub_img_msg.step = width;
   size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
   pub_img_msg.data.resize(data_len);
-  memcpy(pub_img_msg.data.data(), image.data, data_len);
+  memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
   rectified_image_pub_->publish(pub_img_msg);
 
   return 0;
