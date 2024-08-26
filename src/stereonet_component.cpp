@@ -91,30 +91,38 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
   RCLCPP_WARN_ONCE(this->get_logger(),
     "pub rectified image with topic name [%s]",
     rectified_image_topic_.data());
-
+  sensor_msgs::msg::Image pub_img_msg;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   int height = image.rows;
   int width = image.cols;
   const uint8_t* nv12_data_ptr = nullptr;
   cv::Mat nv12_image;
-  if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-    nv12_data_ptr = image.ptr<uint8_t>();
-  } else {
-    nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
-    image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
-    nv12_data_ptr = nv12_image.ptr<uint8_t>();
-  }
-  sensor_msgs::msg::Image pub_img_msg;
+
   pub_img_msg.header = pub_raw_data.left_sub_img.header;
   pub_img_msg.height = height;
   pub_img_msg.width = width;
-  pub_img_msg.encoding = "nv12";
-  pub_img_msg.step = width;
-  size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
-  pub_img_msg.data.resize(data_len);
-  memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
-  rectified_image_pub_->publish(pub_img_msg);
 
+  if (pub_rectified_bgr_) {
+    pub_img_msg.encoding = "bgr8";
+    pub_img_msg.step = width * 3;
+    size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
+    pub_img_msg.data.resize(data_len);
+    memcpy(pub_img_msg.data.data(), image.data, data_len);
+  } else {
+    pub_img_msg.encoding = "nv12";
+    pub_img_msg.step = width;
+    if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+      nv12_data_ptr = image.ptr<uint8_t>();
+    } else {
+      nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
+      image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
+      nv12_data_ptr = nv12_image.ptr<uint8_t>();
+    }
+    size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
+    pub_img_msg.data.resize(data_len);
+    memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
+  }
+  rectified_image_pub_->publish(pub_img_msg);
   return 0;
 }
 

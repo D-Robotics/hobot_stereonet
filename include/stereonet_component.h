@@ -117,6 +117,7 @@ class StereoNetNode : public rclcpp::Node {
   std::string rectified_image_topic_ = "~/rectified_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
     rectified_image_pub_ = nullptr;
+  bool pub_rectified_bgr_ = false;
 
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
