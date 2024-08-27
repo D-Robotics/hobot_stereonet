@@ -73,8 +73,8 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
 
   cv::Mat feat_mat(bgr_image.rows, bgr_image.cols, CV_32F, const_cast<float *>(points.data()));
   cv::Mat feat_visual;
-  feat_mat.convertTo(feat_visual, CV_8U, 1, 0);
-  cv::convertScaleAbs(feat_visual, feat_visual, 2);
+  feat_mat.convertTo(feat_visual, CV_8U, visual_alpha_, visual_beta_);
+  //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
                     cv::COLORMAP_JET);
@@ -658,6 +658,14 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("stdv", stdv_);
   this->get_parameter("stdv", stdv_);
   RCLCPP_INFO_STREAM(this->get_logger(), "stdv: " << stdv_);
+
+  this->declare_parameter("visual_beta", visual_beta_);
+  this->get_parameter("visual_beta", visual_beta_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "visual_beta: " << visual_beta_);
+
+  this->declare_parameter("alpha", visual_alpha_);
+  this->get_parameter("alpha", visual_alpha_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "visual_alpha: " << visual_alpha_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {

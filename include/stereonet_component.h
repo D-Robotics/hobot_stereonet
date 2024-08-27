@@ -119,6 +119,8 @@ class StereoNetNode : public rclcpp::Node {
     rectified_image_pub_ = nullptr;
   bool pub_rectified_bgr_ = false;
 
+  int visual_alpha_ = 2, visual_beta_ = 0;
+
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
 };

@@ -61,7 +61,9 @@ def generate_launch_description():
         {'name':'log_level', 'default_value':'info', 'description': 'log_level'},
         {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
         {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
-        {'name':'KMean', 'default_value':'10', 'description': 'KMean'}
+        {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
+        {'name':'alpha', 'default_value':'2', 'description': 'visual_alpha'},
+        {'name':'beta', 'default_value':'0', 'description': 'visual_beta'},
     ]
 
     def declare_configurable_parameters(parameters):
