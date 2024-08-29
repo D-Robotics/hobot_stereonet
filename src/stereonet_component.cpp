@@ -59,6 +59,7 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   sensor_msgs::msg::Image visual_img_msg;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   const std::vector<float> &points = pub_raw_data.points;
+  const cv::Mat &depth_img = pub_raw_data.depth_img;
   cv::Mat bgr_image;
   if (visual_image_pub_->get_subscription_count() < 1) return 0;
 
@@ -78,6 +79,30 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
                     cv::COLORMAP_JET);
+  
+  int step_num = 6;
+  int x_step = bgr_image.cols / step_num;
+  int y_step = bgr_image.rows / step_num;
+  RCLCPP_WARN_ONCE(this->get_logger(), "=> x_step: %d, y_step: %d", x_step, y_step);
+
+  for (int i = 1; i < step_num; i++)
+  {
+    for (int j = 1; j < step_num; j++)
+    {
+      // 横线
+      cv::line(visual_img, cv::Point2i(0, bgr_image.rows + i * y_step), cv::Point2i(bgr_image.cols, bgr_image.rows + i * y_step), cv::Scalar(255, 255, 255), 1);
+      // 竖线
+      cv::line(visual_img, cv::Point2i(j * x_step, bgr_image.rows), cv::Point2i(j * x_step, bgr_image.rows * 2), cv::Scalar(255, 255, 255), 1);
+      // 取出Z值
+      uint16_t Z = depth_img.at<uint16_t>(i * y_step, j * x_step);
+      // mm -> m
+      double distance = static_cast<double>(Z) / 1000.0;
+      std::ostringstream ss;
+      ss << std::fixed << std::setprecision(2) << distance << "m";
+      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3, bgr_image.rows + i * y_step - 3), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255), 2);
+    }
+  }
+
 
   img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
       "bgr8", visual_img);
