@@ -67,6 +67,9 @@ struct StereoRectify {
     Dr = cv::Mat(1, cam1_distortion_coeffs.size(),
                  CV_64F, cam1_distortion_coeffs.data()).clone();
 
+    width_scale = model_input_w / static_cast<float>(cam1_resolution[0]);
+    height_scale = model_input_h / static_cast<float>(cam1_resolution[1]);
+
     Kr = cv::Mat::zeros(3, 3, CV_64F);
     Kr.at<double>(0, 0) = cam1_intrinsics[0] * width_scale;
     Kr.at<double>(0, 2) = cam1_intrinsics[2] * width_scale;

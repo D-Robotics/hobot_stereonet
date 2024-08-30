@@ -350,8 +350,8 @@ void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts) {
   auto image_seq = iss.str();
   cv::imwrite("./images/cam0/data/" + std::to_string(ts) + ".png", left_img);
   cv::imwrite("./images/cam1/data/" + std::to_string(ts) + ".png", right_img);
-  cv::vconcat(left_img, right_img, image_combine);
-  cv::imwrite("./images/cam_combine/data/combine_" + image_seq + ".png", image_combine);
+  //cv::vconcat(left_img, right_img, image_combine);
+  //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + ".png", image_combine);
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
@@ -380,49 +380,37 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 //  yuv.write(reinterpret_cast<const char *>(img->data.data()), img->width * img->height * 3/2);
 //  std::exit(0);
   if (encoding == "nv12" || encoding == "NV12") {
-    if (stereo_combine_mode_ == 0) {
-      RCLCPP_FATAL(this->get_logger(),
-                   "when stereo_combine_mode is 0, the encoding of image must be bgr8!");
-      return;
-    }
-    {
-      ScopeProcessTime t("nv12->bgr");
-      cv::Mat bgr(img->height, img->width, CV_8UC3);
+    ScopeProcessTime t("nv12->bgr");
+    stereo_img = cv::Mat(img->height, img->width, CV_8UC3);
 //      cv::Mat nv12(img->height * 3 / 2, img->width, CV_8UC1, img->data.data());
 //      cv::cvtColor(nv12, bgr, cv::COLOR_YUV2BGR_NV12);
-      image_conversion::nv12_to_bgr24_neon(img->data.data(), bgr.data, img->width, img->height);
-      left_img = bgr(
-          cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
-      right_img = bgr(
-          cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height)).clone();
-      left_sub_img.image_type = sub_image_type::BGR;
-      right_sub_img.image_type = sub_image_type::BGR;
-      left_sub_img.image = left_img;
-      right_sub_img.image = right_img;
-    }
+    image_conversion::nv12_to_bgr24_neon(img->data.data(), stereo_img.data, img->width, img->height);
   } else if (encoding == "bgr8" || encoding == "BGR8") {
-    {
-      ScopeProcessTime t("cv_bridge::toCvShare");
-      stereo_img = cv_bridge::toCvShare(img)->image;
-    }
-    {
-      ScopeProcessTime t("stereo_img split and clone");
-      if (stereo_combine_mode_ == 0) {
-        left_img = stereo_img(
-            cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
-        right_img = stereo_img(
-            cv::Rect(stereo_img_width, 0, stereo_img_width, stereo_img_height)).clone();
-      } else if (stereo_combine_mode_ == 1) {
-        left_img = stereo_img(
-            cv::Rect(0, 0, stereo_img_width, stereo_img_height)).clone();
-        right_img = stereo_img(
-            cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height)).clone();
-      }
-    }
-    left_sub_img.image_type = sub_image_type::BGR;
-    right_sub_img.image_type = sub_image_type::BGR;
-    left_sub_img.image = left_img;
-    right_sub_img.image = right_img;
+    ScopeProcessTime t("cv_bridge::toCvShare");
+    stereo_img = cv_bridge::toCvShare(img)->image;
+  }
+
+  if (stereo_combine_mode_ == 0) {
+    left_img = stereo_img(
+        cv::Rect(0, 0, stereo_img_width, stereo_img_height));
+    right_img = stereo_img(
+        cv::Rect(stereo_img_width, 0, stereo_img_width, stereo_img_height));
+  } else if (stereo_combine_mode_ == 1) {
+    left_img = stereo_img(
+        cv::Rect(0, 0, stereo_img_width, stereo_img_height));
+    right_img = stereo_img(
+        cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height));
+  }
+
+  left_sub_img.image_type = sub_image_type::BGR;
+  right_sub_img.image_type = sub_image_type::BGR;
+
+  if (stereo_img_width != model_input_w_ || stereo_img_height != model_input_h_) {
+    cv::resize(left_img, left_sub_img.image, cv::Size(model_input_w_, model_input_h_));
+    cv::resize(right_img, right_sub_img.image, cv::Size(model_input_w_, model_input_h_));
+  } else {
+    left_sub_img.image = left_img.clone();
+    right_sub_img.image = right_img.clone();
   }
 
   left_sub_img.header = img->header;
@@ -595,15 +583,13 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
       RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify Instance: " << stereo_no);
       stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
           fs[stereo_no], model_input_w, model_input_h));
-      if (need_rectify_) {
-        stereo_rectify_list_.back()->GetIntrinsic(camera_cx, camera_cy, camera_fx, camera_fy, base_line);
-      }
     } else {
       break;
     }
   } while(true);
 
   if (need_rectify_) {
+    stereo_rectify_list_.back()->GetIntrinsic(camera_cx, camera_cy, camera_fx, camera_fy, base_line);
     RCLCPP_WARN(this->get_logger(), "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
            camera_fx, camera_fy, camera_cx, camera_cy, base_line);
   }
@@ -782,6 +768,11 @@ void StereoNetNode::inference_by_image() {
     }
     if (-1 == get_image(local_image_path_, left_sub_img.image, right_sub_img.image)) {
       return;
+    }
+    if (model_input_h_ != left_sub_img.image.rows
+     || model_input_w_ != left_sub_img.image.cols) {
+      cv::resize(left_sub_img.image, left_sub_img.image, cv::Size(model_input_w_, model_input_h_));
+      cv::resize(right_sub_img.image, right_sub_img.image, cv::Size(model_input_w_, model_input_h_));
     }
     image_header.frame_id =  "default_cam";
     image_header.stamp = this->now();
