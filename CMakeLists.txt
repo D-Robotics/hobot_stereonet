@@ -180,4 +180,9 @@ install(DIRECTORY
         DESTINATION share/${PROJECT_NAME}/
         )
 
+install(DIRECTORY
+        ${PROJECT_SOURCE_DIR}/data/
+        DESTINATION share/${PROJECT_NAME}/data/
+        )
+
 ament_package()        

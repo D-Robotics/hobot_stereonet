@@ -60,6 +60,9 @@ mipi_image_width:=1280 mipi_image_height:=640
 # 配置tros.b humble环境
 source /opt/tros/humble/setup.bash
 
+# 进入算法目录
+cd /opt/tros/humble/share/stereonet_model/
+
 # 启动双目模型launch文件，其包含了算法和双目相机节点的启动
 ros2 launch stereonet_model stereonet_model_web_visual.launch.py \
 need_rectify:="False" use_local_image:="True" local_image_path:=`pwd`/data/ \
