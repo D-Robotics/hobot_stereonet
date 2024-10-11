@@ -471,6 +471,7 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   std::vector<float> &points = pub_raw_data.points;
   cv::Mat &depth_img = pub_raw_data.depth_img;
+  cv::Mat model_depth_img;
   std::vector<float> resized_points;
   if (pub_raw_data.left_sub_img.image_type == StereoNetNode::sub_image_type::NV12) {
     img_origin_width = image.cols;
@@ -479,22 +480,22 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
     img_origin_width = image.cols;
     img_origin_height = image.rows;
   }
-  if (img_origin_width != depth_w_ || img_origin_height != depth_h_) {
-    resized_points.resize(img_origin_width * img_origin_height);
-    cv::Mat resized_mat(img_origin_height, img_origin_width, CV_32FC1,
-                        resized_points.data());
-    cv::Mat origin_mat(depth_h_, depth_w_, CV_32FC1, points.data());
-    cv::resize(origin_mat, resized_mat,
-               cv::Size(img_origin_width, img_origin_height));
-    points = std::move(resized_points);
-  }
-  depth_img = cv::Mat(img_origin_height, img_origin_width, CV_16UC1);
-  uint16_t *depth_data = (uint16_t *)depth_img.data;
+
+  model_depth_img = cv::Mat(depth_h_, depth_w_, CV_16UC1);
+  uint16_t *depth_data = (uint16_t *)model_depth_img.data;
   float factor = 1000 * (camera_fx * base_line);
   uint32_t num_pixels = img_origin_height * img_origin_width;
   for (uint32_t i = 0; i < num_pixels; ++i) {
     depth_data[i] = factor / points[i];
   }
+
+  if (img_origin_width != depth_w_ || img_origin_height != depth_h_) {
+    cv::resize(model_depth_img, depth_img,
+               cv::Size(img_origin_width, img_origin_height));
+  } else {
+    depth_img = model_depth_img;
+  }
+
 //  float32x4_t zero_vec = vdupq_n_f32(0.01f);
 //  float32x4_t factor_vector = vdupq_n_f32(factor);
 //  for (uint32_t i = 0; i < num_pixels; i += 4) {

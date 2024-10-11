@@ -12,8 +12,8 @@ import os
 import queue
 
 resize_factor = 2
-spx = 647
-spy = 315
+spx = 670
+spy = 332
 def MouseCb(event, x, y, flags, param):
     global spx, spy
     spx = x * resize_factor
@@ -68,6 +68,7 @@ class DepthVisualizer(Node):
         global spx, spy
         print("get depth")
         self._que.put(depth_msg)
+        cv2.waitKey(1)
 
 
     def image_callback(self, img_msg):
@@ -82,7 +83,8 @@ class DepthVisualizer(Node):
 
         depth = depth_img[spy][spx]
         normlized_img = (depth_img - depth_img.min()) / depth_img.max() * 255
-        color_map = cv2.applyColorMap(normlized_img.astype(np.uint8), cv2.COLORMAP_VIRIDIS)
+        # normlized_img = 0.08*600*3000/depth_img
+        color_map = cv2.applyColorMap(normlized_img.astype(np.uint8), cv2.COLORMAP_JET)
         color_map = self.wrap_color_map(color_map, depth)
         img_img = self._bridge.imgmsg_to_cv2(img_msg)
         self._que.task_done()
