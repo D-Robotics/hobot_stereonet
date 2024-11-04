@@ -29,18 +29,18 @@ def set_configurable_parameters(parameters):
 def generate_launch_description():
 
     stereo_calib_file_path =  os.path.join(
-        get_package_share_directory('stereonet_model'),
+        get_package_share_directory('hobot_stereonet'),
         'config',
         'stereo.yaml'
     )
 
     stereonet_model_file_path =  os.path.join(
-        get_package_share_directory('stereonet_model'),
+        get_package_share_directory('hobot_stereonet'),
         'config',
         'model.hbm'
     )
     local_image_path =  os.path.join(
-        get_package_share_directory('stereonet_model'),
+        get_package_share_directory('hobot_stereonet'),
         'config'
     )
 
@@ -72,7 +72,7 @@ def generate_launch_description():
 
     launch = declare_configurable_parameters(node_params)
     launch.append(Node(
-        package='stereonet_model',
+        package='hobot_stereonet',
         executable='stereonet_model_node',
         output='screen',
         parameters=[set_configurable_parameters(node_params)],
