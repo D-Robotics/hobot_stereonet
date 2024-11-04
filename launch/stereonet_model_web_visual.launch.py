@@ -41,7 +41,7 @@ def generate_launch_description():
                                                    'launch/mipi_cam_dual_channel.launch.py')),
         launch_arguments={'mipi_image_width': '1280',
                           'mipi_image_height': '640',
-                          'mipi_frame_ts_type': 'realtime',
+                          'mipi_frame_ts_type': 'sensor',
                           'frame_id': 'default_cam',
                           'log_level': 'warn'
                           }.items(),
