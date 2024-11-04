@@ -51,7 +51,7 @@ def generate_launch_description():
 
     # 双目深度估计模型
     stereonet_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('stereonet_model'),
+        PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
                                                    'launch/stereonet_model.launch.py')),
         launch_arguments={'stereo_image_topic': '/image_combine_raw',
                           'stereo_combine_mode': '1',
