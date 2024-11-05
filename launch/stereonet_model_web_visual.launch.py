@@ -93,4 +93,22 @@ def generate_launch_description():
     )
     node_list.append(web_node)
 
+    imu_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('imu_sensor'),
+                'launch/imu_sensor.launch.py'))
+    )
+
+    #node_list.append(imu_node)
+
+    collection_node = Node(
+        package='stereonet_model',
+        executable='data_collection',
+        output='screen',
+        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
+    )
+
+    node_list.append(collection_node)
+
     return LaunchDescription(node_list)

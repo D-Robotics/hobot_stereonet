@@ -56,7 +56,8 @@ struct StereonetProcess {
   const int MAX_PROCESS_COUNT = 5;
   StereonetProcess();
 
-  int stereonet_init(const std::string &model_file_name);
+  int stereonet_init(const std::string &model_file_name,
+      int max_disp);
   int stereonet_deinit ();
 
   int stereonet_inference(const cv::Mat &left_img,
@@ -89,6 +90,8 @@ struct StereonetProcess {
   int model_input_w_, model_input_h_;
   int model_output_w_, model_output_h_;
   int output_count_;
+
+  int max_disp_ = 192;
 
   float focal_, baseline_;
 };

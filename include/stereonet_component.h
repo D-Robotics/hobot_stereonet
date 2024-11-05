@@ -34,6 +34,7 @@ class StereoNetNode : public rclcpp::Node {
     cv::Mat image;
     sub_image_type image_type;
     std_msgs::msg::Header header;
+    int origin_width, origin_height;
   };
 
   struct inference_data_t {
@@ -42,8 +43,10 @@ class StereoNetNode : public rclcpp::Node {
   };
   struct pub_data_t {
     sub_image left_sub_img;
+    sub_image right_sub_img;
     std::vector<float> points;
     cv::Mat depth_img;
+    cv::Mat model_depth_img;
   };
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
@@ -81,6 +84,9 @@ class StereoNetNode : public rclcpp::Node {
 
   void pub_sub_configuration();
 
+  void dump_one_point_disparity(pub_data_t &pub_raw_data,
+      const cv::Mat &right_image, int x, int y);
+
   std::atomic_bool is_running_;
 
   std::vector<std::shared_ptr<std::thread>> work_thread_;
@@ -115,14 +121,17 @@ class StereoNetNode : public rclcpp::Node {
   void convert_depth(pub_data_t &pub_raw_data);
 
   std::string rectified_image_topic_ = "~/rectified_image";
+  std::string rectified_right_image_topic_ = "~/rectified_right_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
-    rectified_image_pub_ = nullptr;
+    rectified_image_pub_ = nullptr, rectified_right_image_pub_ = nullptr;
   bool pub_rectified_bgr_ = false;
 
   int visual_alpha_ = 2, visual_beta_ = 0;
+  int max_disp_ = 192;
 
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
+
 };
 }
 #endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_

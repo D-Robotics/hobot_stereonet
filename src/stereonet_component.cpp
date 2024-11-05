@@ -59,7 +59,7 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   sensor_msgs::msg::Image visual_img_msg;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   const std::vector<float> &points = pub_raw_data.points;
-  const cv::Mat &depth_img = pub_raw_data.depth_img;
+  const cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
   if (visual_image_pub_->get_subscription_count() < 1) return 0;
 
@@ -112,66 +112,91 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
 }
 
 int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
-  if (rectified_image_pub_->get_subscription_count() < 1) return 0;
+  if (rectified_image_pub_->get_subscription_count() > 0) {
+    sensor_msgs::msg::Image pub_img_msg;
+    const cv::Mat &image = pub_raw_data.left_sub_img.image;
+    int height = image.rows;
+    int width = image.cols;
+    const uint8_t* nv12_data_ptr = nullptr;
+    cv::Mat nv12_image;
+
+    pub_img_msg.header = pub_raw_data.left_sub_img.header;
+    pub_img_msg.height = height;
+    pub_img_msg.width = width;
+
+    if (pub_rectified_bgr_) {
+      pub_img_msg.encoding = "bgr8";
+      pub_img_msg.step = width * 3;
+      size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
+      pub_img_msg.data.resize(data_len);
+      memcpy(pub_img_msg.data.data(), image.data, data_len);
+    } else {
+      pub_img_msg.encoding = "nv12";
+      pub_img_msg.step = width;
+      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        nv12_data_ptr = image.ptr<uint8_t>();
+      } else {
+        nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
+        image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
+        nv12_data_ptr = nv12_image.ptr<uint8_t>();
+      }
+      size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
+      pub_img_msg.data.resize(data_len);
+      memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
+    }
+    rectified_image_pub_->publish(pub_img_msg);
+  }
+
+  if (rectified_right_image_pub_->get_subscription_count() > 0) {
+    sensor_msgs::msg::Image pub_img_msg;
+    const cv::Mat &image = pub_raw_data.right_sub_img.image;
+    int height = image.rows;
+    int width = image.cols;
+    const uint8_t* nv12_data_ptr = nullptr;
+    cv::Mat nv12_image;
+
+    pub_img_msg.header = pub_raw_data.right_sub_img.header;
+    pub_img_msg.height = height;
+    pub_img_msg.width = width;
+
+    if (pub_rectified_bgr_) {
+      pub_img_msg.encoding = "bgr8";
+      pub_img_msg.step = width * 3;
+      size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
+      pub_img_msg.data.resize(data_len);
+      memcpy(pub_img_msg.data.data(), image.data, data_len);
+    } else {
+      pub_img_msg.encoding = "nv12";
+      pub_img_msg.step = width;
+      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        nv12_data_ptr = image.ptr<uint8_t>();
+      } else {
+        nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
+        image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
+        nv12_data_ptr = nv12_image.ptr<uint8_t>();
+      }
+      size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
+      pub_img_msg.data.resize(data_len);
+      memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
+    }
+    rectified_right_image_pub_->publish(pub_img_msg);
+  }
   RCLCPP_WARN_ONCE(this->get_logger(),
     "pub rectified image with topic name [%s]",
     rectified_image_topic_.data());
-  sensor_msgs::msg::Image pub_img_msg;
-  const cv::Mat &image = pub_raw_data.left_sub_img.image;
-  int height = image.rows;
-  int width = image.cols;
-  const uint8_t* nv12_data_ptr = nullptr;
-  cv::Mat nv12_image;
-
-  pub_img_msg.header = pub_raw_data.left_sub_img.header;
-  pub_img_msg.height = height;
-  pub_img_msg.width = width;
-
-  if (pub_rectified_bgr_) {
-    pub_img_msg.encoding = "bgr8";
-    pub_img_msg.step = width * 3;
-    size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
-    pub_img_msg.data.resize(data_len);
-    memcpy(pub_img_msg.data.data(), image.data, data_len);
-  } else {
-    pub_img_msg.encoding = "nv12";
-    pub_img_msg.step = width;
-    if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-      nv12_data_ptr = image.ptr<uint8_t>();
-    } else {
-      nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
-      image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
-      nv12_data_ptr = nv12_image.ptr<uint8_t>();
-    }
-    size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
-    pub_img_msg.data.resize(data_len);
-    memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
-  }
-  rectified_image_pub_->publish(pub_img_msg);
   return 0;
 }
 
 int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   uint32_t point_size = 0;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
-  const cv::Mat &depth_img = pub_raw_data.depth_img;
+  const cv::Mat &depth_img = pub_raw_data.model_depth_img;
   uint16_t *depth_ptr = reinterpret_cast<uint16_t *>(depth_img.data);
 
   if (pointcloud2_pub_->get_subscription_count() < 1) return 0;
 
   sensor_msgs::msg::PointCloud2 point_cloud_msg;
   sensor_msgs::PointCloud2Modifier modifier(point_cloud_msg);
-
-  int img_origin_width;
-  int img_origin_height;
-
-  if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-    img_origin_width = image.cols;
-    img_origin_height = image.rows * 2 / 3;
-  } else {
-    img_origin_width = image.cols;
-    img_origin_height = image.rows;
-  }
 
   point_cloud_msg.header = pub_raw_data.left_sub_img.header;
   point_cloud_msg.is_dense = false;
@@ -196,15 +221,15 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   //  point_cloud_msg.width = (img_origin_width / 2) * (img_origin_height / 2);
   //  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
   point_cloud_msg.data.resize(
-      (img_origin_width / 2) * (img_origin_height / 2) * point_cloud_msg.point_step *
+      (depth_w_ / 2) * (depth_h_ / 2) * point_cloud_msg.point_step *
       point_cloud_msg.height);
 
   float *pcd_data_ptr = reinterpret_cast<float *>(point_cloud_msg.data.data());
   float fy;
-  for (int y = 0; y < img_origin_height; y += 2) {
+  for (int y = 0; y < depth_h_; y += 2) {
     fy = (camera_cy  - y) / camera_fy;
-    for (int x = 0; x < img_origin_width; x += 2) {
-      float depth = depth_ptr[y * img_origin_width + x] / 1000.0f;
+    for (int x = 0; x < depth_w_; x += 2) {
+      float depth = depth_ptr[y * depth_w_ + x] / 1000.0f;
       //if (depth < height_min_ || depth > height_max_) continue;
       float X = (camera_cx - x) / camera_fx * depth;
       float Y = fy * depth;
@@ -405,16 +430,16 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   left_sub_img.image_type = sub_image_type::BGR;
   right_sub_img.image_type = sub_image_type::BGR;
 
-  if (stereo_img_width != model_input_w_ || stereo_img_height != model_input_h_) {
-    cv::resize(left_img, left_sub_img.image, cv::Size(model_input_w_, model_input_h_));
-    cv::resize(right_img, right_sub_img.image, cv::Size(model_input_w_, model_input_h_));
-  } else {
-    left_sub_img.image = left_img.clone();
-    right_sub_img.image = right_img.clone();
-  }
+  left_sub_img.image = left_img.clone();
+  right_sub_img.image = right_img.clone();
 
   left_sub_img.header = img->header;
   right_sub_img.header = img->header;
+
+  left_sub_img.origin_height = left_sub_img.image.rows;
+  left_sub_img.origin_width = left_sub_img.image.cols;
+  right_sub_img.origin_height = right_sub_img.image.rows;
+  right_sub_img.origin_width = right_sub_img.image.cols;
 
   inference_data_t inference_data {left_sub_img, right_sub_img};
   if (inference_que_.size() > 5) {
@@ -431,10 +456,14 @@ void StereoNetNode::inference_func() {
     inference_data_t inference_data;
     std::vector<float> points;
     if (inference_que_.get(inference_data)) {
+      cv::Mat &left_image = inference_data.left_sub_img.image;
+      cv::Mat &right_image = inference_data.right_sub_img.image;
       if (need_rectify_) {
-        cv::Mat &left_image = inference_data.left_sub_img.image;
-        cv::Mat &right_image = inference_data.right_sub_img.image;
         ScopeProcessTime t("stereo_rectify");
+        if (left_image.cols != model_input_w_ || left_image.rows != model_input_h_) {
+          cv::resize(left_image, left_image, cv::Size(model_input_w_, model_input_h_));
+          cv::resize(right_image, right_image, cv::Size(model_input_w_, model_input_h_));
+        }
         for (auto & s : stereo_rectify_list_) {
           s->Rectify(left_image, right_image, rectified_left_image, rectified_right_image);
           left_image = rectified_left_image;
@@ -456,14 +485,33 @@ void StereoNetNode::inference_func() {
         RCLCPP_ERROR(this->get_logger(), "inference failed.");
       } else {
         const sub_image &left_sub_img = inference_data.left_sub_img;
+        const sub_image &right_sub_img = inference_data.right_sub_img;
         const cv::Mat &left_img = left_sub_img.image;
         cv::Mat depth;
-        pub_data_t pub_data{left_sub_img, points, depth};
+        pub_data_t pub_data{left_sub_img, right_sub_img, points, depth};
         pub_func(pub_data);
+//        dump_one_point_disparity(pub_data,
+//            inference_data.right_sub_img.image, 659, 301);
       }
     }
   }
   inference_que_.clear();
+}
+
+void StereoNetNode::dump_one_point_disparity(
+    pub_data_t &pub_raw_data, const cv::Mat &right_image,
+    int x, int y) {
+  cv::Mat left_image = pub_raw_data.left_sub_img.image.clone();
+  cv::Mat right_image2 = right_image.clone();
+  std::vector<float> &points = pub_raw_data.points;
+  auto disparity = points[y * left_image.cols + x];
+  cv::circle(left_image, cv::Point(x, y), 10,
+      cv::Scalar(255, 0, 0), 3);
+  cv::circle(right_image2, cv::Point(x - disparity, y), 10,
+      cv::Scalar(255, 0, 0), 3);
+  RCLCPP_INFO(this->get_logger(), "[x: %d, y: %d, disp: %f]\n", x, y, disparity);
+  cv::imwrite("one_point_disparity_left.jpeg", left_image);
+  cv::imwrite("one_point_disparity_right.jpeg", right_image2);
 }
 
 void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
@@ -473,21 +521,18 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   cv::Mat &depth_img = pub_raw_data.depth_img;
   cv::Mat model_depth_img;
   std::vector<float> resized_points;
-  if (pub_raw_data.left_sub_img.image_type == StereoNetNode::sub_image_type::NV12) {
-    img_origin_width = image.cols;
-    img_origin_height = image.rows * 2 / 3;
-  } else {
-    img_origin_width = image.cols;
-    img_origin_height = image.rows;
-  }
+  img_origin_width = pub_raw_data.left_sub_img.origin_width;
+  img_origin_height = pub_raw_data.left_sub_img.origin_height;
 
   model_depth_img = cv::Mat(depth_h_, depth_w_, CV_16UC1);
   uint16_t *depth_data = (uint16_t *)model_depth_img.data;
   float factor = 1000 * (camera_fx * base_line);
-  uint32_t num_pixels = img_origin_height * img_origin_width;
+  uint32_t num_pixels = points.size();
   for (uint32_t i = 0; i < num_pixels; ++i) {
     depth_data[i] = factor / points[i];
   }
+
+  pub_raw_data.model_depth_img = model_depth_img;
 
   if (img_origin_width != depth_w_ || img_origin_height != depth_h_) {
     cv::resize(model_depth_img, depth_img,
@@ -537,7 +582,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
 int StereoNetNode::start() {
   int ret = 0;
   stereonet_process_ = std::make_shared<StereonetProcess>();
-  ret = stereonet_process_->stereonet_init(stereonet_model_file_path_);
+  ret = stereonet_process_->stereonet_init(stereonet_model_file_path_, max_disp_);
   if (ret != 0) {
     RCLCPP_FATAL(this->get_logger(), "stereonet model init failed");
     stereonet_process_ = nullptr;
@@ -678,6 +723,14 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("alpha", visual_alpha_);
   this->get_parameter("alpha", visual_alpha_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_alpha: " << visual_alpha_);
+
+  this->declare_parameter("max_disp", max_disp_);
+  this->get_parameter("max_disp", max_disp_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "max_disp: " << max_disp_);
+
+  this->declare_parameter("rectify_bgr", pub_rectified_bgr_);
+  this->get_parameter("rectify_bgr", pub_rectified_bgr_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pub_rectified_bgr: " << pub_rectified_bgr_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {
@@ -712,7 +765,7 @@ void StereoNetNode::inference_by_usb_camera() {
 */
 }
 
-int get_image(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img) {
+int get_image(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img, int64_t &ts) {
   static uint32_t i_num = 0;
   std::stringstream iss;
   std::string image_seq;
@@ -720,6 +773,7 @@ int get_image(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_i
   image_seq = iss.str();
   left_img = cv::imread(image_path + "/left" + image_seq +".png");
   right_img = cv::imread(image_path + "/right"+ image_seq +".png");
+  ts = 0;
   if (left_img.empty() || right_img.empty()) {
     return -1;
   }
@@ -741,13 +795,14 @@ void get_image_file_list(const std::string &image_path, std::vector<std::string>
   closedir(pDir);
 }
 
-int get_image2(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img) {
+int get_image2(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img, int64_t &ts) {
   static std::vector<std::string> left_file_names, right_file_names;
   static uint32_t i_num = 0;
   if (i_num == 0) {
     get_image_file_list(image_path + "/cam0/data/", left_file_names);
     get_image_file_list(image_path + "/cam1/data/", right_file_names);
   }
+  ts = std::atoll(left_file_names[i_num].c_str());
   if (i_num < left_file_names.size()) {
     left_img = cv::imread(image_path + "/cam0/data/" + left_file_names[i_num] + ".png");
     right_img = cv::imread(image_path + "/cam1/data/"+ right_file_names[i_num] + ".png");
@@ -761,26 +816,30 @@ int get_image2(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_
 void StereoNetNode::inference_by_image() {
   std_msgs::msg::Header image_header;
   sub_image left_sub_img, right_sub_img;
+  int64_t ts;
   while (rclcpp::ok()) {
     if (inference_que_.size() > 5) {
       RCLCPP_WARN(this->get_logger(), "inference que is full!");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
-    if (-1 == get_image(local_image_path_, left_sub_img.image, right_sub_img.image)) {
+    if (-1 == get_image(local_image_path_, left_sub_img.image, right_sub_img.image, ts)) {
       return;
     }
-    if (model_input_h_ != left_sub_img.image.rows
-     || model_input_w_ != left_sub_img.image.cols) {
-      cv::resize(left_sub_img.image, left_sub_img.image, cv::Size(model_input_w_, model_input_h_));
-      cv::resize(right_sub_img.image, right_sub_img.image, cv::Size(model_input_w_, model_input_h_));
-    }
     image_header.frame_id =  "default_cam";
-    image_header.stamp = this->now();
+    if (ts != 0) {
+      image_header.stamp = rclcpp::Time(ts);
+    } else {
+      image_header.stamp = this->now();
+    }
     left_sub_img.image_type = sub_image_type::BGR;
     right_sub_img.image_type = sub_image_type::BGR;
     left_sub_img.header = image_header;
     right_sub_img.header = image_header;
+    left_sub_img.origin_height = left_sub_img.image.rows;
+    left_sub_img.origin_width = left_sub_img.image.cols;
+    right_sub_img.origin_height = right_sub_img.image.rows;
+    right_sub_img.origin_width = right_sub_img.image.cols;
     inference_que_.put({left_sub_img, right_sub_img});
   }
 }
@@ -801,6 +860,9 @@ void StereoNetNode::pub_sub_configuration() {
       
   rectified_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       rectified_image_topic_, 10);
+
+  rectified_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+      rectified_right_image_topic_, 10);
 }
 }
 

@@ -165,8 +165,26 @@ rclcpp_components_register_node(stereonet_model_intra_sub
         PLUGIN "stereonet::StereoNetSubNode"
         EXECUTABLE stereonet_model_intra_sub_node)
 
+add_executable(
+        data_collection
+        ${PROJECT_SOURCE_DIR}/src/data_collection.cpp
+)
+
+ament_target_dependencies(data_collection
+        rclcpp
+        rclcpp_components
+        cv_bridge
+        std_msgs
+        sensor_msgs)
+
+target_link_libraries(data_collection
+        ${rclcpp_LIBRARIES}
+        ${sensor_msgs_LIBRARIES}
+        ${OpenCV_LIBRARIES}
+        pthread)
+
 install(
-        TARGETS stereonet_model_node stereonet_model stereonet_model_intra_sub_node stereonet_model_intra_sub
+        TARGETS stereonet_model_node stereonet_model stereonet_model_intra_sub_node stereonet_model_intra_sub data_collection
         RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

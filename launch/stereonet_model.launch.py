@@ -68,6 +68,8 @@ def generate_launch_description():
         {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
         {'name':'alpha', 'default_value':'2', 'description': 'visual_alpha'},
         {'name':'beta', 'default_value':'0', 'description': 'visual_beta'},
+        {'name':'max_disp', 'default_value':'192', 'description': 'max_disp'},
+        {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
     ]
 
     launch = declare_configurable_parameters(node_params)
