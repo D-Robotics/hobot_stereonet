@@ -184,7 +184,12 @@ target_link_libraries(data_collection
         pthread)
 
 install(
-        TARGETS stereonet_model_node stereonet_model stereonet_model_intra_sub_node stereonet_model_intra_sub data_collection
+        TARGETS stereonet_model_node stereonet_model_intra_sub_node data_collection
+        RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+        TARGETS stereonet_model stereonet_model_intra_sub
         RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
