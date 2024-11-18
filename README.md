@@ -20,6 +20,7 @@
 tros humble 版本
 ```bash
 sudo apt update
+sudo apt-get remove tros-humble-stereonet-model
 sudo apt install -y tros-humble-hobot-stereonet
 ```
 
@@ -33,7 +34,7 @@ tros humble 版本
 source /opt/tros/humble/setup.bash
 
 # 启动双目模型launch文件，其包含了算法和双目相机节点的启动
-ros2 launch stereonet_model stereonet_model_web_visual.launch.py \
+ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
 stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
 height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
 
@@ -45,7 +46,7 @@ height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
 source /opt/tros/humble/setup.bash
 
 # 终端1 启动双目模型launch文件
-ros2 launch stereonet_model stereonet_model_component.launch.py \
+ros2 launch hobot_stereonet stereonet_model_component.launch.py \
 stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
 height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
 
@@ -61,10 +62,10 @@ mipi_image_width:=1280 mipi_image_height:=640
 source /opt/tros/humble/setup.bash
 
 # 进入算法数据目录
-cd /opt/tros/humble/share/stereonet_model/
+cd /opt/tros/humble/share/hobot_stereonet/
 
 # 启动双目模型launch文件
-ros2 launch stereonet_model stereonet_model_web_visual.launch.py \
+ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
 need_rectify:="False" use_local_image:="True" local_image_path:=`pwd`/data/ \
 camera_fx:=505.044342 camera_fy:=505.044342 camera_cx:=605.167053 camera_cy:=378.247009 base_line:=0.069046
 ```
@@ -125,7 +126,7 @@ camera_fx:=505.044342 camera_fy:=505.044342 camera_cx:=605.167053 camera_cy:=378
 # 算法耗时
 当log等级设置为debug时，程序会打印出算法各阶段耗时情况，供用户debug算法性能瓶颈。
 ```shell
-ros2 launch stereonet_model stereonet_model.launch.py \
+ros2 launch hobot_stereonet stereonet_model.launch.py \
 stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" log_level:=debug
 ```
 ![stereonet_rdk](img/consume.png)
