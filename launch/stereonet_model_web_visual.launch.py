@@ -109,6 +109,6 @@ def generate_launch_description():
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     )
 
-    node_list.append(collection_node)
+    #node_list.append(collection_node)
 
     return LaunchDescription(node_list)
