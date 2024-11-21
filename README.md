@@ -21,6 +21,9 @@ tros humble 版本
 ```bash
 sudo apt update
 sudo apt-get remove tros-humble-stereonet-model
+# 如果卸载失败，则执行：
+# sudo dpkg --remove --force-all tros-humble-stereonet-model
+
 sudo apt install -y tros-humble-hobot-stereonet
 ```
 
