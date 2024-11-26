@@ -129,6 +129,7 @@ class StereoNetNode : public rclcpp::Node {
   int visual_alpha_ = 2, visual_beta_ = 0;
   int max_disp_ = 192;
 
+  std::string image_format_ = "png";
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
 

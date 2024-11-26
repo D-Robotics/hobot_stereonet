@@ -90,20 +90,39 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
     for (int j = 1; j < step_num; j++)
     {
       // 横线
-      cv::line(visual_img, cv::Point2i(0, bgr_image.rows + i * y_step), cv::Point2i(bgr_image.cols, bgr_image.rows + i * y_step), cv::Scalar(255, 255, 255), 1);
+      cv::line(visual_img, cv::Point2i(0, bgr_image.rows + i * y_step),
+               cv::Point2i(bgr_image.cols, bgr_image.rows + i * y_step),
+               cv::Scalar(255, 255, 255), 1);
       // 竖线
-      cv::line(visual_img, cv::Point2i(j * x_step, bgr_image.rows), cv::Point2i(j * x_step, bgr_image.rows * 2), cv::Scalar(255, 255, 255), 1);
+      cv::line(visual_img, cv::Point2i(j * x_step, bgr_image.rows),
+               cv::Point2i(j * x_step, bgr_image.rows * 2),
+               cv::Scalar(255, 255, 255), 1);
+
+      // 横线
+      cv::line(visual_img, cv::Point2i(0, i * y_step),
+               cv::Point2i(bgr_image.cols, i * y_step),
+               cv::Scalar(255, 255, 255), 1);
+      // 竖线
+      cv::line(visual_img, cv::Point2i(j * x_step, 0),
+               cv::Point2i(j * x_step, bgr_image.rows),
+               cv::Scalar(255, 255, 255), 1);
       // 取出Z值
       uint16_t Z = depth_img.at<uint16_t>(i * y_step, j * x_step);
       // mm -> m
       double distance = static_cast<double>(Z) / 1000.0;
       std::ostringstream ss;
       ss << std::fixed << std::setprecision(2) << distance << "m";
-      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3, bgr_image.rows + i * y_step - 3), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255), 2);
+      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
+                                                    bgr_image.rows + i * y_step - 3),
+                  cv::FONT_HERSHEY_SIMPLEX, 1,
+                  cv::Scalar(255, 255, 255), 2);
+
+      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
+                                                    i * y_step - 3),
+                  cv::FONT_HERSHEY_SIMPLEX, 1,
+                  cv::Scalar(255, 255, 255), 2);
     }
   }
-
-
   img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
       "bgr8", visual_img);
   img_bridge.toImageMsg(visual_img_msg);
@@ -359,7 +378,8 @@ void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
   cv::imwrite("./after.jpg", img_rtf);
 }
 
-void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts) {
+void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts,
+    const std::string &image_format) {
   static std::atomic_bool directory_created{false};
   static std::atomic_int i {0};
   std::stringstream iss;
@@ -373,10 +393,10 @@ void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts) {
   }
   iss << std::setw(3) << std::setfill('0') << i++;
   auto image_seq = iss.str();
-  cv::imwrite("./images/cam0/data/" + std::to_string(ts) + ".png", left_img);
-  cv::imwrite("./images/cam1/data/" + std::to_string(ts) + ".png", right_img);
+  cv::imwrite("./images/cam0/data/" + std::to_string(ts) + "." + image_format, left_img);
+  cv::imwrite("./images/cam1/data/" + std::to_string(ts) + "." + image_format, right_img);
   //cv::vconcat(left_img, right_img, image_combine);
-  //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + ".png", image_combine);
+  //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + image_format, image_combine);
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
@@ -476,8 +496,8 @@ void StereoNetNode::inference_func() {
         save_images(inference_data.left_sub_img.image,
                     inference_data.right_sub_img.image,
                     inference_data.left_sub_img.header.stamp.sec * 1e9
-                     + inference_data.left_sub_img.header.stamp.nanosec);
-        continue;
+                     + inference_data.left_sub_img.header.stamp.nanosec,
+                     image_format_);
       }
 
       ret = inference(inference_data, points);
@@ -731,6 +751,10 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("rectify_bgr", pub_rectified_bgr_);
   this->get_parameter("rectify_bgr", pub_rectified_bgr_);
   RCLCPP_INFO_STREAM(this->get_logger(), "pub_rectified_bgr: " << pub_rectified_bgr_);
+
+  this->declare_parameter("image_format", image_format_);
+  this->get_parameter("image_format", image_format_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "image_format: " << image_format_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {
@@ -765,14 +789,16 @@ void StereoNetNode::inference_by_usb_camera() {
 */
 }
 
-int get_image(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img, int64_t &ts) {
+int get_image(const std::string &image_path,
+    cv::Mat &left_img, cv::Mat &right_img, int64_t &ts,
+              const std::string &image_format) {
   static uint32_t i_num = 0;
   std::stringstream iss;
   std::string image_seq;
   iss << std::setw(6) << std::setfill('0') << i_num++;
   image_seq = iss.str();
-  left_img = cv::imread(image_path + "/left" + image_seq +".png");
-  right_img = cv::imread(image_path + "/right"+ image_seq +".png");
+  left_img = cv::imread(image_path + "/left" + image_seq + "." + image_format);
+  right_img = cv::imread(image_path + "/right"+ image_seq + "." + image_format);
   ts = 0;
   if (left_img.empty() || right_img.empty()) {
     return -1;
@@ -780,32 +806,55 @@ int get_image(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_i
   return 0;
 }
 
-void get_image_file_list(const std::string &image_path, std::vector<std::string> &file_names) {
+void get_image_file_list(const std::string &image_path,
+                         std::vector<std::string> &file_names) {
   DIR *pDir;
   struct dirent *ptr;
-  if (!(pDir = opendir(image_path.c_str())))
+  if (!(pDir = opendir(image_path.c_str()))) {
+    RCLCPP_ERROR(rclcpp::get_logger(""),
+        "image path is not existed: %s ", image_path.c_str());
     return;
+  }
   while ((ptr = readdir(pDir)) != 0) {
     if (strcmp(ptr->d_name, ".") != 0 && strcmp(ptr->d_name, "..") != 0) {
       std::string file_name = ptr->d_name;
-      file_names.push_back(file_name.substr(0, file_name.length() - 4));
+      size_t lastDot = file_name.find_last_of('.');
+      if (lastDot != std::string::npos) {
+        auto extension = file_name.substr(lastDot + 1);
+        std::transform(extension.begin(),
+                       extension.end(), extension.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (extension == "png" ||
+            extension == "jpg" || extension == "jpeg") {
+          file_names.push_back(file_name);
+        }
+      }
     }
   }
   sort(file_names.begin(), file_names.end());
   closedir(pDir);
 }
 
-int get_image2(const std::string &image_path, cv::Mat &left_img, cv::Mat &right_img, int64_t &ts) {
+int get_image2(const std::string &image_path, cv::Mat &left_img,
+    cv::Mat &right_img, int64_t &ts, const std::string &image_format) {
   static std::vector<std::string> left_file_names, right_file_names;
   static uint32_t i_num = 0;
   if (i_num == 0) {
     get_image_file_list(image_path + "/cam0/data/", left_file_names);
     get_image_file_list(image_path + "/cam1/data/", right_file_names);
   }
-  ts = std::atoll(left_file_names[i_num].c_str());
   if (i_num < left_file_names.size()) {
-    left_img = cv::imread(image_path + "/cam0/data/" + left_file_names[i_num] + ".png");
-    right_img = cv::imread(image_path + "/cam1/data/"+ right_file_names[i_num] + ".png");
+    std::string file_name;
+    size_t lastDot = left_file_names[i_num].find_last_of('.');
+    // 分离文件名和后缀
+    if (lastDot == std::string::npos) {
+      file_name = left_file_names[i_num];
+    } else {
+      file_name = left_file_names[i_num].substr(0, lastDot);
+    }
+    ts = std::atoll(file_name.c_str());
+    left_img = cv::imread(image_path + "/cam0/data/" + left_file_names[i_num]);
+    right_img = cv::imread(image_path + "/cam1/data/"+ right_file_names[i_num]);
     i_num++;
     return 0;
   }
@@ -823,7 +872,8 @@ void StereoNetNode::inference_by_image() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
-    if (-1 == get_image(local_image_path_, left_sub_img.image, right_sub_img.image, ts)) {
+    if (-1 == get_image2(local_image_path_, left_sub_img.image,
+        right_sub_img.image, ts, image_format_)) {
       return;
     }
     image_header.frame_id =  "default_cam";

@@ -70,6 +70,7 @@ def generate_launch_description():
         {'name':'beta', 'default_value':'0', 'description': 'visual_beta'},
         {'name':'max_disp', 'default_value':'192', 'description': 'max_disp'},
         {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
+        {'name':'image_format', 'default_value':'png', 'description': 'image_format'},
     ]
 
     launch = declare_configurable_parameters(node_params)
