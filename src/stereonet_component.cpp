@@ -12,7 +12,7 @@ namespace stereonet {
 int StereoNetNode::inference(const inference_data_t &inference_data,
                              std::vector<float> &points) {
   bool is_nv12;
-  cv::Mat resized_left_img, resized_right_img;
+ // cv::Mat resized_left_img, resized_right_img;
   const cv::Mat &left_img = inference_data.left_sub_img.image;
   const cv::Mat &right_img = inference_data.right_sub_img.image;
   is_nv12 = inference_data.left_sub_img.image_type == sub_image_type::NV12;
@@ -25,18 +25,18 @@ int StereoNetNode::inference(const inference_data_t &inference_data,
                    model_input_w_, model_input_h_);
       return -1;
     }
-    resized_left_img = left_img;
-    resized_right_img = right_img;
+  //  resized_left_img = left_img;
+  //  resized_right_img = right_img;
   } else {
     if (left_img.rows != model_input_h_ || left_img.cols != model_input_w_) {
-      cv::resize(left_img, resized_left_img, cv::Size(model_input_w_, model_input_h_));
-      cv::resize(right_img, resized_right_img, cv::Size(model_input_w_, model_input_h_));
+      cv::resize(left_img, left_img, cv::Size(model_input_w_, model_input_h_));
+      cv::resize(right_img, right_img, cv::Size(model_input_w_, model_input_h_));
     } else {
-      resized_left_img = left_img;
-      resized_right_img = right_img;
+    //  resized_left_img = left_img;
+    //  resized_right_img = right_img;
     }
   }
-  return stereonet_process_->stereonet_inference(resized_left_img, resized_right_img,
+  return stereonet_process_->stereonet_inference(left_img, right_img,
                                                  is_nv12, points);
 }
 
@@ -75,6 +75,7 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   cv::Mat feat_mat(bgr_image.rows, bgr_image.cols, CV_32F, const_cast<float *>(points.data()));
   cv::Mat feat_visual;
   feat_mat.convertTo(feat_visual, CV_8U, visual_alpha_, visual_beta_);
+
   //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
@@ -127,6 +128,11 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
       "bgr8", visual_img);
   img_bridge.toImageMsg(visual_img_msg);
   visual_image_pub_->publish(visual_img_msg);
+//  static uint32_t i = 0;
+//  std::ofstream result(std::to_string(i) + ".txt", std::ios::out);
+//  cv::imwrite(std::to_string(i) + ".jpg", visual_img);
+//  i++;
+//  result << pub_raw_data.depth_img;
   return 0;
 }
 
@@ -538,6 +544,7 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   int img_origin_width, img_origin_height;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   std::vector<float> &points = pub_raw_data.points;
+  std::vector<float> &image_size_points = pub_raw_data.image_size_points;
   cv::Mat &depth_img = pub_raw_data.depth_img;
   cv::Mat model_depth_img;
   std::vector<float> resized_points;
@@ -557,8 +564,15 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   if (img_origin_width != depth_w_ || img_origin_height != depth_h_) {
     cv::resize(model_depth_img, depth_img,
                cv::Size(img_origin_width, img_origin_height));
+    image_size_points.resize(img_origin_width * img_origin_height);
+    cv::Mat image_size_points_mat(img_origin_height, img_origin_width,
+        CV_32FC1, image_size_points.data());
+    cv::Mat points_mat(depth_h_, depth_w_, CV_32FC1, points.data());
+    cv::resize(points_mat, image_size_points_mat,
+        cv::Size(img_origin_width, img_origin_height));
   } else {
     depth_img = model_depth_img;
+    image_size_points = points;
   }
 
 //  float32x4_t zero_vec = vdupq_n_f32(0.01f);
@@ -755,6 +769,10 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("image_format", image_format_);
   this->get_parameter("image_format", image_format_);
   RCLCPP_INFO_STREAM(this->get_logger(), "image_format: " << image_format_);
+
+  this->declare_parameter("image_sleep", image_inference_sleep_ms_);
+  this->get_parameter("image_sleep", image_inference_sleep_ms_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "image_inference_sleep_ms: " << image_inference_sleep_ms_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {
@@ -874,8 +892,9 @@ void StereoNetNode::inference_by_image() {
     }
     if (-1 == get_image2(local_image_path_, left_sub_img.image,
         right_sub_img.image, ts, image_format_)) {
-      return;
+      continue;
     }
+    std::this_thread::sleep_for(std::chrono::milliseconds(image_inference_sleep_ms_));
     image_header.frame_id =  "default_cam";
     if (ts != 0) {
       image_header.stamp = rclcpp::Time(ts);

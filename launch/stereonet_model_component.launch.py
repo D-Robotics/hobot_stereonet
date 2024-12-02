@@ -67,6 +67,7 @@ def generate_launch_description():
         {'name':'max_disp', 'default_value':'192', 'description': 'max_disp'},
         {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
         {'name':'image_format', 'default_value':'png', 'description': 'image_format'},
+        {'name':'image_sleep', 'default_value':'1', 'description': 'image_sleep'},
     ]
 
     def declare_configurable_parameters(parameters):

@@ -79,7 +79,7 @@ struct StereoRectify {
 
     cv::stereoRectify(Kl, Dl, Kr, Dr,
                       cv::Size(model_input_w, model_input_h), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                      cv::CALIB_ZERO_DISPARITY);
+                      cv::CALIB_ZERO_DISPARITY, 0);
 
     cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl,
         cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l, undistmap2l);

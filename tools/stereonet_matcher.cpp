@@ -18,7 +18,6 @@ class StereoNetMatcher : public rclcpp::Node {
   void stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
     cv::Mat stereo_img, left_img, right_img;
     const std::string &encoding = img->encoding;
-    RCLCPP_INFO(this->get_logger(), "h: %d, w: %d", img->height, img->width);
     if (encoding == "nv12" || encoding == "NV12") {
       cv::Mat nv12(img->height * 3 / 2, img->width, CV_8UC1, img->data.data());
       cv::cvtColor(nv12, stereo_img, cv::COLOR_YUV2BGR_NV12);
@@ -45,7 +44,6 @@ class StereoNetMatcher : public rclcpp::Node {
 
   int get_image_from_ros(cv::Mat& left_image, cv::Mat& right_image, int64_t &ts) {
     std::lock_guard<std::mutex> lck(image_mutex);
-    std::cout << "stereo_image.cols: " << stereo_image.cols << ", stereo_image.rows: " << stereo_image.rows << std::endl;
     if (image_update) {
       left_image = stereo_image(
           cv::Rect(0, 0, stereo_image.cols, stereo_image.rows / 2)).clone();

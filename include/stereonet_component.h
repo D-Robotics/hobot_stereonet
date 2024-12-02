@@ -45,6 +45,7 @@ class StereoNetNode : public rclcpp::Node {
     sub_image left_sub_img;
     sub_image right_sub_img;
     std::vector<float> points;
+    std::vector<float> image_size_points;
     cv::Mat depth_img;
     cv::Mat model_depth_img;
   };
@@ -126,8 +127,9 @@ class StereoNetNode : public rclcpp::Node {
     rectified_image_pub_ = nullptr, rectified_right_image_pub_ = nullptr;
   bool pub_rectified_bgr_ = false;
 
-  int visual_alpha_ = 2, visual_beta_ = 0;
+  int visual_alpha_ = 1, visual_beta_ = 0;
   int max_disp_ = 192;
+  int image_inference_sleep_ms_ = 1;
 
   std::string image_format_ = "png";
  private:
