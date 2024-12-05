@@ -20,6 +20,7 @@
 #include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/time.hpp>
 
+#include "image_conversion.h"
 namespace stereonet {
 
 class StereoNetNode : public rclcpp::Node {
@@ -67,7 +68,7 @@ class StereoNetNode : public rclcpp::Node {
   void camera_config_parse(const std::string &file_path,
                            int model_input_w, int model_input_h);
 
-  int inference(const inference_data_t &, std::vector<float> &points);
+  int inference(inference_data_t &, std::vector<float> &points);
   void inference_func();
   void pub_func(pub_data_t &pub_raw_data);
 
@@ -101,9 +102,16 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   std::shared_ptr<StereonetProcess> stereonet_process_;
+  void save_images(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format);
+  void save_mat_to_bin(const cv::Mat &mat, const std::string &filename);
 
  private:
   bool save_image_;
+  bool save_image_to_nv12_;
+  std::atomic_bool directory_created_{false};
+  std::atomic_int save_cnt_{1};
+
+  std::string postprocess_;
 
   int depth_w_, depth_h_;
   int model_input_w_, model_input_h_;

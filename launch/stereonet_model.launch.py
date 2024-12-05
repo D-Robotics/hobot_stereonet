@@ -56,6 +56,8 @@ def generate_launch_description():
         {'name':'height_min', 'default_value':'0.03', 'description': 'height_min'},
         {'name':'height_max', 'default_value':'5.0', 'description': 'height_max'},
         {'name':'save_image', 'default_value':'False', 'description': 'save_image'},
+        {'name':'save_image_to_nv12', 'default_value':'False', 'description': 'save_image_to_nv12'},
+        {'name':'postprocess', 'default_value':'v1', 'description': 'postprocess'},
         {'name':'use_local_image', 'default_value':'False', 'description': 'use_local_image'},
         {'name':'use_usb_camera', 'default_value':'False', 'description': 'use_usb_camera'},
         {'name':'stereo_combine_mode', 'default_value':'1', 'description': 'stereo_combine_mode'},

@@ -227,6 +227,56 @@ int postprocess(std::vector<hbDNNTensor> &tensors,
   return 0;
 }
 
+static float quanti_scale(int32_t data, float scale)
+{
+    return data * scale;
+}
+
+int postprocess_v2(std::vector<hbDNNTensor> &tensors,
+                std::vector<float> &points,
+                int max_disp) {
+  for (int32_t i = 0; i < 2; i++) {
+    hbSysFlushMem(&(tensors[i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
+  }
+
+  // get tensor info
+  int16_t *disp_unfold = reinterpret_cast<int16_t *>(tensors[0].sysMem[0].virAddr);
+  int16_t *spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
+
+  float *disp_unfold_scale = tensors[0].properties.scale.scaleData;
+  float *spx_scale = tensors[1].properties.scale.scaleData;
+  RCLCPP_INFO_ONCE(rclcpp::get_logger(""), "=> disp_unfold_scale: %f, spx_scale: %f", *disp_unfold_scale, *spx_scale);
+
+  int32_t *disp_unfold_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
+  RCLCPP_INFO_ONCE(rclcpp::get_logger(""), "=> disp_unfold_shape: [%d, %d, %d, %d], spx_shape: [%d, %d, %d, %d]", 
+  disp_unfold_shape[0], disp_unfold_shape[1], disp_unfold_shape[2], disp_unfold_shape[3], 
+  spx_shape[0], spx_shape[1], spx_shape[2], spx_shape[3]);
+
+  points.resize(disp_unfold_shape[2] * disp_unfold_shape[3], 0.f);
+  int c_step = disp_unfold_shape[2] * disp_unfold_shape[3];
+  int h_step = disp_unfold_shape[3];
+  int cnt = 0;
+  for (int h = 0; h < disp_unfold_shape[2]; h++)
+  {
+    for (int w = 0; w < disp_unfold_shape[3]; w++)
+    {
+      float disp = 0.0f;
+      for (int c = 0; c < disp_unfold_shape[1]; c++)
+      {
+        int index = c * c_step + h * h_step + w;
+        float disp_unfold_val = quanti_scale(disp_unfold[index], *disp_unfold_scale);
+        float spx_val = quanti_scale(spx[index], *spx_scale);
+        disp += disp_unfold_val * spx_val;
+      }
+      points[cnt] = disp;
+      cnt++;
+    }
+  }
+
+  return 0;
+}
+
 static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
 {
   int32_t i = 0, j = 0;
@@ -288,7 +338,56 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
   return 0;
 }
 
-static int32_t prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
+static std::string tensor_type_to_str(int32_t tensor_type)
+{
+    switch (tensor_type)
+    {
+    case HB_DNN_IMG_TYPE_Y:
+        return "HB_DNN_IMG_TYPE_Y";
+    case HB_DNN_IMG_TYPE_NV12:
+        return "HB_DNN_IMG_TYPE_NV12";
+    case HB_DNN_IMG_TYPE_NV12_SEPARATE:
+        return "HB_DNN_IMG_TYPE_NV12_SEPARATE";
+    case HB_DNN_IMG_TYPE_YUV444:
+        return "HB_DNN_IMG_TYPE_YUV444";
+    case HB_DNN_IMG_TYPE_RGB:
+        return "HB_DNN_IMG_TYPE_RGB";
+    case HB_DNN_IMG_TYPE_BGR:
+        return "HB_DNN_IMG_TYPE_BGR";
+    case HB_DNN_TENSOR_TYPE_S4:
+        return "HB_DNN_TENSOR_TYPE_S4";
+    case HB_DNN_TENSOR_TYPE_U4:
+        return "HB_DNN_TENSOR_TYPE_U4";
+    case HB_DNN_TENSOR_TYPE_S8:
+        return "HB_DNN_TENSOR_TYPE_S8";
+    case HB_DNN_TENSOR_TYPE_U8:
+        return "HB_DNN_TENSOR_TYPE_U8";
+    case HB_DNN_TENSOR_TYPE_F16:
+        return "HB_DNN_TENSOR_TYPE_F16";
+    case HB_DNN_TENSOR_TYPE_S16:
+        return "HB_DNN_TENSOR_TYPE_S16";
+    case HB_DNN_TENSOR_TYPE_U16:
+        return "HB_DNN_TENSOR_TYPE_U16";
+    case HB_DNN_TENSOR_TYPE_F32:
+        return "HB_DNN_TENSOR_TYPE_F32";
+    case HB_DNN_TENSOR_TYPE_S32:
+        return "HB_DNN_TENSOR_TYPE_S32";
+    case HB_DNN_TENSOR_TYPE_U32:
+        return "HB_DNN_TENSOR_TYPE_U32";
+    case HB_DNN_TENSOR_TYPE_F64:
+        return "HB_DNN_TENSOR_TYPE_F64";
+    case HB_DNN_TENSOR_TYPE_S64:
+        return "HB_DNN_TENSOR_TYPE_S64";
+    case HB_DNN_TENSOR_TYPE_U64:
+        return "HB_DNN_TENSOR_TYPE_U64";
+    case HB_DNN_TENSOR_TYPE_MAX:
+        return "HB_DNN_TENSOR_TYPE_MAX";
+    default:
+        return "Unknown";
+    }
+}
+
+int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
                                     hbDNNHandle_t dnn_handle) {
   int model_h, model_w;
   input_tensor.resize(2);
@@ -299,7 +398,9 @@ static int32_t prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
         hbDNNGetInputTensorProperties(&properties, dnn_handle, 0),
         "hbDNNGetInputTensorProperties failed");
     tensor.properties = properties;
-    tensor.properties.tensorType = HB_DNN_IMG_TYPE_NV12_SEPARATE;
+    input_tensor_type_ = properties.tensorType;
+    RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> input tensor type: " << tensor_type_to_str(tensor.properties.tensorType));
+    // tensor.properties.tensorType = HB_DNN_IMG_TYPE_NV12_SEPARATE;
     switch (properties.tensorLayout) {
       case HB_DNN_LAYOUT_NHWC:
         model_h = properties.validShape.dimensionSize[1];
@@ -318,16 +419,25 @@ static int32_t prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
     tensor.properties.validShape.dimensionSize[2] = model_h; 
     tensor.properties.validShape.dimensionSize[3] = model_w;
     tensor.properties.alignedShape = tensor.properties.validShape;
-    
-    HB_CHECK_SUCCESS(hbSysAllocCachedMem(&tensor.sysMem[0],
-                                         model_h * model_w),
-                     "hbSysAllocCachedMem failed");
-    tensor.sysMem[0].memSize = model_h * model_w;
 
-    HB_CHECK_SUCCESS(hbSysAllocCachedMem(&tensor.sysMem[1],
-                                         model_h * model_w / 2),
-                     "hbSysAllocCachedMem failed");
-    tensor.sysMem[1].memSize = model_h * model_w / 2;
+    // check input tensor type
+    if (properties.tensorType == HB_DNN_IMG_TYPE_NV12_SEPARATE)
+    {
+      HB_CHECK_SUCCESS(hbSysAllocCachedMem(&tensor.sysMem[0], model_h * model_w), "hbSysAllocCachedMem failed");
+      tensor.sysMem[0].memSize = model_h * model_w;
+
+      HB_CHECK_SUCCESS(hbSysAllocCachedMem(&tensor.sysMem[1], model_h * model_w / 2), "hbSysAllocCachedMem failed");
+      tensor.sysMem[1].memSize = model_h * model_w / 2;
+    }
+    else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12)
+    {
+      HB_CHECK_SUCCESS(hbSysAllocCachedMem(&tensor.sysMem[0], (3 * model_h * model_w) / 2), "hbSysAllocCachedMem failed");
+      tensor.sysMem[0].memSize = (3 * model_h * model_w) / 2;
+    }
+    else
+    {
+      return -1;
+    }
   }
   return 0;
 }
@@ -404,15 +514,9 @@ static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_l
   return 0;
 }
 
-static void bgr_to_nv12(const cv::Mat &bgr, cv::Mat &nv12) {
-  int width = bgr.cols;
-  int height = bgr.rows;
-  nv12 = cv::Mat(height * 3 / 2, width, CV_8UC1);
-  image_conversion::bgr24_to_nv12_neon(bgr.data, nv12.data, width, height);
-}
-
 int StereonetProcess::stereonet_init(const std::string &model_file_name,
-    int max_disp) {
+    int max_disp, const std::string &postprocess) {
+  postprocess_ = postprocess;
   int32_t model_count = 0;
   hbDNNTensorProperties properties;
   hbPackedDNNHandle_t packed_dnn_handle;
@@ -514,8 +618,8 @@ int StereonetProcess::stereonet_inference(
     right_img_nv12 = right_img;
   } else {
     ScopeProcessTime t("bgr_to_nv12");
-    bgr_to_nv12(left_img, left_img_nv12);
-    bgr_to_nv12(right_img, right_img_nv12);
+    image_conversion::bgr_to_nv12(left_img, left_img_nv12);
+    image_conversion::bgr_to_nv12(right_img, right_img_nv12);
   }
 
   hbDNNTensor &left_input_tensor  = input_tensors_[idle_tensor_id][0],
@@ -539,24 +643,32 @@ int StereonetProcess::stereonet_inference(
   bin.write((const char*)right_img_nv12.data, right_input_tensor.sysMem[0].memSize + right_input_tensor.sysMem[1].memSize);
    */
 
-  hbSysWriteMem(&left_input_tensor.sysMem[0],
-                (char *)left_img_nv12.data,
-                left_input_tensor.sysMem[0].memSize);
-  hbSysWriteMem(&left_input_tensor.sysMem[1],
-                (char *) left_img_nv12.data + left_input_tensor.sysMem[0].memSize,
-                left_input_tensor.sysMem[1].memSize);
+  if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12_SEPARATE)
+  {
+    hbSysWriteMem(&left_input_tensor.sysMem[0], (char *)left_img_nv12.data, left_input_tensor.sysMem[0].memSize);
+    hbSysWriteMem(&left_input_tensor.sysMem[1], (char *) left_img_nv12.data + left_input_tensor.sysMem[0].memSize, left_input_tensor.sysMem[1].memSize);
 
-  hbSysWriteMem(&right_input_tensor.sysMem[0],
-                (char *)right_img_nv12.data,
-                right_input_tensor.sysMem[0].memSize);
-  hbSysWriteMem(&right_input_tensor.sysMem[1],
-                (char *) right_img_nv12.data + right_input_tensor.sysMem[0].memSize,
-                right_input_tensor.sysMem[1].memSize);
+    hbSysWriteMem(&right_input_tensor.sysMem[0], (char *)right_img_nv12.data, right_input_tensor.sysMem[0].memSize);
+    hbSysWriteMem(&right_input_tensor.sysMem[1], (char *) right_img_nv12.data + right_input_tensor.sysMem[0].memSize, right_input_tensor.sysMem[1].memSize);
 
-  hbSysFlushMem(&left_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
-  hbSysFlushMem(&left_input_tensor.sysMem[1], HB_SYS_MEM_CACHE_CLEAN);
-  hbSysFlushMem(&right_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
-  hbSysFlushMem(&right_input_tensor.sysMem[1], HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&left_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&left_input_tensor.sysMem[1], HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&right_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&right_input_tensor.sysMem[1], HB_SYS_MEM_CACHE_CLEAN);
+  }
+  else if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12)
+  {
+    hbSysWriteMem(&left_input_tensor.sysMem[0], (char *)left_img_nv12.data, left_input_tensor.sysMem[0].memSize);
+    hbSysWriteMem(&right_input_tensor.sysMem[0], (char *)right_img_nv12.data, right_input_tensor.sysMem[0].memSize);
+
+    hbSysFlushMem(&left_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&right_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
+  }
+  else
+  {
+    RCLCPP_ERROR_STREAM(rclcpp::get_logger(""), "\033[31m=> input tensor flush mem errror:" << tensor_type_to_str(input_tensor_type_) << "!\033[0m");
+    return StereonetErrorCode::INPUT_ERROR;
+  }
 
   hbDNNInferCtrlParam infer_ctrl_param;
   HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
@@ -597,7 +709,14 @@ int StereonetProcess::stereonet_inference(
   }
 
   ScopeProcessTime t("postprocess");
-  postprocess(output_tensors_[idle_tensor_id], points, max_disp_);
+  if (postprocess_ == "v1")
+  {
+    postprocess(output_tensors_[idle_tensor_id], points, max_disp_);
+  }
+  else
+  {
+    postprocess_v2(output_tensors_[idle_tensor_id], points, max_disp_);
+  }
   return StereonetErrorCode::OK;
 }
 

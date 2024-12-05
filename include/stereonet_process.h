@@ -50,14 +50,15 @@ struct StereonetProcess {
   enum StereonetErrorCode {
     OK = 0,
     TENSOR_BUSY = -1,
-    DNN_ERROR = -2
+    DNN_ERROR = -2,
+    INPUT_ERROR = -3
   };
 
   const int MAX_PROCESS_COUNT = 5;
   StereonetProcess();
 
   int stereonet_init(const std::string &model_file_name,
-      int max_disp);
+      int max_disp, const std::string &postprocess);
   int stereonet_deinit ();
 
   int stereonet_inference(const cv::Mat &left_img,
@@ -78,6 +79,7 @@ struct StereonetProcess {
  private:
   int get_idle_tensor();
   int set_tensor_idle(int tensor_id);
+  int32_t prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor, hbDNNHandle_t dnn_handle);
 
  private:
   hbDNNHandle_t		dnn_handle_;
@@ -86,6 +88,9 @@ struct StereonetProcess {
   std::deque<std::atomic_bool> idle_tensor_;
   std::vector<std::vector<hbDNNTensor>> output_tensors_;
   std::vector<std::vector<hbDNNTensor>> input_tensors_;
+  int32_t input_tensor_type_;
+
+  std::string postprocess_;
 
   int model_input_w_, model_input_h_;
   int model_output_w_, model_output_h_;
