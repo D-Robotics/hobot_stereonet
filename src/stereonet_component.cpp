@@ -9,12 +9,37 @@
 
 
 namespace stereonet {
-int StereoNetNode::inference(const inference_data_t &inference_data,
+
+void StereoNetNode::save_mat_to_bin(const cv::Mat &mat, const std::string &filename)
+{
+  if (mat.empty())
+  {
+    RCLCPP_ERROR(this->get_logger(), "=> The input matrix is empty!");
+    return;
+  }
+
+  std::ofstream ofs(filename, std::ios::binary);
+  if (!ofs.is_open())
+  {
+    RCLCPP_ERROR(this->get_logger(), "=> Failed to open file for writing!");
+    return;
+  }
+
+  const uchar *dataPtr = mat.data;
+  size_t dataSize = mat.total() * mat.elemSize();
+  // RCLCPP_INFO(this->get_logger(), "=> dataSize: %ld, mat.total(): %ld, mat.elemSize(): %ld", dataSize, mat.total(), mat.elemSize());
+
+  ofs.write(reinterpret_cast<const char *>(dataPtr), dataSize);
+
+  ofs.close();
+}
+
+int StereoNetNode::inference(inference_data_t &inference_data,
                              std::vector<float> &points) {
   bool is_nv12;
  // cv::Mat resized_left_img, resized_right_img;
-  const cv::Mat &left_img = inference_data.left_sub_img.image;
-  const cv::Mat &right_img = inference_data.right_sub_img.image;
+  cv::Mat &left_img = inference_data.left_sub_img.image;
+  cv::Mat &right_img = inference_data.right_sub_img.image;
   is_nv12 = inference_data.left_sub_img.image_type == sub_image_type::NV12;
   if (is_nv12) {
     if (left_img.rows * 2 / 3 != model_input_h_ || left_img.cols != model_input_w_
@@ -29,6 +54,7 @@ int StereoNetNode::inference(const inference_data_t &inference_data,
   //  resized_right_img = right_img;
   } else {
     if (left_img.rows != model_input_h_ || left_img.cols != model_input_w_) {
+      // RCLCPP_INFO(this->get_logger(), "\033[31m=> resize img [%d, %d] to [%d, %d]\033[0m", left_img.cols, left_img.rows, model_input_w_, model_input_h_);
       cv::resize(left_img, left_img, cv::Size(model_input_w_, model_input_h_));
       cv::resize(right_img, right_img, cv::Size(model_input_w_, model_input_h_));
     } else {
@@ -36,6 +62,34 @@ int StereoNetNode::inference(const inference_data_t &inference_data,
     //  resized_right_img = right_img;
     }
   }
+
+  inference_data.left_sub_img.origin_height = left_img.rows;
+  inference_data.left_sub_img.origin_width = left_img.cols;
+  inference_data.right_sub_img.origin_height = right_img.rows;
+  inference_data.right_sub_img.origin_width = right_img.cols;
+
+  if (save_image_ && !is_nv12) {
+    if (!directory_created_) {
+      directory_created_ = true;
+      system("mkdir -p ./stereonet_images");
+    }
+
+    save_images(left_img, right_img,image_format_);
+
+    if (save_cnt_ == 1)
+    {
+      std::stringstream ss;
+      ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
+      std::string result = ss.str();
+      std::ofstream outFile("./stereonet_images/calib_param.txt");
+      if (outFile.is_open()) {
+        outFile << result;
+        outFile.close();
+        RCLCPP_WARN_STREAM(this->get_logger(), "=> calib param save to: ./stereonet_images/calib_param.txt");
+      }
+    }
+  }
+
   return stereonet_process_->stereonet_inference(left_img, right_img,
                                                  is_nv12, points);
 }
@@ -84,7 +138,7 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
   int y_step = bgr_image.rows / step_num;
-  RCLCPP_WARN_ONCE(this->get_logger(), "=> x_step: %d, y_step: %d", x_step, y_step);
+  // RCLCPP_WARN_ONCE(this->get_logger(), "=> x_step: %d, y_step: %d", x_step, y_step);
 
   for (int i = 1; i < step_num; i++)
   {
@@ -113,14 +167,16 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
       double distance = static_cast<double>(Z) / 1000.0;
       std::ostringstream ss;
       ss << std::fixed << std::setprecision(2) << distance << "m";
+      double font_scale = 1.0;
+      if (postprocess_ == "v2") font_scale = 0.5;
       cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
                                                     bgr_image.rows + i * y_step - 3),
-                  cv::FONT_HERSHEY_SIMPLEX, 1,
+                  cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
 
       cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
                                                     i * y_step - 3),
-                  cv::FONT_HERSHEY_SIMPLEX, 1,
+                  cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
     }
   }
@@ -384,25 +440,20 @@ void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
   cv::imwrite("./after.jpg", img_rtf);
 }
 
-void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts,
-    const std::string &image_format) {
-  static std::atomic_bool directory_created{false};
-  static std::atomic_int i {0};
+void StereoNetNode::save_images(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format) {
   std::stringstream iss;
-  cv::Mat image_combine;
-  if (!directory_created) {
-    directory_created = true;
-    system("mkdir -p"
-           " ./images/cam0/data/"
-           " ./images/cam1/data/"
-           " ./images/cam_combine/data/");
-  }
-  iss << std::setw(3) << std::setfill('0') << i++;
+  iss << std::setw(6) << std::setfill('0') << save_cnt_;
   auto image_seq = iss.str();
-  cv::imwrite("./images/cam0/data/" + std::to_string(ts) + "." + image_format, left_img);
-  cv::imwrite("./images/cam1/data/" + std::to_string(ts) + "." + image_format, right_img);
-  //cv::vconcat(left_img, right_img, image_combine);
-  //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + image_format, image_combine);
+  cv::imwrite("./stereonet_images/left" + image_seq + "." + image_format, left_img);
+  cv::imwrite("./stereonet_images/right" + image_seq + "." + image_format, right_img);
+  if (save_image_to_nv12_)
+  {
+    cv::Mat left_img_nv12, right_img_nv12;
+    image_conversion::bgr_to_nv12(left_img, left_img_nv12);
+    image_conversion::bgr_to_nv12(right_img, right_img_nv12);
+    save_mat_to_bin(left_img_nv12, "./stereonet_images/left" + image_seq + ".nv12");
+    save_mat_to_bin(right_img_nv12, "./stereonet_images/right" + image_seq + ".nv12");
+  }
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
@@ -498,14 +549,6 @@ void StereoNetNode::inference_func() {
         //  dump_rectified_image(left_image, right_image, rectified_left_image, rectified_right_image);
       }
 
-      if (save_image_) {
-        save_images(inference_data.left_sub_img.image,
-                    inference_data.right_sub_img.image,
-                    inference_data.left_sub_img.header.stamp.sec * 1e9
-                     + inference_data.left_sub_img.header.stamp.nanosec,
-                     image_format_);
-      }
-
       ret = inference(inference_data, points);
       if (ret != 0) {
         RCLCPP_ERROR(this->get_logger(), "inference failed.");
@@ -575,6 +618,25 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
     image_size_points = points;
   }
 
+  if (save_image_)
+  {
+    RCLCPP_WARN(this->get_logger(), "=> img_origin_height: %d,  img_origin_width: %d", img_origin_height, img_origin_width);
+    cv::Mat disp_img = cv::Mat(img_origin_height, img_origin_width, CV_32FC1);
+    float *disp_data = (float *)disp_img.data;
+    for (uint32_t i = 0; i < num_pixels; ++i) {
+      disp_data[i] = points[i];
+    }
+    std::stringstream ss;
+    ss << std::setw(6) << std::setfill('0') << save_cnt_;
+    std::string disp_path = "./stereonet_images/disp" + ss.str() + ".pfm";
+    std::string depth_path = "./stereonet_images/depth" + ss.str() + ".png";
+    cv::imwrite(disp_path, disp_img);
+    cv::imwrite(depth_path, depth_img);
+    RCLCPP_WARN_STREAM(this->get_logger(), "=> save to: " << disp_path);
+
+    save_cnt_++;
+  }
+
 //  float32x4_t zero_vec = vdupq_n_f32(0.01f);
 //  float32x4_t factor_vector = vdupq_n_f32(factor);
 //  for (uint32_t i = 0; i < num_pixels; i += 4) {
@@ -616,7 +678,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
 int StereoNetNode::start() {
   int ret = 0;
   stereonet_process_ = std::make_shared<StereonetProcess>();
-  ret = stereonet_process_->stereonet_init(stereonet_model_file_path_, max_disp_);
+  ret = stereonet_process_->stereonet_init(stereonet_model_file_path_, max_disp_, postprocess_);
   if (ret != 0) {
     RCLCPP_FATAL(this->get_logger(), "stereonet model init failed");
     stereonet_process_ = nullptr;
@@ -628,6 +690,7 @@ int StereoNetNode::start() {
   stereonet_process_->get_depth_width_height(depth_w_, depth_h_);
   camera_config_parse(stereo_calib_file_path_,
                       model_input_w_, model_input_h_);
+  RCLCPP_WARN(this->get_logger(), "\033[31m=> rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m", camera_fx, camera_fy, camera_cx, camera_cy, base_line);
   is_running_ = true;
   work_thread_.emplace_back(std::make_shared<std::thread>(
       [this] { inference_func(); }));
@@ -705,6 +768,14 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("save_image", false);
   this->get_parameter("save_image", save_image_);
   RCLCPP_INFO_STREAM(this->get_logger(), "save_image: " << save_image_);
+
+  this->declare_parameter("save_image_to_nv12", false);
+  this->get_parameter("save_image_to_nv12", save_image_to_nv12_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "save_image_to_nv12: " << save_image_to_nv12_);
+
+  this->declare_parameter("postprocess", "v1");
+  this->get_parameter("postprocess", postprocess_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "postprocess: " << postprocess_);
 
   this->declare_parameter("base_line", 0.1f);
   this->get_parameter("base_line", base_line);
@@ -815,12 +886,15 @@ int get_image(const std::string &image_path,
   std::string image_seq;
   iss << std::setw(6) << std::setfill('0') << i_num++;
   image_seq = iss.str();
-  left_img = cv::imread(image_path + "/left" + image_seq + "." + image_format);
-  right_img = cv::imread(image_path + "/right"+ image_seq + "." + image_format);
+  std::string left_img_path = image_path + "/left" + image_seq + "." + image_format;
+  std::string right_img_path = image_path + "/right"+ image_seq + "." + image_format;
+  left_img = cv::imread(left_img_path);
+  right_img = cv::imread(right_img_path);
   ts = 0;
   if (left_img.empty() || right_img.empty()) {
     return -1;
   }
+  RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> left_img_path: " << left_img_path << ", right_img_path: " << right_img_path);
   return 0;
 }
 
@@ -890,7 +964,7 @@ void StereoNetNode::inference_by_image() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
-    if (-1 == get_image2(local_image_path_, left_sub_img.image,
+    if (-1 == get_image(local_image_path_, left_sub_img.image,
         right_sub_img.image, ts, image_format_)) {
       continue;
     }

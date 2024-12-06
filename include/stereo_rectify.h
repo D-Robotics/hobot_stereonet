@@ -86,18 +86,27 @@ struct StereoRectify {
     cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr,
         cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1r, undistmap2r);
 
-    std::cout << "\nKl: \n" << Kl << "\nDl:\n" << Dl <<
-              "\nKr: \n" << Kr << "\nDr:\n" << Dr <<
-              "\nR, t: \n" << R_rl << "\n" << t_rl <<
-              "\norigin width, height: " << cam0_resolution[0] << ", " << cam0_resolution[1]
-              << std::endl;
-
     camera_fx = Q.at<double>(2, 3);
     camera_fy = Q.at<double>(2, 3);
     camera_cx = -Q.at<double>(0, 3);
     camera_cy = -Q.at<double>(1, 3);
     //  const cv::Mat t = Rr * t_rl;
     base_line = std::abs(1 / Q.at<double>(3, 2));
+
+    std::cout << "Kl:" << std::endl
+              << Kl << std::endl
+              << "Dl:" << std::endl
+              << Dl << std::endl
+              << "Kr: " << std::endl
+              << Kr << std::endl
+              << "Dr:" << std::endl
+              << Dr << std::endl
+              << "R, t: " << std::endl
+              << R_rl << std::endl
+              << t_rl << std::endl
+              << "calib file width, height: " << cam0_resolution[0] << ", " << cam0_resolution[1] << std::endl
+              << "width_scale, height_scale: " << width_scale << ", " << height_scale << std::endl
+              << std::endl;
   }
 
   void Rectify(const cv::Mat &left_image,

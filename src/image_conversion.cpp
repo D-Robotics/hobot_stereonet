@@ -161,3 +161,10 @@ void image_conversion::bgr24_to_nv12_neon(uint8_t* bgr24, uint8_t* nv12, int wid
     }
   }
 }
+
+void image_conversion::bgr_to_nv12(const cv::Mat &bgr, cv::Mat &nv12) {
+  int width = bgr.cols;
+  int height = bgr.rows;
+  nv12 = cv::Mat(height * 3 / 2, width, CV_8UC1);
+  bgr24_to_nv12_neon(bgr.data, nv12.data, width, height);
+}
