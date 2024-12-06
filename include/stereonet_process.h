@@ -10,6 +10,8 @@
 
 #include "image_conversion.h"
 
+#include "Eigen/Dense"
+
 #ifndef STEREO_INCLUDE_STEREONET_PROCESS_H_
 #define STEREO_INCLUDE_STEREONET_PROCESS_H_
 
