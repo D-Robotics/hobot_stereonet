@@ -154,14 +154,15 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   std::shared_ptr<StereonetProcess> stereonet_process_;
-  void save_images(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format);
+  void save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format);
   void save_mat_to_bin(const cv::Mat &mat, const std::string &filename);
 
  private:
   bool save_image_;
+  bool save_image_all_;
   bool save_image_to_nv12_;
-  std::atomic_bool directory_created_{false};
-  std::atomic_int save_cnt_{1};
+  bool directory_created_ = false;
+  int save_cnt_ = 1;
 
   std::string postprocess_;
 
