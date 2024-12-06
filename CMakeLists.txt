@@ -18,6 +18,7 @@ find_package(rclcpp_components REQUIRED)
 find_package(ament_cmake REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(message_filters REQUIRED)
 
 set(SYS_ROOT ${CMAKE_SYSROOT})
 message("PREFIX_PATH is " ${PREFIX_PATH})
@@ -26,6 +27,7 @@ message("SYS_ROOT is " ${SYS_ROOT})
 set(PCL_INCLUDE_DIRS ${SYS_ROOT}/usr/include/pcl-1.12/
                      ${SYS_ROOT}/usr/include/eigen3/  
                      /opt/ros/humble/include/
+                     /opt/ros/humble/include/pcl_conversions/
                      /opt/ros/humble/include/message_filters/
                      /opt/ros/humble/include/pcl_msgs/)
 set(PCL_LIBRARIES 
@@ -92,7 +94,8 @@ ament_target_dependencies(stereonet_model_node
         rclcpp_components
         cv_bridge
         std_msgs
-        sensor_msgs)
+        sensor_msgs
+        message_filters)
 
 add_library(stereonet_model SHARED
         ${PROJECT_SOURCE_DIR}/src/stereonet_component.cpp
@@ -105,7 +108,8 @@ ament_target_dependencies(stereonet_model
         rclcpp_components
         cv_bridge
         std_msgs
-        sensor_msgs)
+        sensor_msgs
+        message_filters)
 
 target_link_libraries(stereonet_model
         ${rclcpp_LIBRARIES}
@@ -135,7 +139,8 @@ ament_target_dependencies(stereonet_model_sub_node
         rclcpp_components
         std_msgs
         sensor_msgs
-        cv_bridge)
+        cv_bridge
+        message_filters)
 
 target_link_libraries(stereonet_model_sub_node
         ${rclcpp_LIBRARIES}
@@ -152,7 +157,8 @@ ament_target_dependencies(stereonet_model_intra_sub
         rclcpp_components
         std_msgs
         sensor_msgs
-        cv_bridge)
+        cv_bridge
+        message_filters)
 
 target_link_libraries(stereonet_model_intra_sub
         ${rclcpp_LIBRARIES}

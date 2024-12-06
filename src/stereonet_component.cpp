@@ -50,16 +50,16 @@ int StereoNetNode::inference(inference_data_t &inference_data,
                    model_input_w_, model_input_h_);
       return -1;
     }
-  //  resized_left_img = left_img;
-  //  resized_right_img = right_img;
+    //  resized_left_img = left_img;
+    //  resized_right_img = right_img;
   } else {
     if (left_img.rows != model_input_h_ || left_img.cols != model_input_w_) {
       // RCLCPP_INFO(this->get_logger(), "\033[31m=> resize img [%d, %d] to [%d, %d]\033[0m", left_img.cols, left_img.rows, model_input_w_, model_input_h_);
       cv::resize(left_img, left_img, cv::Size(model_input_w_, model_input_h_));
       cv::resize(right_img, right_img, cv::Size(model_input_w_, model_input_h_));
     } else {
-    //  resized_left_img = left_img;
-    //  resized_right_img = right_img;
+      //  resized_left_img = left_img;
+      //  resized_right_img = right_img;
     }
   }
 
@@ -74,7 +74,7 @@ int StereoNetNode::inference(inference_data_t &inference_data,
       system("mkdir -p ./stereonet_images");
     }
 
-    save_images(left_img, right_img,image_format_);
+    save_images(left_img, right_img, image_format_);
 
     if (save_cnt_ == 1)
     {
@@ -102,7 +102,7 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   if (depth_image_pub_->get_subscription_count() < 1) return 0;
 
   img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
-      "mono16", depth_img);
+                                  "mono16", depth_img);
   img_bridge.toImageMsg(depth_img_msg);
   depth_image_pub_->publish(depth_img_msg);
   return 0;
@@ -133,8 +133,8 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
-                    cv::COLORMAP_JET);
-  
+                    userColor_);
+
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
   int y_step = bgr_image.rows / step_num;
@@ -180,8 +180,24 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
                   cv::Scalar(255, 255, 255), 2);
     }
   }
+
+  if (depth_compare) {
+    cv::putText(visual_img, "camera", cv::Point2i(3, 38),
+                cv::FONT_HERSHEY_SIMPLEX, 1.5,
+                cv::Scalar(0, 255, 0), 3);
+
+    cv::putText(visual_img, "AI-depth", cv::Point2i(3, bgr_image.rows + 38),
+                cv::FONT_HERSHEY_SIMPLEX, 1.5,
+                cv::Scalar(0, 255, 0), 3);
+    {
+      std::lock_guard<std::mutex> lck(compare_visual_mtx_);
+
+      cv::hconcat(visual_img, compare_visual_, visual_img);
+    }
+  }
+
   img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
-      "bgr8", visual_img);
+                                  "bgr8", visual_img);
   img_bridge.toImageMsg(visual_img_msg);
   visual_image_pub_->publish(visual_img_msg);
 //  static uint32_t i = 0;
@@ -263,8 +279,8 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
     rectified_right_image_pub_->publish(pub_img_msg);
   }
   RCLCPP_WARN_ONCE(this->get_logger(),
-    "pub rectified image with topic name [%s]",
-    rectified_image_topic_.data());
+                   "pub rectified image with topic name [%s]",
+                   rectified_image_topic_.data());
   return 0;
 }
 
@@ -303,7 +319,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   //  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
   point_cloud_msg.data.resize(
       (depth_w_ / 2) * (depth_h_ / 2) * point_cloud_msg.point_step *
-      point_cloud_msg.height);
+          point_cloud_msg.height);
 
   float *pcd_data_ptr = reinterpret_cast<float *>(point_cloud_msg.data.data());
   float fy;
@@ -326,7 +342,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   point_cloud_msg.width = point_size;
   point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
   point_cloud_msg.data.resize(point_size * point_cloud_msg.point_step *
-          point_cloud_msg.height);
+      point_cloud_msg.height);
 
   if (need_pcl_filter_) {
     ScopeProcessTime t("pcl_filter");
@@ -463,13 +479,13 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   int stereo_img_width, stereo_img_height;
   builtin_interfaces::msg::Time now = this->get_clock()->now();
   RCLCPP_DEBUG(this->get_logger(),
-              "we have received stereo msg at: %ld.%ld,\n"
-              "timestamp of stereo is: %ld.%ld, latency is %f sec,\n"
-              "encoding: %s, width: %d, height: %d",
-              now.sec, now.nanosec,
-              img->header.stamp.sec, img->header.stamp.nanosec,
-              (rclcpp::Time(now) - rclcpp::Time(img->header.stamp)).seconds(),
-              encoding.c_str(), img->width, img->height);
+               "we have received stereo msg at: %ld.%ld,\n"
+               "timestamp of stereo is: %ld.%ld, latency is %f sec,\n"
+               "encoding: %s, width: %d, height: %d",
+               now.sec, now.nanosec,
+               img->header.stamp.sec, img->header.stamp.nanosec,
+               (rclcpp::Time(now) - rclcpp::Time(img->header.stamp)).seconds(),
+               encoding.c_str(), img->width, img->height);
   if (stereo_combine_mode_ == 0) {
     stereo_img_width = img->width / 2;
     stereo_img_height = img->height;
@@ -520,7 +536,8 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 
   inference_data_t inference_data {left_sub_img, right_sub_img};
   if (inference_que_.size() > 5) {
-    RCLCPP_WARN(this->get_logger(), "inference que is full!");
+    RCLCPP_WARN_THROTTLE(this->get_logger(),
+                         *this->get_clock(), 5000, "inference que is full!");
     return;
   }
   inference_que_.put(inference_data);
@@ -535,12 +552,12 @@ void StereoNetNode::inference_func() {
     if (inference_que_.get(inference_data)) {
       cv::Mat &left_image = inference_data.left_sub_img.image;
       cv::Mat &right_image = inference_data.right_sub_img.image;
+      if (left_image.cols != model_input_w_ || left_image.rows != model_input_h_) {
+        cv::resize(left_image, left_image, cv::Size(model_input_w_, model_input_h_));
+        cv::resize(right_image, right_image, cv::Size(model_input_w_, model_input_h_));
+      }
       if (need_rectify_) {
         ScopeProcessTime t("stereo_rectify");
-        if (left_image.cols != model_input_w_ || left_image.rows != model_input_h_) {
-          cv::resize(left_image, left_image, cv::Size(model_input_w_, model_input_h_));
-          cv::resize(right_image, right_image, cv::Size(model_input_w_, model_input_h_));
-        }
         for (auto & s : stereo_rectify_list_) {
           s->Rectify(left_image, right_image, rectified_left_image, rectified_right_image);
           left_image = rectified_left_image;
@@ -575,9 +592,9 @@ void StereoNetNode::dump_one_point_disparity(
   std::vector<float> &points = pub_raw_data.points;
   auto disparity = points[y * left_image.cols + x];
   cv::circle(left_image, cv::Point(x, y), 10,
-      cv::Scalar(255, 0, 0), 3);
+             cv::Scalar(255, 0, 0), 3);
   cv::circle(right_image2, cv::Point(x - disparity, y), 10,
-      cv::Scalar(255, 0, 0), 3);
+             cv::Scalar(255, 0, 0), 3);
   RCLCPP_INFO(this->get_logger(), "[x: %d, y: %d, disp: %f]\n", x, y, disparity);
   cv::imwrite("one_point_disparity_left.jpeg", left_image);
   cv::imwrite("one_point_disparity_right.jpeg", right_image2);
@@ -609,10 +626,10 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
                cv::Size(img_origin_width, img_origin_height));
     image_size_points.resize(img_origin_width * img_origin_height);
     cv::Mat image_size_points_mat(img_origin_height, img_origin_width,
-        CV_32FC1, image_size_points.data());
+                                  CV_32FC1, image_size_points.data());
     cv::Mat points_mat(depth_h_, depth_w_, CV_32FC1, points.data());
     cv::resize(points_mat, image_size_points_mat,
-        cv::Size(img_origin_width, img_origin_height));
+               cv::Size(img_origin_width, img_origin_height));
   } else {
     depth_img = model_depth_img;
     image_size_points = points;
@@ -669,7 +686,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
     ScopeProcessTime t("pub_rectified");
     ret = pub_rectified_image(pub_raw_data);
   }
-  
+
   if (ret != 0) {
     RCLCPP_ERROR(this->get_logger(), "pub failed, ret: %d", ret);
   }
@@ -691,6 +708,8 @@ int StereoNetNode::start() {
   camera_config_parse(stereo_calib_file_path_,
                       model_input_w_, model_input_h_);
   RCLCPP_WARN(this->get_logger(), "\033[31m=> rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m", camera_fx, camera_fy, camera_cx, camera_cy, base_line);
+  compare_visual_ = cv::Mat::zeros(cv::Size(depth_w_, depth_h_ * 2), CV_8UC3);
+
   is_running_ = true;
   work_thread_.emplace_back(std::make_shared<std::thread>(
       [this] { inference_func(); }));
@@ -734,7 +753,7 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
   if (need_rectify_) {
     stereo_rectify_list_.back()->GetIntrinsic(camera_cx, camera_cy, camera_fx, camera_fy, base_line);
     RCLCPP_WARN(this->get_logger(), "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
-           camera_fx, camera_fy, camera_cx, camera_cy, base_line);
+                camera_fx, camera_fy, camera_cx, camera_cy, base_line);
   }
 
   fs.release();
@@ -879,7 +898,7 @@ void StereoNetNode::inference_by_usb_camera() {
 }
 
 int get_image(const std::string &image_path,
-    cv::Mat &left_img, cv::Mat &right_img, int64_t &ts,
+              cv::Mat &left_img, cv::Mat &right_img, int64_t &ts,
               const std::string &image_format) {
   static uint32_t i_num = 0;
   std::stringstream iss;
@@ -904,7 +923,7 @@ void get_image_file_list(const std::string &image_path,
   struct dirent *ptr;
   if (!(pDir = opendir(image_path.c_str()))) {
     RCLCPP_ERROR(rclcpp::get_logger(""),
-        "image path is not existed: %s ", image_path.c_str());
+                 "image path is not existed: %s ", image_path.c_str());
     return;
   }
   while ((ptr = readdir(pDir)) != 0) {
@@ -928,7 +947,7 @@ void get_image_file_list(const std::string &image_path,
 }
 
 int get_image2(const std::string &image_path, cv::Mat &left_img,
-    cv::Mat &right_img, int64_t &ts, const std::string &image_format) {
+               cv::Mat &right_img, int64_t &ts, const std::string &image_format) {
   static std::vector<std::string> left_file_names, right_file_names;
   static uint32_t i_num = 0;
   if (i_num == 0) {
@@ -960,12 +979,15 @@ void StereoNetNode::inference_by_image() {
   int64_t ts;
   while (rclcpp::ok()) {
     if (inference_que_.size() > 5) {
-      RCLCPP_WARN(this->get_logger(), "inference que is full!");
+      RCLCPP_WARN_THROTTLE(this->get_logger(),
+                           *this->get_clock(), 2000, "inference que is full!");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
     if (-1 == get_image(local_image_path_, left_sub_img.image,
         right_sub_img.image, ts, image_format_)) {
+//    if (-1 == get_image2(local_image_path_, left_sub_img.image,
+//                         right_sub_img.image, ts, image_format_)) {
       continue;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(image_inference_sleep_ms_));
@@ -1000,13 +1022,160 @@ void StereoNetNode::pub_sub_configuration() {
 
   visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       "~/stereonet_visual", 10);
-      
+
   rectified_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       rectified_image_topic_, 10);
 
   rectified_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       rectified_right_image_topic_, 10);
+
+  depth_compare = false;
+  std::string compare_depth_topic = "~/stereonet_depth";
+  std::string visual_topic = "~/stereonet_visual";
+  std::string compare_image_topic = "~/rectified_image";
+
+  depth_compare = this->declare_parameter("depth_compare", depth_compare);
+  RCLCPP_INFO_STREAM(this->get_logger(), "depth_compare: " << depth_compare);
+
+  compare_depth_topic = this->declare_parameter("compare_depth_topic", compare_depth_topic);
+  RCLCPP_INFO_STREAM(this->get_logger(), "compare_depth_topic: " << compare_depth_topic);
+
+  visual_topic = this->declare_parameter("visual_topic", visual_topic);
+  RCLCPP_INFO_STREAM(this->get_logger(), "visual_topic: " << visual_topic);
+
+  compare_image_topic = this->declare_parameter("compare_image_topic", compare_image_topic);
+  RCLCPP_INFO_STREAM(this->get_logger(), "compare_image_topic: " << compare_image_topic);
+
+  if (depth_compare) {
+    depth_subscriber_.subscribe(this, compare_depth_topic);
+    //color_subscriber_.subscribe(this, visual_topic);
+    compare_left_subscriber_.subscribe(this, compare_image_topic);
+
+    sync_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(
+        SyncPolicy(10),
+        depth_subscriber_,
+        //color_subscriber_,
+        compare_left_subscriber_);
+    sync_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(0.1));
+    sync_->registerCallback(std::bind(&StereoNetNode::sync_callback,
+                                      this, std::placeholders::_1,
+        //std::placeholders::_2,
+                                      std::placeholders::_2
+    ));
+
+    compare_visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+        "~/compare_stereonet_visual", 10);
+
+/*
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
+    qos.reliability(rclcpp::ReliabilityPolicy::Reliable);
+    qos.durability(rclcpp::DurabilityPolicy::TransientLocal);
+
+     depth_sub_ = this->create_subscription<sensor_msgs::msg::CompressedImage>(
+       compare_depth_topic, qos,
+       std::bind(&StereoNetNode::d_callback, this, std::placeholders::_1));
+
+
+     compare_left_sub_ = this->create_subscription<sensor_msgs::msg::CompressedImage>(
+       compare_image_topic, qos,
+       std::bind(&StereoNetNode::c_callback, this, std::placeholders::_1));
+      */
+  }
 }
+
+
+void StereoNetNode::d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg) {
+  std::cout << "d cb" << std::endl;
+
+}
+
+void StereoNetNode::c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg) {
+  std::cout << "c cb" << std::endl;
+
+}
+
+void StereoNetNode::sync_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &depth_msg,
+    //const sensor_msgs::msg::Image::ConstSharedPtr &color_msg,
+                                  const sensor_msgs::msg::CompressedImage::ConstSharedPtr &rs_msg) {
+  sensor_msgs::msg::Image visual_image_msg;
+  cv_bridge::CvImage img_bridge;
+
+  const float fx_bl = 37050;
+  int width, height;
+  std::vector<unsigned char> compressed_data(depth_msg->data.begin() + 12, depth_msg->data.end());
+  cv::Mat depth_image = cv::imdecode(compressed_data, cv::IMREAD_UNCHANGED);
+  //  cv::Mat depth_image = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::MONO16)->image;
+  cv::Mat rs_image = cv_bridge::toCvCopy(rs_msg, sensor_msgs::image_encodings::BGR8)->image;
+  width = depth_w_;
+  height = depth_h_;
+
+  if (depth_image.empty() || rs_image.empty()) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to decode compressed image");
+    return;
+  }
+
+  if (depth_image.cols != width || depth_image.rows != height) {
+    cv::resize(depth_image, depth_image, cv::Size(width, height));
+  }
+  if (rs_image.cols != width || rs_image.rows != height) {
+    cv::resize(rs_image, rs_image, cv::Size(width, height));
+  }
+
+  cv::Mat dis_image = fx_bl / depth_image;
+  dis_image.convertTo(dis_image, CV_8U);
+  cv::applyColorMap(dis_image, dis_image,userColor_);
+
+  int step_num = 6;
+  int x_step = width / step_num;
+  int y_step = height / step_num;
+
+  for (int i = 1; i < step_num; i++) {
+    for (int j = 1; j < step_num; j++) {
+      cv::line(rs_image, cv::Point2i(0, i * y_step),
+               cv::Point2i(width, i * y_step),
+               cv::Scalar(255, 255, 255), 1);
+      cv::line(rs_image, cv::Point2i(j * x_step, 0),
+               cv::Point2i(j * x_step, height),
+               cv::Scalar(255, 255, 255), 1);
+
+      cv::line(dis_image, cv::Point2i(0, i * y_step),
+               cv::Point2i(width, i * y_step),
+               cv::Scalar(255, 255, 255), 1);
+      cv::line(dis_image, cv::Point2i(j * x_step, 0),
+               cv::Point2i(j * x_step, height),
+               cv::Scalar(255, 255, 255), 1);
+      uint16_t Z = depth_image.at<uint16_t>(i * y_step, j * x_step);
+      double distance = static_cast<double>(Z) / 1000.0;
+      std::ostringstream ss;
+      ss << std::fixed << std::setprecision(2) << distance << "m";
+
+      cv::putText(rs_image, ss.str(), cv::Point2i(j * x_step + 3,
+                                                  i * y_step - 3),
+                  cv::FONT_HERSHEY_SIMPLEX, 1,
+                  cv::Scalar(255, 255, 255), 2);
+
+      cv::putText(dis_image, ss.str(), cv::Point2i(j * x_step + 3,
+                                                   i * y_step - 3),
+                  cv::FONT_HERSHEY_SIMPLEX, 1,
+                  cv::Scalar(255, 255, 255), 2);
+
+    }
+  }
+
+  cv::putText(rs_image, "realsense", cv::Point2i( 3, 38),
+              cv::FONT_HERSHEY_SIMPLEX, 1.5,
+              cv::Scalar(0, 255, 0), 3);
+
+  cv::putText(dis_image, "relasense-depth", cv::Point2i(3, 38),
+              cv::FONT_HERSHEY_SIMPLEX, 1.5,
+              cv::Scalar(0, 255, 0), 3);
+
+  {
+    std::lock_guard<std::mutex> lck(compare_visual_mtx_);
+    cv::vconcat(rs_image, dis_image, compare_visual_);
+  }
+}
+
 }
 
 RCLCPP_COMPONENTS_REGISTER_NODE(stereonet::StereoNetNode)

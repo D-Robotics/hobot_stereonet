@@ -15,7 +15,7 @@
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch_ros.actions import Node
 import os
 from launch.substitutions import LaunchConfiguration
@@ -74,6 +74,10 @@ def generate_launch_description():
         {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
         {'name':'image_format', 'default_value':'png', 'description': 'image_format'},
         {'name':'image_sleep', 'default_value':'1', 'description': 'image_sleep'},
+        {'name':'depth_compare', 'default_value':'False', 'description': 'depth_compare'},
+        {'name':'compare_depth_topic', 'default_value':'/camera/depth/image_rect_raw/compressedDepth', 'description': 'compare_depth_topic'},
+        {'name':'visual_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
+        {'name':'compare_image_topic', 'default_value':'/camera/infra1/image_rect_raw/compressed', 'description': 'compare_image_topic'},
     ]
 
     launch = declare_configurable_parameters(node_params)
@@ -84,5 +88,13 @@ def generate_launch_description():
         parameters=[set_configurable_parameters(node_params)],
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     ))
+
+    boost = ExecuteProcess(
+        cmd=[[
+            'echo 1 > /sys/devices/system/cpu/cpufreq/boost '
+        ]],
+        shell=True
+    )
+    launch.append(boost)
 
     return LaunchDescription(launch)

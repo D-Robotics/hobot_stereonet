@@ -19,6 +19,11 @@
 #include <cv_bridge/cv_bridge.h>
 #include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/time.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
+
+#include <message_filters/subscriber.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/synchronizer.h>
 
 #include "image_conversion.h"
 namespace stereonet {
@@ -39,8 +44,8 @@ class StereoNetNode : public rclcpp::Node {
   };
 
   struct inference_data_t {
-     sub_image left_sub_img;
-     sub_image right_sub_img;
+    sub_image left_sub_img;
+    sub_image right_sub_img;
   };
   struct pub_data_t {
     sub_image left_sub_img;
@@ -52,11 +57,58 @@ class StereoNetNode : public rclcpp::Node {
   };
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
-  : rclcpp::Node("StereoNetNode", node_options) {
+      : rclcpp::Node("StereoNetNode", node_options) {
     parameter_configuration();
     pub_sub_configuration();
     if (start() != 0) {
       RCLCPP_FATAL(get_logger(), "Node start failed");
+    }
+    userColor_.create(256, 1, CV_8UC3); // 256 × 1 的 CV_8UC3 矩阵
+    userColor_.at<cv::Vec3b>(0) = 0;
+    int s;
+    cv::Vec3b color;
+    for (s = 1; s < 32; s++) {
+      color[0] = 128 + 4 * s;
+      color[1] = 0;
+      color[2] = 0;
+      userColor_.at<cv::Vec3b>(s) = color;
+    }
+    color[0] = 255;
+    color[1] = 0;
+    color[2] = 0;
+    userColor_.at<cv::Vec3b>(32) = color;
+    for (s = 0; s < 63; s++) {
+      color[0] = 255;
+      color[1] = 4+4*s;
+      color[2] = 0;
+      userColor_.at<cv::Vec3b>(s + 33) = color;
+    }
+    color[0] = 254;
+    color[1] = 255;
+    color[2] = 2;
+    userColor_.at<cv::Vec3b>(96) = color;
+    for (s = 0; s < 62; s++) {
+      color[0] = 250 - 4 * s;
+      color[1] = 255;
+      color[2] = 6+4*s;
+      userColor_.at<cv::Vec3b>(s + 97) = color;
+    }
+    color[0] = 1;
+    color[1] = 255;
+    color[2] = 254;
+    userColor_.at<cv::Vec3b>(159) = color;
+    for (s = 0; s < 64; s++) {
+      color[0] = 0;
+      color[1] = 252 - (s * 4);
+      color[2] = 255;
+      userColor_.at<cv::Vec3b>(s+160) = color;
+
+    }
+    for (s = 0; s < 32; s++) {
+      color[0] = 0;
+      color[1] = 0;
+      color[2] = 252-4*s;
+      userColor_.at<cv::Vec3b>(s+224) = color;
     }
   }
 
@@ -87,7 +139,7 @@ class StereoNetNode : public rclcpp::Node {
   void pub_sub_configuration();
 
   void dump_one_point_disparity(pub_data_t &pub_raw_data,
-      const cv::Mat &right_image, int x, int y);
+                                const cv::Mat &right_image, int x, int y);
 
   std::atomic_bool is_running_;
 
@@ -132,7 +184,7 @@ class StereoNetNode : public rclcpp::Node {
   std::string rectified_image_topic_ = "~/rectified_image";
   std::string rectified_right_image_topic_ = "~/rectified_right_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
-    rectified_image_pub_ = nullptr, rectified_right_image_pub_ = nullptr;
+      rectified_image_pub_ = nullptr, rectified_right_image_pub_ = nullptr;
   bool pub_rectified_bgr_ = false;
 
   int visual_alpha_ = 1, visual_beta_ = 0;
@@ -143,6 +195,35 @@ class StereoNetNode : public rclcpp::Node {
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
 
+ private:
+  using SyncPolicy = message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::msg::CompressedImage,
+      //sensor_msgs::msg::Image,
+      sensor_msgs::msg::CompressedImage
+  >;
+  message_filters::Subscriber<sensor_msgs::msg::CompressedImage> depth_subscriber_;
+  message_filters::Subscriber<sensor_msgs::msg::Image> color_subscriber_;
+  message_filters::Subscriber<sensor_msgs::msg::CompressedImage> compare_left_subscriber_;
+
+  std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
+  void sync_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& depth_msg,
+      //const sensor_msgs::msg::Image::ConstSharedPtr& color_msg,
+                     const sensor_msgs::msg::CompressedImage::ConstSharedPtr &rs_left_msg);
+
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr compare_visual_image_pub_;
+
+  rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr depth_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compare_left_sub_;
+
+  void d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+  void c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+
+  cv::Mat compare_visual_;
+  std::mutex compare_visual_mtx_;
+  bool depth_compare = false;
+
+ private:
+  cv::Mat userColor_;
 };
 }
 #endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_
