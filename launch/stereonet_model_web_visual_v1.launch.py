@@ -62,7 +62,7 @@ def generate_launch_description():
         launch_arguments={
             "mipi_image_width": "1280",
             "mipi_image_height": "640",
-            "mipi_frame_ts_type": "realtime",
+            "mipi_frame_ts_type": "sensor",
             "frame_id": "pcl_link",
             "log_level": "warn",
         }.items(),
