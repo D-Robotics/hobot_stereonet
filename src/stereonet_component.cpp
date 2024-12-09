@@ -133,7 +133,7 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
-                    userColor_);
+                    cv::COLORMAP_JET);
 
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
