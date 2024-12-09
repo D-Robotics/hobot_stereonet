@@ -287,29 +287,29 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
   }
 
   // get tensor info
-  int16_t *disp_unfold = reinterpret_cast<int16_t *>(tensors[0].sysMem[0].virAddr);
+  float *disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
   int16_t *spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
 
-  float *disp_unfold_scale = tensors[0].properties.scale.scaleData;
+  // float *disp_scale = tensors[0].properties.scale.scaleData;
   float *spx_scale = tensors[1].properties.scale.scaleData;
 
-  int32_t *disp_unfold_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
   // int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
-  int c_dim = disp_unfold_shape[1];
-  int h_dim = disp_unfold_shape[2];
-  int w_dim = disp_unfold_shape[3];
+  int c_dim = disp_shape[1];
+  int h_dim = disp_shape[2];
+  int w_dim = disp_shape[3];
 
   // multiply element-wise and then add in the c channel
   Eigen::MatrixXf result = Eigen::MatrixXf::Zero(h_dim, w_dim);
   for (int i = 0; i < c_dim; ++i) {
-    Eigen::Map<Eigen::Matrix<int16_t, Eigen::Dynamic, Eigen::Dynamic>> matrix_disp_unfold(disp_unfold + i * h_dim * w_dim, h_dim, w_dim);
+    Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
     Eigen::Map<Eigen::Matrix<int16_t, Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
-    result.noalias() += matrix_disp_unfold.cast<float>().cwiseProduct(matrix_spx.cast<float>());
+    result.noalias() += matrix_disp.cwiseProduct(matrix_spx.cast<float>());
   }
 
   // write the result to the points
   points.resize(h_dim * w_dim, 0.f);
-  Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result * (*disp_unfold_scale) * (*spx_scale);
+  Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result * (*spx_scale);
 
   return 0;
 }
