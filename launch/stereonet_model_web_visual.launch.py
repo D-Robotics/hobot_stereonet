@@ -36,11 +36,23 @@ def generate_launch_description():
         description='use_local_image'
     ))
 
+    node_list.append(DeclareLaunchArgument(
+        'mipi_image_width',
+        default_value='1280',
+        description='mipi_image_width'
+    ))
+
+    node_list.append(DeclareLaunchArgument(
+        'mipi_image_height',
+        default_value='640',
+        description='mipi_image_height'
+    ))
+
     dual_mipi_cam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('mipi_cam'),
                                                    'launch/mipi_cam_dual_channel.launch.py')),
-        launch_arguments={'mipi_image_width': '1280',
-                          'mipi_image_height': '640',
+        launch_arguments={'mipi_image_width': LaunchConfiguration('mipi_image_width'),
+                          'mipi_image_height': LaunchConfiguration('mipi_image_height'),
                           'mipi_frame_ts_type': 'sensor',
                           'frame_id': 'default_cam',
                           'log_level': 'warn'

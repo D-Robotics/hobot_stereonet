@@ -174,7 +174,7 @@ static int32_t dump_to_color(
   return 0;
 }
 
-int postprocess(std::vector<hbDNNTensor> &tensors,
+int postprocess_v1(std::vector<hbDNNTensor> &tensors,
                 std::vector<float> &points,
                 int max_disp) {
   int low_max_stride_ = 2;
@@ -232,6 +232,7 @@ static float quanti_scale(int32_t data, float scale)
     return data * scale;
 }
 
+/*
 int postprocess_v2(std::vector<hbDNNTensor> &tensors,
                 std::vector<float> &points,
                 int max_disp) {
@@ -273,6 +274,42 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
       cnt++;
     }
   }
+
+  return 0;
+}
+*/
+
+int postprocess_v2(std::vector<hbDNNTensor> &tensors,
+                std::vector<float> &points,
+                int max_disp) {
+  for (int32_t i = 0; i < 2; i++) {
+    hbSysFlushMem(&(tensors[i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
+  }
+
+  // get tensor info
+  float *disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
+  int16_t *spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
+
+  // float *disp_scale = tensors[0].properties.scale.scaleData;
+  float *spx_scale = tensors[1].properties.scale.scaleData;
+
+  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  // int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
+  int c_dim = disp_shape[1];
+  int h_dim = disp_shape[2];
+  int w_dim = disp_shape[3];
+
+  // multiply element-wise and then add in the c channel
+  Eigen::MatrixXf result = Eigen::MatrixXf::Zero(h_dim, w_dim);
+  for (int i = 0; i < c_dim; ++i) {
+    Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
+    Eigen::Map<Eigen::Matrix<int16_t, Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
+    result.noalias() += matrix_disp.cwiseProduct(matrix_spx.cast<float>());
+  }
+
+  // write the result to the points
+  points.resize(h_dim * w_dim, 0.f);
+  Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result * (*spx_scale);
 
   return 0;
 }
@@ -711,7 +748,7 @@ int StereonetProcess::stereonet_inference(
   ScopeProcessTime t("postprocess");
   if (postprocess_ == "v1")
   {
-    postprocess(output_tensors_[idle_tensor_id], points, max_disp_);
+    postprocess_v1(output_tensors_[idle_tensor_id], points, max_disp_);
   }
   else
   {
