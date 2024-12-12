@@ -183,6 +183,59 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
 //  cv::imwrite(std::to_string(i) + ".jpg", visual_img);
 //  i++;
 //  result << pub_raw_data.depth_img;
+  
+  if (save_image_all_)
+  {
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (!directory_created_) {
+      directory_created_ = true;
+      system("mkdir -p ./stereonet_images");
+    }
+
+    if (save_cnt_ == 1)
+    {
+      std::stringstream ss;
+      ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
+      std::string result = ss.str();
+      std::ofstream outFile("./stereonet_images/calib_param.txt");
+      if (outFile.is_open()) {
+        outFile << result;
+        outFile.close();
+        RCLCPP_WARN_STREAM(this->get_logger(), "=> calib param save to: ./stereonet_images/calib_param.txt");
+      }
+    }
+
+    if ((save_cnt_ - 1) % save_freq_ == 0)
+    {
+      const cv::Mat &left_image = pub_raw_data.left_sub_img.image;
+      const cv::Mat &right_image = pub_raw_data.right_sub_img.image;
+      cv::Mat left_img_bgr;
+      cv::Mat right_img_bgr;
+      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        cv::cvtColor(left_image, left_img_bgr, cv::COLOR_YUV2BGR_NV12);
+        cv::cvtColor(right_image, right_img_bgr, cv::COLOR_YUV2BGR_NV12);
+      } else {
+        left_img_bgr = left_image;
+        right_img_bgr = right_image;
+      }
+      save_images_with_nv12(left_img_bgr, right_img_bgr, image_format_);
+
+      // cv::Mat disp_img = cv::Mat(left_img_bgr.rows, left_img_bgr.cols, CV_32FC1);
+      // std::memcpy(disp_img.data, points.data(), points.size() * sizeof(float));
+      std::stringstream ss;
+      ss << std::setw(6) << std::setfill('0') << save_cnt_;
+      std::string disp_path = "./stereonet_images/disp" + ss.str() + ".pfm";
+      std::string depth_path = "./stereonet_images/depth" + ss.str() + ".png";
+      std::string visual_path = "./stereonet_images/visual" + ss.str() + ".png";
+      cv::imwrite(disp_path, feat_mat);
+      cv::imwrite(depth_path, depth_img);
+      cv::imwrite(visual_path, visual_img);
+      RCLCPP_WARN_STREAM(this->get_logger(), "=> save to: " << disp_path);
+    }
+
+    save_cnt_++;
+  }
+  
   return 0;
 }
 
@@ -640,56 +693,6 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   } else {
     depth_img = model_depth_img;
     image_size_points = points;
-  }
-
-  if (save_image_all_)
-  {
-    std::unique_lock<std::mutex> lock(mtx_);
-    if (!directory_created_) {
-      directory_created_ = true;
-      system("mkdir -p ./stereonet_images");
-    }
-
-    if (save_cnt_ == 1)
-    {
-      std::stringstream ss;
-      ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
-      std::string result = ss.str();
-      std::ofstream outFile("./stereonet_images/calib_param.txt");
-      if (outFile.is_open()) {
-        outFile << result;
-        outFile.close();
-        RCLCPP_WARN_STREAM(this->get_logger(), "=> calib param save to: ./stereonet_images/calib_param.txt");
-      }
-    }
-
-    if ((save_cnt_ - 1) % save_freq_ == 0)
-    {
-      const cv::Mat &left_image = pub_raw_data.left_sub_img.image;
-      const cv::Mat &right_image = pub_raw_data.right_sub_img.image;
-      cv::Mat left_img_bgr;
-      cv::Mat right_img_bgr;
-      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-        cv::cvtColor(left_image, left_img_bgr, cv::COLOR_YUV2BGR_NV12);
-        cv::cvtColor(right_image, right_img_bgr, cv::COLOR_YUV2BGR_NV12);
-      } else {
-        left_img_bgr = left_image;
-        right_img_bgr = right_image;
-      }
-      save_images_with_nv12(left_img_bgr, right_img_bgr, image_format_);
-
-      cv::Mat disp_img = cv::Mat(img_origin_height, img_origin_width, CV_32FC1);
-      std::memcpy(disp_img.data, points.data(), points.size() * sizeof(float));
-      std::stringstream ss;
-      ss << std::setw(6) << std::setfill('0') << save_cnt_;
-      std::string disp_path = "./stereonet_images/disp" + ss.str() + ".pfm";
-      std::string depth_path = "./stereonet_images/depth" + ss.str() + ".png";
-      cv::imwrite(disp_path, disp_img);
-      cv::imwrite(depth_path, depth_img);
-      RCLCPP_WARN_STREAM(this->get_logger(), "=> save to: " << disp_path);
-    }
-
-    save_cnt_++;
   }
 
 //  float32x4_t zero_vec = vdupq_n_f32(0.01f);
