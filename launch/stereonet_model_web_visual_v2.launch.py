@@ -31,7 +31,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'x5baseplus_alldata_woIsaac.bin'
+        'x5baseplus_alldata_woIsaac_yuv444.bin'
     )
 
     stereo_calib_path_arg = DeclareLaunchArgument(
