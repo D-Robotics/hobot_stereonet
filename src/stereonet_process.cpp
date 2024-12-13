@@ -10,6 +10,55 @@
 #include "stereonet_process.h"
 #include "image_conversion.h"
 
+static std::string tensor_type_to_str(int32_t tensor_type)
+{
+    switch (tensor_type)
+    {
+    case HB_DNN_IMG_TYPE_Y:
+        return "HB_DNN_IMG_TYPE_Y";
+    case HB_DNN_IMG_TYPE_NV12:
+        return "HB_DNN_IMG_TYPE_NV12";
+    case HB_DNN_IMG_TYPE_NV12_SEPARATE:
+        return "HB_DNN_IMG_TYPE_NV12_SEPARATE";
+    case HB_DNN_IMG_TYPE_YUV444:
+        return "HB_DNN_IMG_TYPE_YUV444";
+    case HB_DNN_IMG_TYPE_RGB:
+        return "HB_DNN_IMG_TYPE_RGB";
+    case HB_DNN_IMG_TYPE_BGR:
+        return "HB_DNN_IMG_TYPE_BGR";
+    case HB_DNN_TENSOR_TYPE_S4:
+        return "HB_DNN_TENSOR_TYPE_S4";
+    case HB_DNN_TENSOR_TYPE_U4:
+        return "HB_DNN_TENSOR_TYPE_U4";
+    case HB_DNN_TENSOR_TYPE_S8:
+        return "HB_DNN_TENSOR_TYPE_S8";
+    case HB_DNN_TENSOR_TYPE_U8:
+        return "HB_DNN_TENSOR_TYPE_U8";
+    case HB_DNN_TENSOR_TYPE_F16:
+        return "HB_DNN_TENSOR_TYPE_F16";
+    case HB_DNN_TENSOR_TYPE_S16:
+        return "HB_DNN_TENSOR_TYPE_S16";
+    case HB_DNN_TENSOR_TYPE_U16:
+        return "HB_DNN_TENSOR_TYPE_U16";
+    case HB_DNN_TENSOR_TYPE_F32:
+        return "HB_DNN_TENSOR_TYPE_F32";
+    case HB_DNN_TENSOR_TYPE_S32:
+        return "HB_DNN_TENSOR_TYPE_S32";
+    case HB_DNN_TENSOR_TYPE_U32:
+        return "HB_DNN_TENSOR_TYPE_U32";
+    case HB_DNN_TENSOR_TYPE_F64:
+        return "HB_DNN_TENSOR_TYPE_F64";
+    case HB_DNN_TENSOR_TYPE_S64:
+        return "HB_DNN_TENSOR_TYPE_S64";
+    case HB_DNN_TENSOR_TYPE_U64:
+        return "HB_DNN_TENSOR_TYPE_U64";
+    case HB_DNN_TENSOR_TYPE_MAX:
+        return "HB_DNN_TENSOR_TYPE_MAX";
+    default:
+        return "Unknown";
+    }
+}
+
 static void Dequantize(float *output,
                        int32_t *input,
                        float *input_scale,
@@ -286,30 +335,70 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
     hbSysFlushMem(&(tensors[i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
   }
 
-  // get tensor info
-  float *disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
-  float *spx = reinterpret_cast<float *>(tensors[1].sysMem[0].virAddr);
-
-  // float *disp_scale = tensors[0].properties.scale.scaleData;
-  // float *spx_scale = tensors[1].properties.scale.scaleData;
-
+  // get shape info
   int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
-  // int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
   int c_dim = disp_shape[1];
   int h_dim = disp_shape[2];
   int w_dim = disp_shape[3];
 
-  // multiply element-wise and then add in the c channel
+  // calc disp
   Eigen::MatrixXf result = Eigen::MatrixXf::Zero(h_dim, w_dim);
-  for (int i = 0; i < c_dim; ++i) {
-    Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
-    Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
-    result.noalias() += matrix_disp.cwiseProduct(matrix_spx);
+  if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32)
+  {
+
+    // get tensor info
+    float *disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
+    float *spx = reinterpret_cast<float *>(tensors[1].sysMem[0].virAddr);
+
+    // multiply element-wise and then add in the c channel
+
+    for (int i = 0; i < c_dim; ++i) {
+      Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
+      Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
+      result.noalias() += matrix_disp.cwiseProduct(matrix_spx);
+    }
+
+    // write the result to the points
+    points.resize(h_dim * w_dim, 0.f);
+    Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result;
+  }
+  else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16)
+  {
+    // get tensor info
+    float *disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
+    int16_t *spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
+
+    // multiply element-wise and then add in the c channel
+    for (int i = 0; i < c_dim; ++i) {
+      Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
+      Eigen::Map<Eigen::Matrix<int16_t, Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
+      result.noalias() += matrix_disp.cwiseProduct(matrix_spx.cast<float>());
+    }
+  }
+  else
+  {
+    RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> output tensor type unsupported! tensor[0]: "
+                                               << tensor_type_to_str(tensors[0].properties.tensorType)
+                                               << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
+    return -1;
+  }
+
+  // get scale info
+  float scale_constant = 1.0;
+  float *disp_scale = &scale_constant;
+  float *spx_scale = &scale_constant;
+  if (tensors[0].properties.quantiType == SCALE)
+  {
+    disp_scale = tensors[0].properties.scale.scaleData;
+  }
+  if (tensors[1].properties.quantiType == SCALE)
+  {
+    spx_scale = tensors[1].properties.scale.scaleData;
   }
 
   // write the result to the points
   points.resize(h_dim * w_dim, 0.f);
-  Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result;
+  Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result * (*disp_scale) * (*spx_scale);
 
   return 0;
 }
@@ -373,55 +462,6 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
     std::cout << ")" << std::endl;
   }
   return 0;
-}
-
-static std::string tensor_type_to_str(int32_t tensor_type)
-{
-    switch (tensor_type)
-    {
-    case HB_DNN_IMG_TYPE_Y:
-        return "HB_DNN_IMG_TYPE_Y";
-    case HB_DNN_IMG_TYPE_NV12:
-        return "HB_DNN_IMG_TYPE_NV12";
-    case HB_DNN_IMG_TYPE_NV12_SEPARATE:
-        return "HB_DNN_IMG_TYPE_NV12_SEPARATE";
-    case HB_DNN_IMG_TYPE_YUV444:
-        return "HB_DNN_IMG_TYPE_YUV444";
-    case HB_DNN_IMG_TYPE_RGB:
-        return "HB_DNN_IMG_TYPE_RGB";
-    case HB_DNN_IMG_TYPE_BGR:
-        return "HB_DNN_IMG_TYPE_BGR";
-    case HB_DNN_TENSOR_TYPE_S4:
-        return "HB_DNN_TENSOR_TYPE_S4";
-    case HB_DNN_TENSOR_TYPE_U4:
-        return "HB_DNN_TENSOR_TYPE_U4";
-    case HB_DNN_TENSOR_TYPE_S8:
-        return "HB_DNN_TENSOR_TYPE_S8";
-    case HB_DNN_TENSOR_TYPE_U8:
-        return "HB_DNN_TENSOR_TYPE_U8";
-    case HB_DNN_TENSOR_TYPE_F16:
-        return "HB_DNN_TENSOR_TYPE_F16";
-    case HB_DNN_TENSOR_TYPE_S16:
-        return "HB_DNN_TENSOR_TYPE_S16";
-    case HB_DNN_TENSOR_TYPE_U16:
-        return "HB_DNN_TENSOR_TYPE_U16";
-    case HB_DNN_TENSOR_TYPE_F32:
-        return "HB_DNN_TENSOR_TYPE_F32";
-    case HB_DNN_TENSOR_TYPE_S32:
-        return "HB_DNN_TENSOR_TYPE_S32";
-    case HB_DNN_TENSOR_TYPE_U32:
-        return "HB_DNN_TENSOR_TYPE_U32";
-    case HB_DNN_TENSOR_TYPE_F64:
-        return "HB_DNN_TENSOR_TYPE_F64";
-    case HB_DNN_TENSOR_TYPE_S64:
-        return "HB_DNN_TENSOR_TYPE_S64";
-    case HB_DNN_TENSOR_TYPE_U64:
-        return "HB_DNN_TENSOR_TYPE_U64";
-    case HB_DNN_TENSOR_TYPE_MAX:
-        return "HB_DNN_TENSOR_TYPE_MAX";
-    default:
-        return "Unknown";
-    }
 }
 
 int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
