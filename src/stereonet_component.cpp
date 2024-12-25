@@ -116,11 +116,14 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
   int y_step = bgr_image.rows / step_num;
+  int start = 1;
   // RCLCPP_WARN_ONCE(this->get_logger(), "=> x_step: %d, y_step: %d", x_step, y_step);
-
-  for (int i = 1; i < step_num; i++)
+  if (!depth_type_point_) {
+    start = 0;
+  }
+  for (int i = start; i < step_num; i++)
   {
-    for (int j = 1; j < step_num; j++)
+    for (int j = start; j < step_num; j++)
     {
       // 横线
       cv::line(visual_img, cv::Point2i(0, bgr_image.rows + i * y_step),
@@ -140,20 +143,33 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
                cv::Point2i(j * x_step, bgr_image.rows),
                cv::Scalar(255, 255, 255), 1);
       // 取出Z值
-      uint16_t Z = depth_img.at<uint16_t>(i * y_step, j * x_step);
-      // mm -> m
-      double distance = static_cast<double>(Z) / 1000.0;
+      double distance;
+      cv::Point2i bgr_location, depth_location;
+      if (!depth_type_point_) {
+        auto z_region = cv::mean(depth_img(
+            cv::Rect(j * x_step, i * y_step, x_step, y_step)));
+        distance = static_cast<double>(z_region[0]) / 1000.0;
+        depth_location = cv::Point2i(j * x_step + 3 + x_step / 2,
+                                     bgr_image.rows + i * y_step - 3 + y_step / 2);
+        bgr_location = cv::Point2i(j * x_step + 3 + x_step / 2,
+                                   i * y_step - 3 + y_step / 2);
+      } else {
+        uint16_t Z = depth_img.at<uint16_t>(i * y_step, j * x_step);
+        distance = static_cast<double>(Z) / 1000.0;
+        depth_location = cv::Point2i(j * x_step + 3,
+                                   bgr_image.rows + i * y_step - 3);
+        bgr_location = cv::Point2i(j * x_step + 3, i * y_step - 3);
+      }
+
       std::ostringstream ss;
       ss << std::fixed << std::setprecision(2) << distance << "m";
       double font_scale = 1.0;
       if (postprocess_ == "v2") font_scale = 0.5;
-      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
-                                                    bgr_image.rows + i * y_step - 3),
+      cv::putText(visual_img, ss.str(), bgr_location,
                   cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
 
-      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
-                                                    i * y_step - 3),
+      cv::putText(visual_img, ss.str(), depth_location,
                   cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
     }
@@ -912,6 +928,14 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("image_sleep", image_inference_sleep_ms_);
   this->get_parameter("image_sleep", image_inference_sleep_ms_);
   RCLCPP_INFO_STREAM(this->get_logger(), "image_inference_sleep_ms: " << image_inference_sleep_ms_);
+
+  std::string depth_type = "point";
+  this->declare_parameter("depth_type", depth_type);
+  this->get_parameter("depth_type", depth_type);
+  RCLCPP_INFO_STREAM(this->get_logger(), "depth_type: " << depth_type);
+  if (depth_type == "region") {
+    depth_type_point_ = false;
+  }
 }
 
 void StereoNetNode::inference_by_usb_camera() {

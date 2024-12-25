@@ -80,6 +80,9 @@ def generate_launch_description():
         {'name':'compare_depth_topic', 'default_value':'/camera/depth/image_rect_raw/compressedDepth', 'description': 'compare_depth_topic'},
         {'name':'visual_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
         {'name':'compare_image_topic', 'default_value':'/camera/infra1/image_rect_raw/compressed', 'description': 'compare_image_topic'},
+        {'name':'depth_type', 'default_value':'point',
+         'description': 'depth_type when publish visual image, if it is point the depth is point of grid corner,'
+                        'if it is region the depth is the average value of the rectangle region'},
     ]
 
     launch = declare_configurable_parameters(node_params)
