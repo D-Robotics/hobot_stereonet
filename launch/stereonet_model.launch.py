@@ -83,6 +83,7 @@ def generate_launch_description():
         {'name':'depth_type', 'default_value':'point',
          'description': 'depth_type when publish visual image, if it is point the depth is point of grid corner,'
                         'if it is region the depth is the average value of the rectangle region'},
+        {'name':'render_type', 'default_value':'0', 'description': 'render_type'},
     ]
 
     launch = declare_configurable_parameters(node_params)
