@@ -91,6 +91,11 @@ float compute_percentile(const std::vector<float> &sorted_arr, const int &positi
   return sorted_arr[idx];
 }
 
+int compute_percentile(const std::vector<int> &sorted_arr, const int &positive_idx, const float &percentile) {
+  int idx = positive_idx + static_cast<int>(percentile * (sorted_arr.size() - positive_idx));
+  return sorted_arr[idx];
+}
+
 int custom_normalize(const cv::Mat &input, cv::Mat &output, const float &min_val, const float &max_val,
                       const float &percentile1, const float &percentile2, const float &percentile3) {
     input.forEach<float>([&output, &min_val, &max_val, &percentile1, &percentile2, &percentile3](float &pixel, const int *position) -> void {
@@ -114,10 +119,46 @@ int custom_normalize(const cv::Mat &input, cv::Mat &output, const float &min_val
   return 0;
 }
 
-void mark_zero_positions(const cv::Mat& mat1, cv::Mat& mat2) {
+int custom_normalize(const cv::Mat &input, cv::Mat &output, const int &min_val, const int &max_val,
+                      const int &percentile1, const int &percentile2, const int &percentile3) {
+    input.forEach<uint16_t>([&output, &min_val, &max_val, &percentile1, &percentile2, &percentile3](uint16_t &pixel, const int *position) -> void {
+      float pixel_float = static_cast<float>(pixel);
+      uint8_t normalized_val = 0;
+      if (pixel_float <= 0) {
+        normalized_val = 0;
+      }
+      else if (pixel_float <= percentile1) {
+          normalized_val = ((pixel_float - min_val) / (percentile1 - min_val) * 0.25) * 255;
+      } else if (pixel_float <= percentile2) {
+          normalized_val = (0.25 + (pixel_float - percentile1) / (percentile2 - percentile1) * 0.25) * 255;
+      } else if (pixel_float <= percentile3) {
+          normalized_val = (0.5 + (pixel_float - percentile2) / (percentile3 - percentile2) * 0.25) * 255;
+      } else {
+          normalized_val = (0.75 + (pixel_float - percentile3) / (max_val - percentile3) * 0.25) * 255;
+      }
+
+      output.at<uint8_t>(position[0], position[1]) = normalized_val;
+  });
+
+  return 0;
+}
+
+/*
+void mark_zero_positions_disp(const cv::Mat& mat1, cv::Mat& mat2) {
   for (int i = 0; i < mat1.rows; ++i) {
     for (int j = 0; j < mat1.cols; ++j) {
       if (mat1.at<float>(i, j) <= 2) {
+          mat2.at<cv::Vec3b>(i + mat2.rows / 2, j) = cv::Vec3b(0, 0, 0);
+        }
+      }
+  }
+}
+*/
+
+void mark_zero_positions_depth(const cv::Mat& mat1, cv::Mat& mat2, const uint16_t &render_max_depth) {
+  for (int i = 0; i < mat1.rows; ++i) {
+    for (int j = 0; j < mat1.cols; ++j) {
+      if (mat1.at<uint16_t>(i, j) <= 0 || mat1.at<uint16_t>(i, j) > render_max_depth) {
           mat2.at<cv::Vec3b>(i + mat2.rows / 2, j) = cv::Vec3b(0, 0, 0);
         }
       }
@@ -146,7 +187,8 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   cv::Mat feat_visual;
   if (render_type_ == 0) {
     disp_mat.convertTo(feat_visual, CV_8UC1, visual_alpha_, visual_beta_);
-  } else {
+  } else if (render_type_ == 1) {
+    // calc percentile
     std::vector<float> disp_vals(points.size());
     std::copy(points.begin(), points.end(), disp_vals.begin());
     std::sort(disp_vals.begin(), disp_vals.end());
@@ -157,31 +199,80 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
         break;
       }
     }
-    // std::vector<float> positive_vals;
-    // std::copy_if(disp_vals.begin(), disp_vals.end(), std::back_inserter(positive_vals), [](float val) { return val > 0; });
     float percentile1 = compute_percentile(disp_vals, positive_idx, 0.1);
     float percentile2 = compute_percentile(disp_vals, positive_idx, 0.5);
     float percentile3 = compute_percentile(disp_vals, positive_idx, 0.9);
     
     feat_visual = cv::Mat::zeros(disp_mat.size(), CV_8UC1);
-    cv::Mat disp_norm;
-    cv::normalize(disp_mat, disp_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
-    cv::filterSpeckles(disp_norm, 0, 10, 3);
-    cv::Mat mask;
-    cv::threshold(disp_norm, mask, 0, 1, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_32FC1);
-    disp_mat = disp_mat.mul(mask);
+    // norm
     custom_normalize(disp_mat, feat_visual, disp_vals[positive_idx], disp_vals[disp_vals.size() - 1], percentile1, percentile2, percentile3);
+  } else {
+    // calc percentile
+    std::vector<int> depth_vals;
+    depth_vals.reserve(depth_img.rows * depth_img.cols);
+    depth_img.forEach<uint16_t>([&depth_vals](uint16_t &pixel, const int *position) {
+        depth_vals.push_back(pixel);
+    });
+    std::sort(depth_vals.begin(), depth_vals.end());
+    int positive_idx = 0;
+    for (int i = 0; i < depth_vals.size(); i++) {
+      if (depth_vals[i] > 0) {
+        positive_idx = i;
+        break;
+      }
+    }
+    int percentile1 = compute_percentile(depth_vals, positive_idx, 0.1);
+    int percentile2 = compute_percentile(depth_vals, positive_idx, 0.5);
+    int percentile3 = compute_percentile(depth_vals, positive_idx, 0.9);
+    
+    feat_visual = cv::Mat::zeros(depth_img.size(), CV_8UC1);
+    // norm
+    custom_normalize(depth_img, feat_visual, depth_vals[positive_idx], depth_vals[depth_vals.size() - 1], percentile1, percentile2, percentile3);
   }
 
   //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
                     cv::COLORMAP_JET);
-  
-  if (render_type_ == 1) {
-    mark_zero_positions(disp_mat, visual_img);
+
+  if (render_need_filter_ && render_type_ > 0)
+  {
+    // speckle filter
+    cv::Mat depth_norm;
+    cv::normalize(depth_img, depth_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::filterSpeckles(depth_norm, 0, 10, 3);
+    cv::Mat mask;
+    cv::threshold(depth_norm, mask, 0, 1, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_16UC1);
+    cv::Mat depth_img_filter = depth_img.mul(mask);
+    mark_zero_positions_depth(depth_img_filter, visual_img, render_max_depth_);
   }
+
+  /*
+  if (render_type_ == 1) {
+    // speckle filter
+    cv::Mat disp_norm;
+    cv::normalize(disp_mat, disp_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::filterSpeckles(disp_norm, 0, 10, 3);
+    cv::Mat mask;
+    cv::threshold(disp_norm, mask, 0, 1, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_32FC1);
+    cv::Mat disp_mat_filter = disp_mat.mul(mask);
+    mark_zero_positions_disp(disp_mat_filter, visual_img);
+  }
+  if (render_type_ > 1)
+  {
+    // speckle filter
+    cv::Mat depth_norm;
+    cv::normalize(depth_img, depth_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::filterSpeckles(depth_norm, 0, 10, 3);
+    cv::Mat mask;
+    cv::threshold(depth_norm, mask, 0, 1, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_16UC1);
+    cv::Mat depth_img_filter = depth_img.mul(mask);
+    mark_zero_positions_depth(depth_img_filter, visual_img);
+  }
+  */
 
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
@@ -762,7 +853,11 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   float factor = 1000 * (camera_fx * base_line);
   uint32_t num_pixels = points.size();
   for (uint32_t i = 0; i < num_pixels; ++i) {
-    depth_data[i] = factor / points[i];
+    if (points[i] > 0) {
+      depth_data[i] = factor / points[i];
+    } else {
+      depth_data[i] = 0;
+    }
   }
 
   pub_raw_data.model_depth_img = model_depth_img;
@@ -1189,11 +1284,17 @@ void StereoNetNode::pub_sub_configuration() {
   compare_image_topic = this->declare_parameter("compare_image_topic", compare_image_topic);
   RCLCPP_INFO_STREAM(this->get_logger(), "compare_image_topic: " << compare_image_topic);
 
-  render_type_ = this->declare_parameter("render_type", 0);
-  if (render_type_ >= 3) {
+  render_type_ = this->declare_parameter("render_type", render_type_);
+  if (render_type_ < 0 || render_type_ >= 3) {
     render_type_ = 0;
   }
   RCLCPP_INFO_STREAM(this->get_logger(), "render_type: " << render_type_);
+
+  render_need_filter_ = this->declare_parameter("render_need_filter", render_need_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_need_filter: " << render_need_filter_);
+
+  render_max_depth_ = this->declare_parameter("render_max_depth", render_max_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_max_depth: " << render_max_depth_);
 
   if (depth_compare) {
     depth_subscriber_.subscribe(this, compare_depth_topic);
