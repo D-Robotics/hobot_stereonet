@@ -155,11 +155,23 @@ void mark_zero_positions_disp(const cv::Mat& mat1, cv::Mat& mat2) {
 }
 */
 
+/*
 void mark_zero_positions_depth(const cv::Mat& mat1, cv::Mat& mat2, const uint16_t &render_max_depth) {
   for (int i = 0; i < mat1.rows; ++i) {
     for (int j = 0; j < mat1.cols; ++j) {
       if (mat1.at<uint16_t>(i, j) <= 0 || mat1.at<uint16_t>(i, j) > render_max_depth) {
           mat2.at<cv::Vec3b>(i + mat2.rows / 2, j) = cv::Vec3b(0, 0, 0);
+        }
+      }
+  }
+}
+*/
+
+void mark_zero_positions(const cv::Mat& disp, const cv::Mat& depth, cv::Mat& visual, const uint16_t &render_max_depth) {
+  for (int i = 0; i < disp.rows; ++i) {
+    for (int j = 0; j < disp.cols; ++j) {
+      if (disp.at<float>(i, j) <= 0 || depth.at<uint16_t>(i, j) > render_max_depth) {
+          visual.at<cv::Vec3b>(i + visual.rows / 2, j) = cv::Vec3b(0, 0, 0);
         }
       }
   }
@@ -238,14 +250,14 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
   if (render_need_filter_ && render_type_ > 0)
   {
     // speckle filter
-    cv::Mat depth_norm;
-    cv::normalize(depth_img, depth_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
-    cv::filterSpeckles(depth_norm, 0, 10, 3);
+    cv::Mat disp_norm;
+    cv::normalize(disp_mat, disp_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::filterSpeckles(disp_norm, 0, 10, 3);
     cv::Mat mask;
-    cv::threshold(depth_norm, mask, 0, 1, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_16UC1);
-    cv::Mat depth_img_filter = depth_img.mul(mask);
-    mark_zero_positions_depth(depth_img_filter, visual_img, render_max_depth_);
+    cv::threshold(disp_norm, mask, 0, 1, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_32FC1);
+    cv::Mat disp_mat_filter = disp_mat.mul(mask);
+    mark_zero_positions(disp_mat_filter, depth_img, visual_img, render_max_depth_);
   }
 
   /*
