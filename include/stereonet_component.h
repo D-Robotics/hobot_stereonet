@@ -110,6 +110,9 @@ class StereoNetNode : public rclcpp::Node {
       color[2] = 252-4*s;
       userColor_.at<cv::Vec3b>(s+224) = color;
     }
+    rclcpp::on_shutdown([this]() {
+      stop();
+    });
   }
 
   ~StereoNetNode() {
