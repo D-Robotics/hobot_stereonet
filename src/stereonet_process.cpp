@@ -429,7 +429,7 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
   HB_CHECK_SUCCESS(hbDNNGetInputCount(&input_count, dnn_handle),
                    "hbDNNGetInputCount failed");
   HB_CHECK_SUCCESS(hbDNNGetOutputCount(&output_count, dnn_handle),
-                   "hbDNNGetInputCount failed");
+                   "hbDNNGetOutputCount failed");
 
   std::cout << "Input count: " << input_count << std::endl;
   for (i = 0; i < input_count; i++) {
@@ -643,6 +643,8 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
   }
 
   max_disp_ = max_disp;
+  HB_CHECK_SUCCESS(hbDNNGetOutputCount(&output_count_, dnn_handle_),
+      "hbDNNGetOutputCount failed");  
   return 0;
 }
 
