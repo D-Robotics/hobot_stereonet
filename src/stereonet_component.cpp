@@ -793,10 +793,10 @@ void StereoNetNode::inference_func() {
     if (inference_que_.get(inference_data)) {
       cv::Mat &left_image = inference_data.left_sub_img.image;
       cv::Mat &right_image = inference_data.right_sub_img.image;
-      if (left_image.cols != model_input_w_ || left_image.rows != model_input_h_) {
-        cv::resize(left_image, left_image, cv::Size(model_input_w_, model_input_h_));
-        cv::resize(right_image, right_image, cv::Size(model_input_w_, model_input_h_));
-      }
+      // if (left_image.cols != model_input_w_ || left_image.rows != model_input_h_) {
+        // cv::resize(left_image, left_image, cv::Size(model_input_w_, model_input_h_));
+        // cv::resize(right_image, right_image, cv::Size(model_input_w_, model_input_h_));
+      // }
       if (need_rectify_) {
         ScopeProcessTime t("stereo_rectify");
         for (auto & s : stereo_rectify_list_) {
