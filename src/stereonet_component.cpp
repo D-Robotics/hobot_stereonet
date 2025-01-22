@@ -517,7 +517,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
 
   point_cloud_msg.header = pub_raw_data.left_sub_img.header;
   point_cloud_msg.is_dense = false;
-  point_cloud_msg.fields.resize(3);
+  point_cloud_msg.fields.resize(4);
   point_cloud_msg.fields[0].name = "x";
   point_cloud_msg.fields[0].offset = 0;
   point_cloud_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
@@ -532,8 +532,14 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   point_cloud_msg.fields[2].offset = 8;
   point_cloud_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
   point_cloud_msg.fields[2].count = 1;
+
+  point_cloud_msg.fields[3].name = "rgb";
+  point_cloud_msg.fields[3].offset = 12;
+  point_cloud_msg.fields[3].datatype = sensor_msgs::msg::PointField::UINT32;
+  point_cloud_msg.fields[3].count = 1;
+
   point_cloud_msg.height = 1;
-  point_cloud_msg.point_step = 12;
+  point_cloud_msg.point_step = 16;
 
   //  point_cloud_msg.width = (img_origin_width / 2) * (img_origin_height / 2);
   //  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
@@ -547,6 +553,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
     fy = (camera_cy  - y) / camera_fy;
     for (int x = 0; x < depth_w_; x += 2) {
       float depth = depth_ptr[y * depth_w_ + x] / 1000.0f;
+      if (depth > 6) continue;
       //if (depth < height_min_ || depth > height_max_) continue;
       float X = (camera_cx - x) / camera_fx * depth;
       float Y = fy * depth;
@@ -556,6 +563,8 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
       *pcd_data_ptr++ = depth;
       *pcd_data_ptr++ = X;
       *pcd_data_ptr++ = Y;
+      cv::Vec3b pixel = image.at<cv::Vec3b>(y, x);
+      *(uint32_t *)pcd_data_ptr++ = (pixel[2] << 16) | (pixel[1] << 8) | (pixel[0] << 0);
       point_size++;
     }
   }
