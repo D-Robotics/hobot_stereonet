@@ -59,7 +59,7 @@ def generate_launch_description():
         {'name':'save_image_all', 'default_value':'False', 'description': 'save_image_all'},
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_image_to_nv12', 'default_value':'False', 'description': 'save_image_to_nv12'},
-        {'name':'postprocess', 'default_value':'v1', 'description': 'postprocess'},
+        {'name':'postprocess', 'default_value':'v2', 'description': 'postprocess'},
         {'name':'use_local_image', 'default_value':'False', 'description': 'use_local_image'},
         {'name':'use_usb_camera', 'default_value':'False', 'description': 'use_usb_camera'},
         {'name':'stereo_combine_mode', 'default_value':'1', 'description': 'stereo_combine_mode'},

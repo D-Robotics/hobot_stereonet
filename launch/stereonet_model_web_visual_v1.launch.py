@@ -82,6 +82,7 @@ def generate_launch_description():
             "alpha": LaunchConfiguration("visual_alpha"),
             "beta": LaunchConfiguration("visual_beta"),
             "stereo_combine_mode": "1",
+            "postprocess": "v1",
             "log_level": "warn",
         }.items(),
     )

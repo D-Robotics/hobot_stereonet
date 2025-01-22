@@ -1,6 +1,7 @@
 # 功能介绍
 
-双目深度估计算法是使用地平线[OpenExplorer](https://developer.horizon.ai/api/v1/fileData/horizon_j5_open_explorer_cn_doc/hat/source/examples/stereonet.html)在[SceneFlow](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html)数据集上训练出来的`StereoNet`模型。
+hobot_sterenet是地瓜机器人自研的基于深度学习的双目深度算法，算法处理双目图像并得到像素视差，经过处理得到图像像素深度和环境的三维点云信息。
+算法兼顾精度和效率，具有较高的使用价值。
 
 算法输入为双目图像数据，分别是左右视图。算法输出为左视图的视差。
 
@@ -14,7 +15,7 @@
 
 | 平台   | 运行方式              | 示例功能                                      |
 | ------ | --------------------- | --------------------------------------------- |
-| RDK X5 | Ubuntu 22.04 (Humble) | · 启动双目相机、推理出深度结果，并在Web端显示 |
+| RDK X5 | Ubuntu 22.04 (Humble) |  启动双目相机、推理出深度结果，并在Web端显示 |
 
 
 # 使用方法
@@ -47,21 +48,6 @@ ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
 stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
 height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
 
-```
-
-另外可以通过 component 的方式启动节点
-```shell 
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 终端1 启动双目模型launch文件
-ros2 launch hobot_stereonet stereonet_model_component.launch.py \
-stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="True" \
-height_min:=0.1 height_max:=1.0 KMean:=10 stdv:=0.01 leaf_size:=0.05
-
-# 终端2 启动mipi双目相机launch文件
-ros2 launch mipi_cam mipi_cam_dual_channel.launch.py \
-mipi_image_width:=1280 mipi_image_height:=640
 ```
 
 如果想利用本地图片评估算法效果，可以使用下列命令指定算法运行模式、图像数据地址以及相机内参，同时要保证图像数据经过去畸变、基线对齐。
@@ -142,8 +128,16 @@ stereo_image_topic:=/image_combine_raw stereo_combine_mode:=1 need_rectify:="Tru
 ```
 ![stereonet_rdk](img/consume.png)
 
+下表是算法在10fps的条件下，CPU占用以及各部分耗时，测试时关闭了可视化渲染以及点云发布等功能。
+
+| 帧率  | CPU占用  | BPU推理耗时 | CPU 后处理耗时  |
+| -----| --------| ---------- |---------- |
+| 10   | 0.7个核 |90ms |   7.7ms       |                                                       |
+              
+
+
 # 注意事项
-1. 模型的输入尺寸为宽：1280，高640，相机发布的图像分辨率应为1280x640
+1. 模型的输入尺寸为宽：640，352，相机发布的图像分辨率应为640x352
 2. 如果双目相机发布图像的格式为NV12，那么双目图像的拼接方式必须为上下拼接
 
 
