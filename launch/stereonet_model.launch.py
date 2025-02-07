@@ -86,12 +86,14 @@ def generate_launch_description():
         {'name':'render_type', 'default_value':'0', 'description': 'render_type: 0-render disp, 1-render disp auto, 2-render depth auto'},
         {'name':'render_need_filter', 'default_value':'True', 'description': 'render_need_filter'},
         {'name':'render_max_depth', 'default_value':'10000', 'description': 'render_max_depth'},
+        {'name':'stereo_node_name', 'default_value':'StereoNetNode', 'description': 'stereo_node_name'},
     ]
 
     launch = declare_configurable_parameters(node_params)
     launch.append(Node(
         package='hobot_stereonet',
         executable='stereonet_model_node',
+        name=LaunchConfiguration('stereo_node_name'),
         output='screen',
         parameters=[set_configurable_parameters(node_params)],
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
