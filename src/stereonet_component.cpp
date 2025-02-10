@@ -177,12 +177,12 @@ void mark_zero_positions(const cv::Mat& disp, const cv::Mat& depth, cv::Mat& vis
   }
 }
 
-int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
+int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
   sensor_msgs::msg::Image visual_img_msg;
   const cv::Mat &image = pub_raw_data.left_sub_img.image;
   const std::vector<float> &points = pub_raw_data.points;
-  const cv::Mat &depth_img = pub_raw_data.model_depth_img;
+  cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
   if (visual_image_pub_->get_subscription_count() < 1) return 0;
 
@@ -253,11 +253,24 @@ int StereoNetNode::pub_visual_image(const pub_data_t &pub_raw_data) {
     cv::Mat disp_norm;
     cv::normalize(disp_mat, disp_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
     cv::filterSpeckles(disp_norm, 0, 10, 3);
-    cv::Mat mask;
-    cv::threshold(disp_norm, mask, 0, 1, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_32FC1);
-    cv::Mat disp_mat_filter = disp_mat.mul(mask);
+    cv::Mat mask_disp;
+    cv::threshold(disp_norm, mask_disp, 0, 1, cv::THRESH_BINARY);
+    mask_disp.convertTo(mask_disp, CV_32FC1);
+    cv::Mat disp_mat_filter = disp_mat.mul(mask_disp);
     mark_zero_positions(disp_mat_filter, depth_img, visual_img, render_max_depth_);
+
+    if (depth_need_filter_)
+    {
+      // cv::Mat depth_norm;
+      // cv::normalize(depth_img, depth_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+      // cv::filterSpeckles(depth_norm, 0, 3000, 2);
+      // cv::Mat mask_dpth;
+      // cv::threshold(depth_norm, mask_dpth, 0, 1, cv::THRESH_BINARY);
+      // mask_dpth.convertTo(mask_dpth, CV_16UC1);
+      mask_disp.convertTo(mask_disp, CV_16UC1);
+      depth_img = depth_img.mul(mask_disp);
+      // depth_img = depth_img.mul(mask_dpth);
+    }
   }
 
   /*
@@ -553,7 +566,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
     fy = (camera_cy  - y) / camera_fy;
     for (int x = 0; x < depth_w_; x += 2) {
       float depth = depth_ptr[y * depth_w_ + x] / 1000.0f;
-      if (depth > 6) continue;
+      if (depth > pc_max_depth_) continue;
       //if (depth < height_min_ || depth > height_max_) continue;
       float X = (camera_cx - x) / camera_fx * depth;
       float Y = fy * depth;
@@ -914,16 +927,16 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
     convert_depth(pub_raw_data);
   }
   {
+    ScopeProcessTime t("pub_visual");
+    ret = pub_visual_image(pub_raw_data);
+  }
+  {
     ScopeProcessTime t("pub_depth_image");
     ret = pub_depth_image(pub_raw_data);
   }
   {
     ScopeProcessTime t("pub_pointcloud2");
     ret = pub_pointcloud2(pub_raw_data);
-  }
-  {
-    ScopeProcessTime t("pub_visual");
-    ret = pub_visual_image(pub_raw_data);
   }
   {
     ScopeProcessTime t("pub_rectified");
@@ -1316,6 +1329,12 @@ void StereoNetNode::pub_sub_configuration() {
 
   render_max_depth_ = this->declare_parameter("render_max_depth", render_max_depth_);
   RCLCPP_INFO_STREAM(this->get_logger(), "render_max_depth: " << render_max_depth_);
+
+  depth_need_filter_ = this->declare_parameter("depth_need_filter", depth_need_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "depth_need_filter: " << depth_need_filter_);
+
+  pc_max_depth_ = this->declare_parameter("pc_max_depth", pc_max_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pc_max_depth: " << pc_max_depth_);
 
   if (depth_compare) {
     depth_subscriber_.subscribe(this, compare_depth_topic);

@@ -136,7 +136,7 @@ class StereoNetNode : public rclcpp::Node {
 
   int pub_depth_image(const pub_data_t &);
   int pub_pointcloud2(const pub_data_t &);
-  int pub_visual_image(const pub_data_t &);
+  int pub_visual_image(pub_data_t &);
   int pub_rectified_image(const pub_data_t &);
 
   void pub_sub_configuration();
@@ -204,6 +204,10 @@ class StereoNetNode : public rclcpp::Node {
   int render_type_ = 0;
   bool render_need_filter_ = true;
   uint16_t render_max_depth_ = 10000;
+
+  bool depth_need_filter_ = true;
+  float pc_max_depth_ = 6.0;
+
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
 
