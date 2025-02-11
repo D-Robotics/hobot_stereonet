@@ -89,6 +89,10 @@ def generate_launch_description():
         {'name':'stereo_node_name', 'default_value':'StereoNetNode', 'description': 'stereo_node_name'},
         {'name':'depth_need_filter', 'default_value':'True', 'description': 'depth_need_filter'},
         {'name':'pc_max_depth', 'default_value':'6.0', 'description': 'pc_max_depth'},
+        {'name':'pub_depth', 'default_value':'True', 'description': 'pub_depth'},
+        {'name':'pub_visual', 'default_value':'True', 'description': 'pub_visual'},
+        {'name':'pub_pointcloud', 'default_value':'True', 'description': 'pub_pointcloud'},
+        {'name':'pub_rectified', 'default_value':'False', 'description': 'pub_rectified'},
     ]
 
     launch = declare_configurable_parameters(node_params)

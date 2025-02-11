@@ -926,19 +926,19 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
     ScopeProcessTime t("convert to depth");
     convert_depth(pub_raw_data);
   }
-  {
+  if (pub_visual_) {
     ScopeProcessTime t("pub_visual");
     ret = pub_visual_image(pub_raw_data);
   }
-  {
+  if (pub_depth_) {
     ScopeProcessTime t("pub_depth_image");
     ret = pub_depth_image(pub_raw_data);
   }
-  {
+  if (pub_pointcloud_) {
     ScopeProcessTime t("pub_pointcloud2");
     ret = pub_pointcloud2(pub_raw_data);
   }
-  {
+  if (pub_rectified_) {
     ScopeProcessTime t("pub_rectified");
     ret = pub_rectified_image(pub_raw_data);
   }
@@ -1135,6 +1135,47 @@ void StereoNetNode::parameter_configuration() {
   if (depth_type == "region") {
     depth_type_point_ = false;
   }
+
+  render_type_ = this->declare_parameter("render_type", render_type_);
+  if (render_type_ < 0 || render_type_ >= 3) {
+    render_type_ = 0;
+  }
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_type: " << render_type_);
+
+  render_need_filter_ = this->declare_parameter("render_need_filter", render_need_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_need_filter: " << render_need_filter_);
+
+  render_max_depth_ = this->declare_parameter("render_max_depth", render_max_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_max_depth: " << render_max_depth_);
+
+  depth_need_filter_ = this->declare_parameter("depth_need_filter", depth_need_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "depth_need_filter: " << depth_need_filter_);
+
+  pc_max_depth_ = this->declare_parameter("pc_max_depth", pc_max_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pc_max_depth: " << pc_max_depth_);
+
+  this->declare_parameter("pub_depth", pub_depth_);
+  this->get_parameter("pub_depth", pub_depth_);
+  
+  this->declare_parameter("pub_visual", pub_visual_);
+  this->get_parameter("pub_visual", pub_visual_);
+  if (pub_visual_) {
+    pub_depth_ = true;
+  }
+  
+  this->declare_parameter("pub_pointcloud", pub_pointcloud_);
+  this->get_parameter("pub_pointcloud", pub_pointcloud_);
+  if (pub_pointcloud_) {
+    pub_depth_ = true;
+    pub_visual_ = true;
+  }
+  RCLCPP_INFO_STREAM(this->get_logger(), "pub_depth: " << pub_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pub_visual: " << pub_visual_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pub_pointcloud: " << pub_pointcloud_);
+
+  this->declare_parameter("pub_rectified", pub_rectified_);
+  this->get_parameter("pub_rectified", pub_rectified_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pub_rectified: " << pub_rectified_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {
@@ -1286,20 +1327,28 @@ void StereoNetNode::pub_sub_configuration() {
       stereo_image_topic_, 10,
       std::bind(&StereoNetNode::stereo_image_cb, this, std::placeholders::_1));
 
-  pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+  if (pub_depth_) {
+    depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+        "~/stereonet_depth", 10);
+  }
+
+  if (pub_visual_) {
+    visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+        "~/stereonet_visual", 10);
+  }
+  
+  if (pub_pointcloud_) {
+    pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
       "~/stereonet_pointcloud2", 10);
+  }
 
-  depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      "~/stereonet_depth", 10);
+  if (pub_rectified_) {
+    rectified_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+        rectified_image_topic_, 10);
 
-  visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      "~/stereonet_visual", 10);
-
-  rectified_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      rectified_image_topic_, 10);
-
-  rectified_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      rectified_right_image_topic_, 10);
+    rectified_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
+        rectified_right_image_topic_, 10);
+  }
 
   depth_compare = false;
   std::string compare_depth_topic = "~/stereonet_depth";
@@ -1317,24 +1366,6 @@ void StereoNetNode::pub_sub_configuration() {
 
   compare_image_topic = this->declare_parameter("compare_image_topic", compare_image_topic);
   RCLCPP_INFO_STREAM(this->get_logger(), "compare_image_topic: " << compare_image_topic);
-
-  render_type_ = this->declare_parameter("render_type", render_type_);
-  if (render_type_ < 0 || render_type_ >= 3) {
-    render_type_ = 0;
-  }
-  RCLCPP_INFO_STREAM(this->get_logger(), "render_type: " << render_type_);
-
-  render_need_filter_ = this->declare_parameter("render_need_filter", render_need_filter_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "render_need_filter: " << render_need_filter_);
-
-  render_max_depth_ = this->declare_parameter("render_max_depth", render_max_depth_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "render_max_depth: " << render_max_depth_);
-
-  depth_need_filter_ = this->declare_parameter("depth_need_filter", depth_need_filter_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "depth_need_filter: " << depth_need_filter_);
-
-  pc_max_depth_ = this->declare_parameter("pc_max_depth", pc_max_depth_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "pc_max_depth: " << pc_max_depth_);
 
   if (depth_compare) {
     depth_subscriber_.subscribe(this, compare_depth_topic);

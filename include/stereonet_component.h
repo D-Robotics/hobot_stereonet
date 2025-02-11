@@ -208,6 +208,11 @@ class StereoNetNode : public rclcpp::Node {
   bool depth_need_filter_ = true;
   float pc_max_depth_ = 6.0;
 
+  bool pub_depth_ = true;
+  bool pub_visual_ = true;
+  bool pub_pointcloud_ = true;
+  bool pub_rectified_ = false;
+
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
 
