@@ -1135,6 +1135,24 @@ void StereoNetNode::parameter_configuration() {
   if (depth_type == "region") {
     depth_type_point_ = false;
   }
+
+  render_type_ = this->declare_parameter("render_type", render_type_);
+  if (render_type_ < 0 || render_type_ >= 3) {
+    render_type_ = 0;
+  }
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_type: " << render_type_);
+
+  render_need_filter_ = this->declare_parameter("render_need_filter", render_need_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_need_filter: " << render_need_filter_);
+
+  render_max_depth_ = this->declare_parameter("render_max_depth", render_max_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "render_max_depth: " << render_max_depth_);
+
+  depth_need_filter_ = this->declare_parameter("depth_need_filter", depth_need_filter_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "depth_need_filter: " << depth_need_filter_);
+
+  pc_max_depth_ = this->declare_parameter("pc_max_depth", pc_max_depth_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "pc_max_depth: " << pc_max_depth_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {
@@ -1317,24 +1335,6 @@ void StereoNetNode::pub_sub_configuration() {
 
   compare_image_topic = this->declare_parameter("compare_image_topic", compare_image_topic);
   RCLCPP_INFO_STREAM(this->get_logger(), "compare_image_topic: " << compare_image_topic);
-
-  render_type_ = this->declare_parameter("render_type", render_type_);
-  if (render_type_ < 0 || render_type_ >= 3) {
-    render_type_ = 0;
-  }
-  RCLCPP_INFO_STREAM(this->get_logger(), "render_type: " << render_type_);
-
-  render_need_filter_ = this->declare_parameter("render_need_filter", render_need_filter_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "render_need_filter: " << render_need_filter_);
-
-  render_max_depth_ = this->declare_parameter("render_max_depth", render_max_depth_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "render_max_depth: " << render_max_depth_);
-
-  depth_need_filter_ = this->declare_parameter("depth_need_filter", depth_need_filter_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "depth_need_filter: " << depth_need_filter_);
-
-  pc_max_depth_ = this->declare_parameter("pc_max_depth", pc_max_depth_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "pc_max_depth: " << pc_max_depth_);
 
   if (depth_compare) {
     depth_subscriber_.subscribe(this, compare_depth_topic);
