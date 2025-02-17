@@ -1076,6 +1076,10 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("stereo_image_topic", stereo_image_topic_);
   RCLCPP_INFO_STREAM(this->get_logger(), "stereo_image_topic: " << stereo_image_topic_);
 
+  this->declare_parameter("camera_info_topic", "/camera_right_info");
+  this->get_parameter("camera_info_topic", camera_info_topic_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "camera_info_topic: " << camera_info_topic_);
+
   this->declare_parameter("local_image_path", "./config/");
   this->get_parameter("local_image_path", local_image_path_);
   RCLCPP_INFO_STREAM(this->get_logger(), "local_image_path_: " << local_image_path_);
@@ -1304,6 +1308,11 @@ void StereoNetNode::pub_sub_configuration() {
       stereo_image_topic_, 10,
       std::bind(&StereoNetNode::stereo_image_cb, this, std::placeholders::_1));
 
+  camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+    camera_info_topic_, 10,
+    std::bind(&StereoNetNode::camera_info_cb, this, std::placeholders::_1)
+  );
+
   pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
       "~/stereonet_pointcloud2", 10);
 
@@ -1464,6 +1473,16 @@ void StereoNetNode::sync_callback(const sensor_msgs::msg::CompressedImage::Const
     std::lock_guard<std::mutex> lck(compare_visual_mtx_);
     cv::vconcat(rs_image, dis_image, compare_visual_);
   }
+}
+
+void StereoNetNode::camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstSharedPtr &camera_info_msg) {
+  camera_fx = camera_info_msg->p[0];
+  camera_fy = camera_info_msg->p[5];
+  camera_cx = camera_info_msg->p[2];
+  camera_cy = camera_info_msg->p[6];
+  base_line = camera_info_msg->p[3] / camera_fx;
+
+  RCLCPP_WARN_ONCE(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m", camera_fx, camera_fy, camera_cx, camera_cy, base_line);
 }
 
 }
