@@ -16,6 +16,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/point_field.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/time.hpp>
@@ -182,7 +183,8 @@ class StereoNetNode : public rclcpp::Node {
   std::string stereonet_model_file_path_,
       stereo_image_topic_,
       local_image_path_,
-      stereo_calib_file_path_;
+      stereo_calib_file_path_,
+      camera_info_topic_;
   int stereo_combine_mode_ = 1;
   float leaf_size_, stdv_;
   int KMean_;
@@ -231,8 +233,11 @@ class StereoNetNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr depth_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compare_left_sub_;
 
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
+  
   void d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
   void c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+  void camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstSharedPtr &camera_info_msg);
 
   cv::Mat compare_visual_;
   std::mutex compare_visual_mtx_;
