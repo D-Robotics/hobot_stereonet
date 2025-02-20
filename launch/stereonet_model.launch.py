@@ -37,7 +37,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'model.hbm'
+        'x5baseplus_alldata_woIsaac.bin'
     )
     local_image_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
