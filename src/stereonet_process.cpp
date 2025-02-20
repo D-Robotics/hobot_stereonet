@@ -369,7 +369,7 @@ int postprocess_v3(std::vector<hbDNNTensor> &tensors,
     infer_disp = cv::Mat(h_dim, w_dim, CV_32FC1, infer_points.data());
     init_disp = cv::Mat(h_dim, w_dim, CV_32FC1, init_points.data());
     uncert = cv::abs(init_disp - infer_disp) / init_disp;
-    cv::threshold(uncert, mask, 0.09, 1, cv::THRESH_BINARY_INV);  
+    cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);  
     infer_disp = infer_disp.mul(mask);
   }
   points = std::move(infer_points);
