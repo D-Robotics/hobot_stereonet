@@ -90,6 +90,7 @@ def generate_launch_description():
         {'name':'stereo_node_name', 'default_value':'StereoNetNode', 'description': 'stereo_node_name'},
         {'name':'depth_need_filter', 'default_value':'True', 'description': 'depth_need_filter'},
         {'name':'pc_max_depth', 'default_value':'6.0', 'description': 'pc_max_depth'},
+        {'name':'uncertainty_th', 'default_value':'0.09', 'description': 'uncertainty_th'},
     ]
 
     launch = declare_configurable_parameters(node_params)

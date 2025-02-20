@@ -276,58 +276,6 @@ int postprocess_v1(std::vector<hbDNNTensor> &tensors,
   return 0;
 }
 
-static float quanti_scale(int32_t data, float scale)
-{
-    return data * scale;
-}
-
-/*
-int postprocess_v2(std::vector<hbDNNTensor> &tensors,
-                std::vector<float> &points,
-                int max_disp) {
-  for (int32_t i = 0; i < 2; i++) {
-    hbSysFlushMem(&(tensors[i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
-  }
-
-  // get tensor info
-  int16_t *disp_unfold = reinterpret_cast<int16_t *>(tensors[0].sysMem[0].virAddr);
-  int16_t *spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
-
-  float *disp_unfold_scale = tensors[0].properties.scale.scaleData;
-  float *spx_scale = tensors[1].properties.scale.scaleData;
-  RCLCPP_INFO_ONCE(rclcpp::get_logger(""), "=> disp_unfold_scale: %f, spx_scale: %f", *disp_unfold_scale, *spx_scale);
-
-  int32_t *disp_unfold_shape = tensors[0].properties.validShape.dimensionSize;
-  int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
-  RCLCPP_INFO_ONCE(rclcpp::get_logger(""), "=> disp_unfold_shape: [%d, %d, %d, %d], spx_shape: [%d, %d, %d, %d]", 
-  disp_unfold_shape[0], disp_unfold_shape[1], disp_unfold_shape[2], disp_unfold_shape[3], 
-  spx_shape[0], spx_shape[1], spx_shape[2], spx_shape[3]);
-
-  points.resize(disp_unfold_shape[2] * disp_unfold_shape[3], 0.f);
-  int c_step = disp_unfold_shape[2] * disp_unfold_shape[3];
-  int h_step = disp_unfold_shape[3];
-  int cnt = 0;
-  for (int h = 0; h < disp_unfold_shape[2]; h++)
-  {
-    for (int w = 0; w < disp_unfold_shape[3]; w++)
-    {
-      float disp = 0.0f;
-      for (int c = 0; c < disp_unfold_shape[1]; c++)
-      {
-        int index = c * c_step + h * h_step + w;
-        float disp_unfold_val = quanti_scale(disp_unfold[index], *disp_unfold_scale);
-        float spx_val = quanti_scale(spx[index], *spx_scale);
-        disp += disp_unfold_val * spx_val;
-      }
-      points[cnt] = disp;
-      cnt++;
-    }
-  }
-
-  return 0;
-}
-*/
-
 int postprocess_v2(std::vector<hbDNNTensor> &tensors,
                 std::vector<float> &points,
                 int max_disp) {
@@ -402,6 +350,32 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
 
   return 0;
 }
+
+int postprocess_v3(std::vector<hbDNNTensor> &tensors,
+                std::vector<float> &points,
+                int max_disp,
+                float uncertainty_th) {
+  cv::Mat mask, uncert, infer_disp, init_disp;
+  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t c_dim = disp_shape[1];
+  int32_t h_dim = disp_shape[2];
+  int32_t w_dim = disp_shape[3];              
+  std::vector<float> infer_points, init_points;           
+  std::vector<hbDNNTensor> infer_disp_tensor(tensors.begin(), tensors.begin() + 2);
+  std::vector<hbDNNTensor> init_disp_tensor(tensors.begin() + 2, tensors.begin() + 4);
+  postprocess_v2(infer_disp_tensor, infer_points, max_disp);
+  if (uncertainty_th > 0.0f) {
+    postprocess_v2(init_disp_tensor, init_points, max_disp);
+    infer_disp = cv::Mat(h_dim, w_dim, CV_32FC1, infer_points.data());
+    init_disp = cv::Mat(h_dim, w_dim, CV_32FC1, init_points.data());
+    uncert = cv::abs(init_disp - infer_disp) / init_disp;
+    cv::threshold(uncert, mask, 0.09, 1, cv::THRESH_BINARY_INV);  
+    infer_disp = infer_disp.mul(mask);
+  }
+  points = std::move(infer_points);
+  return 0;
+}
+
 
 static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
 {
@@ -592,7 +566,7 @@ static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_l
 }
 
 int StereonetProcess::stereonet_init(const std::string &model_file_name,
-    int max_disp, const std::string &postprocess) {
+    int max_disp, const std::string &postprocess, float uncertainty_th) {
   postprocess_ = postprocess;
   int32_t model_count = 0;
   hbDNNTensorProperties properties;
@@ -645,6 +619,9 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
   max_disp_ = max_disp;
   HB_CHECK_SUCCESS(hbDNNGetOutputCount(&output_count_, dnn_handle_),
       "hbDNNGetOutputCount failed");  
+      
+  uncertainty_th_ = uncertainty_th;
+      
   return 0;
 }
 
@@ -792,9 +769,12 @@ int StereonetProcess::stereonet_inference(
   {
     postprocess_v1(output_tensors_[idle_tensor_id], points, max_disp_);
   }
-  else
+  else if (postprocess_ == "v2")
   {
     postprocess_v2(output_tensors_[idle_tensor_id], points, max_disp_);
+  }
+  else if (postprocess_ == "v3") {
+    postprocess_v3(output_tensors_[idle_tensor_id], points, max_disp_, uncertainty_th_);
   }
   return StereonetErrorCode::OK;
 }

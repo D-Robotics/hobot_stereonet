@@ -60,7 +60,7 @@ struct StereonetProcess {
   StereonetProcess();
 
   int stereonet_init(const std::string &model_file_name,
-      int max_disp, const std::string &postprocess);
+      int max_disp, const std::string &postprocess, float uncertainty_th);
   int stereonet_deinit ();
 
   int stereonet_inference(const cv::Mat &left_img,
@@ -101,6 +101,7 @@ struct StereonetProcess {
   int max_disp_ = 192;
 
   float focal_, baseline_;
+  float uncertainty_th_ = 0.09;
 };
 
 #endif //STEREO_INCLUDE_STEREONET_PROCESS_H_
