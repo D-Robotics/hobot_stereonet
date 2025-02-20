@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
       while (rclcpp::ok()) {
         node->inference_by_image();
         RCLCPP_INFO(node->get_logger(), "image inference completed!");
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
       }
     }).detach();
   }
