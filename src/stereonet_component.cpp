@@ -349,8 +349,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
 
       std::ostringstream ss;
       ss << std::fixed << std::setprecision(2) << distance << "m";
-      double font_scale = 1.0;
-      if (postprocess_ == "v2") font_scale = 0.5;
+      double font_scale = 0.5;
       cv::putText(visual_img, ss.str(), bgr_location,
                   cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
@@ -363,12 +362,12 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
 
   if (depth_compare) {
     cv::putText(visual_img, "camera", cv::Point2i(3, 38),
-                cv::FONT_HERSHEY_SIMPLEX, 1.5,
-                cv::Scalar(0, 255, 0), 3);
+                cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                cv::Scalar(0, 255, 0), 2);
 
     cv::putText(visual_img, "AI-depth", cv::Point2i(3, bgr_image.rows + 38),
-                cv::FONT_HERSHEY_SIMPLEX, 1.5,
-                cv::Scalar(0, 255, 0), 3);
+                cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                cv::Scalar(0, 255, 0), 2);
     {
       std::lock_guard<std::mutex> lck(compare_visual_mtx_);
 
