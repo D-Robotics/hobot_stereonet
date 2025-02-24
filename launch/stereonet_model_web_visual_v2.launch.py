@@ -88,7 +88,6 @@ def generate_launch_description():
             "stereonet_model_file_path": stereonet_model_file_path,
             "postprocess": "v2",
             "stereo_combine_mode": "1",
-            "log_level": "info",
         }.items(),
     )
 

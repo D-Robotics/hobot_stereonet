@@ -54,11 +54,9 @@ def generate_launch_description():
                                                    'launch/stereonet_model.launch.py')),
         launch_arguments={'stereo_image_topic': '/image_combine_raw',
                           'stereo_combine_mode': '1',
-                          'log_level': 'info',
                           "stereonet_model_file_path": stereonet_model_file_path,
                           "postprocess": "v2",
-                          'need_rectify': 'False',
-                          'depth_type': 'region'
+                          'need_rectify': 'False'
                           }.items()
     )
     node_list.append(stereonet_node)

@@ -56,8 +56,7 @@ def generate_launch_description():
                           'stereo_combine_mode': '1',
                           "stereonet_model_file_path": stereonet_model_file_path,
                           "postprocess": "v3",
-                          'need_rectify': 'False',
-                          'depth_type': 'region'
+                          'need_rectify': 'False'
                           }.items()
     )
     node_list.append(stereonet_node)
