@@ -68,6 +68,24 @@ link_directories(
   ${SYS_ROOT}/usr/lib/aarch64-linux-gnu/
 )
 
+set(DNN_LIBS "")
+
+if(PLATFORM_X5)
+    message("hobot_stereonet build platform X5")
+    add_definitions(-DPLATFORM_X5)
+    list(DNN_LIBS "dnn cnn_intf hbrt_bayes_aarch64")
+elseif(PLATFORM_X5)
+    message("hobot_stereonet build platform S100")
+    add_definitions(-DPLATFORM_S100)
+    list(DNN_LIBS "dnn ucp")
+endif()
+
+include_directories(
+        #platform_private/x5/
+        #platform_private/x5/dnn
+        platform_private/s100/
+)
+
 add_executable(
         stereonet_model_node
         ${PROJECT_SOURCE_DIR}/src/stereonet_component.cpp
@@ -83,9 +101,7 @@ target_link_libraries(stereonet_model_node
         #opencv_world
         alog
         gflags
-        dnn
-        cnn_intf
-        hbrt_bayes_aarch64
+        ${DNN_LIBS}
         pthread
         ${PCL_LIBRARIES})
 
@@ -118,9 +134,7 @@ target_link_libraries(stereonet_model
         #opencv_world
         alog
         gflags
-        dnn
-        cnn_intf
-        hbrt_bayes_aarch64
+        ${DNN_LIBS}
         pthread
         ${PCL_LIBRARIES})
 

@@ -27,6 +27,7 @@
 #include <message_filters/synchronizer.h>
 
 #include "image_conversion.h"
+
 namespace stereonet {
 
 class StereoNetNode : public rclcpp::Node {

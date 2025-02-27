@@ -80,7 +80,9 @@ struct StereoRectify {
       cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr,
                                   cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1r, undistmap2r);
     } else if (calib_model == "fish") {
-      fs["cam1"]["fov_scale"] >> fov_scale;
+      if (!fs["cam1"]["fov_scale"].empty()) {
+        fs["cam1"]["fov_scale"] >> fov_scale;
+      }
       if (fov_scale == 0) fov_scale = 0.8;
       cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr,
                                  cv::Size(cam0_resolution[0], cam0_resolution[1]), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
