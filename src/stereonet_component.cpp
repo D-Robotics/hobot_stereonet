@@ -701,10 +701,8 @@ void StereoNetNode::save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img,
   std::stringstream iss;
   iss << std::setw(6) << std::setfill('0') << save_cnt_;
   auto image_seq = iss.str();
-  if (!save_image_all_) {
-    cv::imwrite("./stereonet_images/left" + image_seq + "." + image_format, left_img);
-    cv::imwrite("./stereonet_images/right" + image_seq + "." + image_format, right_img);  
-  }
+  cv::imwrite("./stereonet_images/left" + image_seq + "." + image_format, left_img);
+  cv::imwrite("./stereonet_images/right" + image_seq + "." + image_format, right_img);
 
   if (save_image_to_nv12_)
   {
