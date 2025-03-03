@@ -393,7 +393,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
       system("mkdir -p ./stereonet_images");
     }
 
-    if (save_cnt_ == 1)
+    if (save_cnt_ == 0)
     {
       std::stringstream ss;
       ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
@@ -701,10 +701,8 @@ void StereoNetNode::save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img,
   std::stringstream iss;
   iss << std::setw(6) << std::setfill('0') << save_cnt_;
   auto image_seq = iss.str();
-  if (!save_image_all_) {
-    cv::imwrite("./stereonet_images/left" + image_seq + "." + image_format, left_img);
-    cv::imwrite("./stereonet_images/right" + image_seq + "." + image_format, right_img);  
-  }
+  cv::imwrite("./stereonet_images/left" + image_seq + "." + image_format, left_img);
+  cv::imwrite("./stereonet_images/right" + image_seq + "." + image_format, right_img);
 
   if (save_image_to_nv12_)
   {
@@ -734,7 +732,7 @@ void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts,
   cv::imwrite("./images/cam0/data/" + std::to_string(ts) + "." + image_format, left_img);
   cv::imwrite("./images/cam1/data/" + std::to_string(ts) + "." + image_format, right_img);
   //cv::vconcat(left_img, right_img, image_combine);
-  //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + image_format, image_combine);
+  //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + "." + image_format, image_combine);
 }
 
 void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
@@ -806,7 +804,7 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 void StereoNetNode::inference_func() {
   int ret = 0;
   cv::Mat rectified_left_image, rectified_right_image;
-  while (is_running_) {
+  while (is_running_ && rclcpp::ok()) {
     inference_data_t inference_data;
     std::vector<float> points;
     if (inference_que_.get(inference_data)) {
@@ -1200,6 +1198,7 @@ int get_image(const std::string &image_path,
   right_img = cv::imread(right_img_path);
   ts = 0;
   if (left_img.empty() || right_img.empty()) {
+    RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> left_img_path: " << left_img_path << ", right_img_path: " << right_img_path << " not existed!");
     i_num = 0;
     return -1;
   }

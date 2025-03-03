@@ -169,7 +169,7 @@ class StereoNetNode : public rclcpp::Node {
   bool save_image_all_;
   bool save_image_to_nv12_;
   bool directory_created_ = false;
-  int save_cnt_ = 1;
+  int save_cnt_ = 0;
   int save_freq_ = 1;
 
   std::string postprocess_;
