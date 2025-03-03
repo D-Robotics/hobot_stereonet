@@ -210,7 +210,7 @@ class StereoNetNode : public rclcpp::Node {
   bool depth_need_filter_ = true;
   float pc_max_depth_ = 6.0;
 
-  float uncertainty_th_ = 0.09;
+  float uncertainty_th_ = -0.09;
 
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
