@@ -237,8 +237,8 @@ int postprocess_v1(std::vector<hbDNNTensor> &tensors,
       reinterpret_cast<int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
   int32_t *cost_valid_shape = tensors[0].properties.validShape.dimensionSize;
   int32_t cost_aligned_shape[4];
-  cost_aligned_shape[0] = ALIGN_32(cost_valid_shape[0]);
-  cost_aligned_shape[1] = ALIGN_32(cost_valid_shape[1]);
+  cost_aligned_shape[0] = cost_valid_shape[0];
+  cost_aligned_shape[1] = cost_valid_shape[1];
   cost_aligned_shape[2] = ALIGN_32(cost_valid_shape[2]);
   cost_aligned_shape[3] = ALIGN_32(cost_valid_shape[3]);
   float *cost_scale = tensors[0].properties.scale.scaleData;
@@ -401,7 +401,7 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
       hbDNNGetModelHandle(&dnn_handle, *packed_dnn_handle, model_name_list[0]),
       "hbDNNGetModelHandle failed");
 
-  std::cout << "Model info:\nmodel_name: \n" << model_name_list[0] << std::endl;
+  std::cout << "Model info:\nmodel_name: " << model_name_list[0] << std::endl;
 
   int32_t input_count = 0;
   int32_t output_count = 0;
@@ -420,15 +420,28 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
               << " tensorType: " << properties.tensorType << " validShape:(";
 #endif
 #ifdef PLATFORM_S100
-    std::cout << "input[" << i << "]: " << " tensorType: "
-              << properties.tensorType << " validShape:(";
+    auto dim_len = properties.validShape.numDimensions;
+    for (int32_t dim_i = dim_len - 1; dim_i >= 0; --dim_i) {
+      if (properties.stride[dim_i] == -1) {
+        auto cur_stride =
+            properties.stride[dim_i + 1] *
+                properties.validShape.dimensionSize[dim_i + 1];
+        properties.stride[dim_i] = ALIGN_32(cur_stride);
+      }
+    }
+    std::cout << "input[" << i << "]: quantizeAxis: " << properties.quantizeAxis
+              << " tensorType: " << properties.tensorType << " stride: ("
+              << properties.stride[0] << ", " << properties.stride[1]
+              << ", " << properties.stride[2] << ", " << properties.stride[2]
+              << ") validShape:(";
 #endif
     for (j = 0; j < properties.validShape.numDimensions; j++)
       std::cout << properties.validShape.dimensionSize[j] << ", ";
     std::cout << "), alignedShape:(";
     for (j = 0; j < properties.validShape.numDimensions; j++)
-      std::cout << ", " << ALIGN_32(properties.validShape.dimensionSize[j]);
-    std::cout << ")" << std::endl;
+      std::cout << ", " << properties.validShape.dimensionSize[j];
+    std::cout << ")" << " quantiType: " << properties.quantiType << " alignedByteSize: "
+              << properties.alignedByteSize << std::endl;
   }
 
   std::cout << "Output count: " << output_count << std::endl;
@@ -441,15 +454,16 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
               << " tensorType: " << properties.tensorType << " validShape:(";
 #endif
 #ifdef PLATFORM_S100
-    std::cout << "input[" << i << "]: " << " tensorType: "
-              << properties.tensorType << " validShape:(";
+    std::cout << "input[" << i << "]: quantizeAxis: " << properties.quantizeAxis
+              << " tensorType: " << properties.tensorType << " validShape:(";
 #endif
     for (j = 0; j < properties.validShape.numDimensions; j++)
       std::cout << properties.validShape.dimensionSize[j] << ", ";
     std::cout << "), alignedShape:(";
     for (j = 0; j < properties.validShape.numDimensions; j++)
-      std::cout << ", " << ALIGN_32(properties.validShape.dimensionSize[j]);
-    std::cout << ")" << std::endl;
+      std::cout << ", " << properties.validShape.dimensionSize[j];
+    std::cout << ")" << " quantiType: " << properties.quantiType << " alignedByteSize: "
+              << properties.alignedByteSize << std::endl;
   }
   return 0;
 }
@@ -457,36 +471,50 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
 int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
                                     hbDNNHandle_t dnn_handle) {
   int model_h, model_w;
-  input_tensor.resize(2);
+
+  int32_t input_count = 0;
+  // hbDNNTensorProperties properties;
+  hbDNNGetInputCount(&input_count, dnn_handle);
+  input_tensor.resize(input_count);
 
   hbDNNTensorProperties properties = {0};
-  for (auto &tensor : input_tensor) {
+  for (int i = 0; i < input_tensor.size(); ++i) {
+    auto &tensor = input_tensor[i];
     HB_CHECK_SUCCESS(
-        hbDNNGetInputTensorProperties(&properties, dnn_handle, 0),
+        hbDNNGetInputTensorProperties(&properties, dnn_handle, i),
         "hbDNNGetInputTensorProperties failed");
+
+#ifdef PLATFORM_S100
+    properties.quantizeAxis = 3;
+    properties.alignedByteSize = properties.validShape.dimensionSize[0] *
+        properties.validShape.dimensionSize[1] *
+        properties.validShape.dimensionSize[2] *
+        properties.validShape.dimensionSize[3];
+    auto dim_len = properties.validShape.numDimensions;
+    for (int32_t dim_i = dim_len - 1; dim_i >= 0; --dim_i) {
+      if (properties.stride[dim_i] == -1) {
+        auto cur_stride =
+            properties.stride[dim_i + 1] *
+                properties.validShape.dimensionSize[dim_i + 1];
+        properties.stride[dim_i] = ALIGN_32(cur_stride);
+      }
+    }
+#endif
+
     tensor.properties = properties;
     input_tensor_type_ = properties.tensorType;
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> input tensor type: " <<
                         tensor_type_to_str(tensor.properties.tensorType));
-    // tensor.properties.tensorType = HB_DNN_IMG_TYPE_NV12_SEPARATE;
-    get_hw(properties, model_h, model_w);
-    tensor.properties.validShape.numDimensions = 4;
-    tensor.properties.validShape.dimensionSize[0] = 1;
-    tensor.properties.validShape.dimensionSize[1] = 3;
-    tensor.properties.validShape.dimensionSize[2] = model_h; 
-    tensor.properties.validShape.dimensionSize[3] = model_w;
+
 #ifdef PLATFORM_X5
     tensor.properties.alignedShape = tensor.properties.validShape;
 #endif
+    get_hw(properties, model_h, model_w);
     // check input tensor type
     if (properties.tensorType == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
-      HB_CHECK_SUCCESS(hbSysAllocCachedMem(&TENSOR_SYSMEM(tensor, 0), model_h * model_w),
-          "hbSysAllocCachedMem failed");
-      TENSOR_SYSMEM(tensor, 0).memSize = model_h * model_w;
-
-      HB_CHECK_SUCCESS(hbSysAllocCachedMem(&TENSOR_SYSMEM(tensor, 1), model_h * model_w / 2),
-          "hbSysAllocCachedMem failed");
-      TENSOR_SYSMEM(tensor, 1).memSize = model_h * model_w / 2;
+      HB_CHECK_SUCCESS(hbSysAllocCachedMem(&TENSOR_SYSMEM(tensor, 0), properties.alignedByteSize),
+                       "hbSysAllocCachedMem failed");
+      TENSOR_SYSMEM(tensor, 0).memSize = properties.alignedByteSize;
     } else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12) {
       HB_CHECK_SUCCESS(hbSysAllocCachedMem(&TENSOR_SYSMEM(tensor, 0), (3 * model_h * model_w) / 2),
           "hbSysAllocCachedMem failed");
@@ -523,6 +551,9 @@ static int32_t get_model_input_size(hbDNNHandle_t dnn_handle,
   HB_CHECK_SUCCESS(
       hbDNNGetInputTensorProperties(&properties, dnn_handle, 0),
       "hbDNNGetInputTensorProperties failed");
+#ifdef PLATFORM_S100
+  properties.quantizeAxis = 3;
+#endif
   get_hw(properties, height, width);
   return 0;
 }
@@ -533,6 +564,9 @@ static int32_t get_model_output_size(hbDNNHandle_t dnn_handle,
   HB_CHECK_SUCCESS(
       hbDNNGetOutputTensorProperties(&properties, dnn_handle, 1),
       "hbDNNGetInputTensorProperties failed");
+#ifdef PLATFORM_S100
+  properties.quantizeAxis = 1;
+#endif
   get_hw(properties, height, width);
   return 0;
 }
@@ -570,7 +604,7 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
       &model_name_list, &model_count, packed_dnn_handle),
                    "hbDNNGetModelNameList failed");
   if (model_count <= 0) {
-    printf("Modle count <= 0\n");
+    std::cout << "Modle count <= 0" << std::endl;
     return -1;
   }
 
@@ -661,55 +695,38 @@ int StereonetProcess::stereonet_inference(
     image_conversion::bgr_to_nv12(right_img, right_img_nv12);
   }
 
-  hbDNNTensor &left_input_tensor  = input_tensors_[idle_tensor_id][0],
-              &right_input_tensor = input_tensors_[idle_tensor_id][1];
-  /*
-  assert(left_img_nv12.rows * left_img_nv12.cols == model_input_h_ * model_input_w_ * 3 / 2);
-  assert((left_input_tensor.sysMem[0].memSize +
-      left_input_tensor.sysMem[1].memSize) == model_input_h_ * model_input_w_ * 3 / 2);
-
-  assert(right_img_nv12.rows * right_img_nv12.cols == model_input_h_ * model_input_w_ * 3 / 2);
-  assert((right_input_tensor.sysMem[0].memSize +
-      right_input_tensor.sysMem[1].memSize) == model_input_h_ * model_input_w_ * 3 / 2);
-
-
-  static int iii = 0;
-  std::stringstream iss;
-  iss << std::setw(6) << std::setfill('0') << iii++;
-  auto image_seq = iss.str();
-  std::ofstream bin( "./230ai_data/" + image_seq + ".yuv", std::ios::out | std::ios::binary);
-  bin.write((const char*)(left_img_nv12.data), left_input_tensor.sysMem[0].memSize + left_input_tensor.sysMem[1].memSize);
-  bin.write((const char*)right_img_nv12.data, right_input_tensor.sysMem[0].memSize + right_input_tensor.sysMem[1].memSize);
-   */
-
   if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
-    hbSysWriteMem(&TENSOR_SYSMEM(left_input_tensor, 0),
-        (char *)left_img_nv12.data, TENSOR_SYSMEM(left_input_tensor, 0).memSize);
-    hbSysWriteMem(&TENSOR_SYSMEM(left_input_tensor, 1),
-        (char *) left_img_nv12.data + TENSOR_SYSMEM(left_input_tensor, 0).memSize,
-        TENSOR_SYSMEM(left_input_tensor, 1).memSize);
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0),
+        (char *)left_img_nv12.data,
+        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize);
 
-    hbSysWriteMem(&TENSOR_SYSMEM(right_input_tensor, 0),
-        (char *)right_img_nv12.data, TENSOR_SYSMEM(right_input_tensor, 0).memSize);
-    hbSysWriteMem(&TENSOR_SYSMEM(right_input_tensor, 1),
-        (char *) right_img_nv12.data + TENSOR_SYSMEM(right_input_tensor, 0).memSize,
-        TENSOR_SYSMEM(right_input_tensor, 1).memSize);
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0),
+        (char *) left_img_nv12.data + TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize,
+        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0).memSize);
 
-    hbSysFlushMem(&TENSOR_SYSMEM(left_input_tensor, 0), HB_SYS_MEM_CACHE_CLEAN);
-    hbSysFlushMem(&TENSOR_SYSMEM(left_input_tensor, 1), HB_SYS_MEM_CACHE_CLEAN);
-    hbSysFlushMem(&TENSOR_SYSMEM(right_input_tensor, 0), HB_SYS_MEM_CACHE_CLEAN);
-    hbSysFlushMem(&TENSOR_SYSMEM(right_input_tensor, 1), HB_SYS_MEM_CACHE_CLEAN);
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0),
+        (char *)right_img_nv12.data,
+        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0).memSize);
+
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0),
+        (char *) right_img_nv12.data + TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0).memSize,
+        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0).memSize);
+
+    hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0), HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0), HB_SYS_MEM_CACHE_CLEAN);
   } else if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12) {
-    hbSysWriteMem(&TENSOR_SYSMEM(left_input_tensor, 0), (char *)left_img_nv12.data,
-                  TENSOR_SYSMEM(left_input_tensor, 0).memSize);
-    hbSysWriteMem(&TENSOR_SYSMEM(right_input_tensor, 0), (char *)right_img_nv12.data,
-                  TENSOR_SYSMEM(right_input_tensor, 0).memSize);
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), (char *)left_img_nv12.data,
+                  TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize);
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), (char *)right_img_nv12.data,
+                  TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0).memSize);
 
-    hbSysFlushMem(&TENSOR_SYSMEM(left_input_tensor, 0), HB_SYS_MEM_CACHE_CLEAN);
-    hbSysFlushMem(&TENSOR_SYSMEM(right_input_tensor, 0), HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), HB_SYS_MEM_CACHE_CLEAN);
+    hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), HB_SYS_MEM_CACHE_CLEAN);
   } else {
-    RCLCPP_ERROR_STREAM(rclcpp::get_logger(""),
-        "\033[31m=> input tensor flush mem errror:" << tensor_type_to_str(input_tensor_type_) << "!\033[0m");
+    std::cout <<"\033[31m=> input tensor flush mem errror:"
+              << tensor_type_to_str(input_tensor_type_) << "!\033[0m";
     return StereonetErrorCode::INPUT_ERROR;
   }
 
@@ -724,7 +741,7 @@ int StereonetProcess::stereonet_inference(
                    &infer_ctrl_param);
   if (ret) {
     set_tensor_idle(idle_tensor_id);
-    printf("hbDNNInfer failed\n");
+    std::cout << "hbDNNInfer failed" << std::endl;
     return StereonetErrorCode::DNN_ERROR;
   }
   // wait task done
@@ -733,7 +750,7 @@ int StereonetProcess::stereonet_inference(
     ret = hbDNNWaitTaskDone(task_handle, 0);
     if (ret) {
       set_tensor_idle(idle_tensor_id);
-      printf("hbDNNWaitTaskDone failed\n");
+      std::cout << "hbDNNWaitTaskDone failed" << std::endl;
       return StereonetErrorCode::DNN_ERROR;
     }
   }
@@ -747,7 +764,7 @@ int StereonetProcess::stereonet_inference(
   ret = hbDNNReleaseTask(task_handle);
   set_tensor_idle(idle_tensor_id);
   if (ret) {
-    printf("hbDNNReleaseTask failed\n");
+    std::cout << "hbDNNReleaseTask failed" << std::endl;
     return StereonetErrorCode::DNN_ERROR;
   }
 

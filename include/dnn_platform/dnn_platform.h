@@ -5,8 +5,6 @@
 #ifndef HOBOT_STEREONET_HOBOT_STEREONET_INCLUDE_DNN_PLATFORM_DNN_PLATFORM_H_
 #define HOBOT_STEREONET_HOBOT_STEREONET_INCLUDE_DNN_PLATFORM_DNN_PLATFORM_H_
 
-#define PLATFORM_S100
-
 #ifdef PLATFORM_S100
 #include "hobot/dnn/hb_dnn.h"
 #include "hobot/dnn/hb_dnn_status.h"
@@ -20,8 +18,8 @@ using hbDNNInferCtrlParam = hbUCPSchedParam;
 using hbSysMem = hbUCPSysMem;
 
 enum {
-  HB_DNN_IMG_TYPE_NV12 = hbDNNDataType::HB_DNN_TENSOR_TYPE_U8,
-  HB_DNN_IMG_TYPE_NV12_SEPARATE = hbDNNDataType::HB_DNN_TENSOR_TYPE_MAX
+  HB_DNN_IMG_TYPE_NV12 = hbDNNDataType::HB_DNN_TENSOR_TYPE_MAX,
+  HB_DNN_IMG_TYPE_NV12_SEPARATE = hbDNNDataType::HB_DNN_TENSOR_TYPE_U8
 };
 
 #define HB_DNN_INITIALIZE_INFER_CTRL_PARAM HB_UCP_INITIALIZE_SCHED_PARAM
@@ -52,11 +50,18 @@ static int hbDNNInfer(hbDNNTaskHandle_t *taskHandle, hbDNNTensor **output,
                hbDNNTensor const *input, hbDNNHandle_t dnnHandle,
                hbDNNInferCtrlParam *inferCtrlParam) {
   int ret;
-  ret = hbUCPSubmitTask(taskHandle, inferCtrlParam);
+  ret = hbDNNInferV2(taskHandle, *output, input, dnnHandle);
   if (ret != HB_DNN_SUCCESS) {
+    std::cout << "hbDNNInferV2 failed: "<< ret << std::endl;
     return ret;
   }
-  return hbDNNInferV2(taskHandle, *output, input, dnnHandle);
+  inferCtrlParam->backend = HB_UCP_BPU_CORE_ANY;
+  ret = hbUCPSubmitTask(*taskHandle, inferCtrlParam);
+  if (ret != HB_DNN_SUCCESS) {
+    std::cout << "hbUCPSubmitTask failed: "<< ret << std::endl;
+    return ret;
+  }
+  return ret;
 }
 
 static int hbDNNWaitTaskDone(hbDNNTaskHandle_t taskHandle, int32_t timeout) {
@@ -64,8 +69,19 @@ static int hbDNNWaitTaskDone(hbDNNTaskHandle_t taskHandle, int32_t timeout) {
 }
 
 static void get_hw(const hbDNNTensorProperties &properties, int32_t &height, int32_t &width) {
-  height = properties.validShape.dimensionSize[2];
-  width = properties.validShape.dimensionSize[3];
+  switch (properties.quantizeAxis) {
+    case 3:  // NHWC
+      height = properties.validShape.dimensionSize[1];
+      width = properties.validShape.dimensionSize[2];
+      break;
+    case 1:  // NCHW
+      height = properties.validShape.dimensionSize[2];
+      width = properties.validShape.dimensionSize[3];
+      break;
+      case 0:
+        std::cout << "unknow properties.quantizeAxis for 0!" << std::endl;
+        return;
+  }
 }
 
 #endif
