@@ -940,6 +940,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
 
 int StereoNetNode::start() {
   int ret = 0;
+  if (is_running_) return 0;
   stereonet_process_ = std::make_shared<StereonetProcess>();
   ret = stereonet_process_->stereonet_init(stereonet_model_file_path_, max_disp_, postprocess_, uncertainty_th_);
   if (ret != 0) {
@@ -966,13 +967,16 @@ int StereoNetNode::start() {
 }
 
 int StereoNetNode::stop() {
+  if (!is_running_) return 0;
   is_running_ = false;
   for (auto &t : work_thread_) {
     t->join();
   }
   work_thread_.clear();
-  stereonet_process_->stereonet_deinit();
-  stereonet_process_ = nullptr;
+  if (stereonet_process_) {
+    stereonet_process_->stereonet_deinit();
+    stereonet_process_ = nullptr;
+  }
   return 0;
 }
 
