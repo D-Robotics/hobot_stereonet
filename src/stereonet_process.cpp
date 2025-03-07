@@ -627,7 +627,7 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
 
 int StereonetProcess::stereonet_deinit() {
   for (auto & input_tensor : input_tensors_) {
-    release_tensor(input_tensor, 2);
+    release_tensor(input_tensor, 1);
   }
   for (auto & output_tensor : output_tensors_) {
     release_tensor(output_tensor, 1);
