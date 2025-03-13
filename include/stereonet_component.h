@@ -60,6 +60,7 @@ class StereoNetNode : public rclcpp::Node {
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
       : rclcpp::Node("StereoNetNode", node_options) {
+    is_running_ = false;
     parameter_configuration();
     pub_sub_configuration();
     if (start() != 0) {
@@ -146,7 +147,7 @@ class StereoNetNode : public rclcpp::Node {
   void dump_one_point_disparity(pub_data_t &pub_raw_data,
                                 const cv::Mat &right_image, int x, int y);
 
-  std::atomic_bool is_running_;
+  std::atomic_bool is_running_ = false;
 
   std::vector<std::shared_ptr<std::thread>> work_thread_;
 
