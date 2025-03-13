@@ -6,7 +6,8 @@
 #include <deque>
 #include <string>
 #include <opencv2/opencv.hpp>
-#include <dnn/hb_dnn.h>
+
+#include "dnn_platform/dnn_platform.h"
 
 #include "image_conversion.h"
 
@@ -16,6 +17,8 @@
 #define STEREO_INCLUDE_STEREONET_PROCESS_H_
 
 #define ALIGN_16(v) ((v + 15) & ~15)
+#define ALIGN(value, alignment) (((value) + ((alignment)-1)) & ~((alignment)-1))
+#define ALIGN_32(value) ALIGN(value, 32)
 
 #define HB_CHECK_SUCCESS(value, errmsg)                          \
 do {                                                             \
