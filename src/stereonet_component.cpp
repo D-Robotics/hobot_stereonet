@@ -388,25 +388,38 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   if (save_image_all_)
   {
     std::unique_lock<std::mutex> lock(mtx_);
-    if (!directory_created_) {
-      directory_created_ = true;
-      system("mkdir -p ./stereonet_images");
-    }
-
     if (save_cnt_ == 0)
     {
+      if (!fs::exists(save_dir_))
+      {
+        if (!fs::create_directory(save_dir_))
+        {
+          RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> failed to create save dir: " << save_dir_ << "\033[0m");
+          save_image_all_ = false;
+        }
+        else
+        {
+          RCLCPP_INFO_STREAM(this->get_logger(), "\033[31m=> create save dir: " << save_dir_ << "\033[0m");
+        }
+      }
+      else
+      {
+        RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
+        save_image_all_ = false;
+        return 0;
+      }
       std::stringstream ss;
       ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
       std::string result = ss.str();
-      std::ofstream outFile("./stereonet_images/calib_param.txt");
+      std::ofstream outFile(save_dir_ + "/calib_param.txt");
       if (outFile.is_open()) {
         outFile << result;
         outFile.close();
-        RCLCPP_WARN_STREAM(this->get_logger(), "=> calib param save to: ./stereonet_images/calib_param.txt");
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> calib param save to: " << save_dir_ << "/calib_param.txt\033[0m");
       }
     }
 
-    if ((save_cnt_ - 1) % save_freq_ == 0)
+    if (save_cnt_ % save_freq_ == 0)
     {
       const cv::Mat &left_image = pub_raw_data.left_sub_img.image;
       const cv::Mat &right_image = pub_raw_data.right_sub_img.image;
@@ -425,13 +438,18 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
       // std::memcpy(disp_img.data, points.data(), points.size() * sizeof(float));
       std::stringstream ss;
       ss << std::setw(6) << std::setfill('0') << save_cnt_;
-      std::string disp_path = "./stereonet_images/disp" + ss.str() + ".pfm";
-      std::string depth_path = "./stereonet_images/depth" + ss.str() + ".png";
-      std::string visual_path = "./stereonet_images/visual" + ss.str() + ".png";
+      std::string disp_path = save_dir_ + "/disp" + ss.str() + ".pfm";
+      std::string depth_path = save_dir_ + "/depth" + ss.str() + ".png";
+      std::string visual_path = save_dir_ + "/visual" + ss.str() + ".png";
       cv::imwrite(disp_path, disp_mat);
       cv::imwrite(depth_path, depth_img);
       cv::imwrite(visual_path, visual_img);
-      RCLCPP_WARN_STREAM(this->get_logger(), "=> save to: " << disp_path);
+      RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> save infer result to: " << disp_path << "\033[0m");
+
+      if (save_total_ != -1 && (save_cnt_ / save_freq_ + 1) >= save_total_) {
+        save_image_all_ = false;
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> save total: " << save_total_ << " images, stop saving\033[0m");
+      }
     }
 
     save_cnt_++;
@@ -701,16 +719,16 @@ void StereoNetNode::save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img,
   std::stringstream iss;
   iss << std::setw(6) << std::setfill('0') << save_cnt_;
   auto image_seq = iss.str();
-  cv::imwrite("./stereonet_images/left" + image_seq + "." + image_format, left_img);
-  cv::imwrite("./stereonet_images/right" + image_seq + "." + image_format, right_img);
+  cv::imwrite(save_dir_ + "/left" + image_seq + "." + image_format, left_img);
+  cv::imwrite(save_dir_ + "/right" + image_seq + "." + image_format, right_img);
 
   if (save_image_to_nv12_)
   {
     cv::Mat left_img_nv12, right_img_nv12;
     image_conversion::bgr_to_nv12(left_img, left_img_nv12);
     image_conversion::bgr_to_nv12(right_img, right_img_nv12);
-    save_mat_to_bin(left_img_nv12, "./stereonet_images/left" + image_seq + ".nv12");
-    save_mat_to_bin(right_img_nv12, "./stereonet_images/right" + image_seq + ".nv12");
+    save_mat_to_bin(left_img_nv12, save_dir_ + "/left" + image_seq + ".nv12");
+    save_mat_to_bin(right_img_nv12, save_dir_ + "/right" + image_seq + ".nv12");
   }
 }
 
@@ -1038,6 +1056,10 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("save_image", save_image_);
   RCLCPP_INFO_STREAM(this->get_logger(), "save_image: " << save_image_);
 
+  this->declare_parameter("save_dir", "./stereonet_images");
+  this->get_parameter("save_dir", save_dir_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "save_dir: " << save_dir_);
+
   this->declare_parameter("save_image_all", false);
   this->get_parameter("save_image_all", save_image_all_);
   RCLCPP_INFO_STREAM(this->get_logger(), "save_image_all: " << save_image_all_);
@@ -1045,6 +1067,10 @@ void StereoNetNode::parameter_configuration() {
   this->declare_parameter("save_freq", 1);
   this->get_parameter("save_freq", save_freq_);
   RCLCPP_INFO_STREAM(this->get_logger(), "save_freq: " << save_freq_);
+
+  this->declare_parameter("save_total", -1);
+  this->get_parameter("save_total", save_total_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "save_total: " << save_total_);
 
   this->declare_parameter("save_image_to_nv12", false);
   this->get_parameter("save_image_to_nv12", save_image_to_nv12_);
@@ -1202,8 +1228,8 @@ int get_image(const std::string &image_path,
   right_img = cv::imread(right_img_path);
   ts = 0;
   if (left_img.empty() || right_img.empty()) {
-    RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> left_img_path: " << left_img_path << ", right_img_path: " << right_img_path << " not existed!");
-    i_num = 0;
+    // RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> left_img_path: " << left_img_path << ", right_img_path: " << right_img_path << " not existed!");
+    // i_num = 0;
     return -1;
   }
   RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> left_img_path: " << left_img_path << ", right_img_path: " << right_img_path);
@@ -1270,6 +1296,10 @@ void StereoNetNode::inference_by_image() {
   std_msgs::msg::Header image_header;
   sub_image left_sub_img, right_sub_img;
   int64_t ts;
+  if (save_image_all_ && fs::exists(save_dir_)) {
+    RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
+    return;
+  }
   while (rclcpp::ok()) {
     if (inference_que_.size() > 5) {
       RCLCPP_WARN_THROTTLE(this->get_logger(),
@@ -1281,7 +1311,7 @@ void StereoNetNode::inference_by_image() {
         right_sub_img.image, ts, image_format_)) {   
 //    if (-1 == get_image2(local_image_path_, left_sub_img.image,
 //                         right_sub_img.image, ts, image_format_)) {
-      return;
+      continue;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(image_inference_sleep_ms_));
     image_header.frame_id =  "default_cam";
