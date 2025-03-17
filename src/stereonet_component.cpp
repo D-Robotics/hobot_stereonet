@@ -390,6 +390,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
     std::unique_lock<std::mutex> lock(mtx_);
     if (save_cnt_ == 0)
     {
+      // create save dir
       if (!fs::exists(save_dir_))
       {
         if (!fs::create_directory(save_dir_))
@@ -404,10 +405,15 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
       }
       else
       {
-        RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
-        save_image_all_ = false;
-        return 0;
+        bool use_local_image;
+        this->get_parameter("use_local_image", use_local_image);
+        if (!use_local_image) {
+          RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
+          save_image_all_ = false;
+          return 0;
+        }
       }
+      // save calib param
       std::stringstream ss;
       ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
       std::string result = ss.str();
@@ -419,6 +425,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
       }
     }
 
+    // save images
     if (save_cnt_ % save_freq_ == 0)
     {
       const cv::Mat &left_image = pub_raw_data.left_sub_img.image;
@@ -452,6 +459,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
       }
     }
 
+    // save cnt ++
     save_cnt_++;
   }
   
@@ -1296,10 +1304,7 @@ void StereoNetNode::inference_by_image() {
   std_msgs::msg::Header image_header;
   sub_image left_sub_img, right_sub_img;
   int64_t ts;
-  if (save_image_all_ && fs::exists(save_dir_)) {
-    RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
-    return;
-  }
+  save_dir_ = local_image_path_ + "/result";
   while (rclcpp::ok()) {
     if (inference_que_.size() > 5) {
       RCLCPP_WARN_THROTTLE(this->get_logger(),
