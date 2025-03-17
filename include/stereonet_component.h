@@ -10,6 +10,7 @@
 #include "stereo_rectify.h"
 
 #include <fstream>
+#include <filesystem>
 #include <opencv2/opencv.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -27,6 +28,8 @@
 #include <message_filters/synchronizer.h>
 
 #include "image_conversion.h"
+
+namespace fs = std::filesystem;
 
 namespace stereonet {
 
@@ -165,13 +168,14 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   bool save_image_;
+  std::string save_dir_ = "./stereonet_images";
 
   std::mutex mtx_;
   bool save_image_all_;
   bool save_image_to_nv12_;
-  bool directory_created_ = false;
   int save_cnt_ = 0;
   int save_freq_ = 1;
+  int save_total_ = -1;
 
   std::string postprocess_;
 
