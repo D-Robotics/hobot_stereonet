@@ -403,16 +403,16 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
           RCLCPP_INFO_STREAM(this->get_logger(), "\033[31m=> create save dir: " << save_dir_ << "\033[0m");
         }
       }
-      else
-      {
-        bool use_local_image;
-        this->get_parameter("use_local_image", use_local_image);
-        if (!use_local_image) {
-          RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
-          save_image_all_ = false;
-          return 0;
-        }
-      }
+      // else
+      // {
+      //   bool use_local_image;
+      //   this->get_parameter("use_local_image", use_local_image);
+      //   if (!use_local_image) {
+      //     RCLCPP_ERROR_STREAM(this->get_logger(), "\033[31m=> save dir: " << save_dir_ << " already exists, the image will not be saved\033[0m");
+      //     save_image_all_ = false;
+      //     return 0;
+      //   }
+      // }
       // save calib param
       std::stringstream ss;
       ss << "[fx, fy, cx, cy, baseline] = [" << camera_fx << ", "<< camera_fy << ", "<< camera_cx << ", "<< camera_cy << ", " << base_line * 1000 << "]" << std::endl;
