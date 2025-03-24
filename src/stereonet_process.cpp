@@ -296,7 +296,9 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
   int w_dim = disp_shape[3];
 
   // calc disp
-  Eigen::MatrixXf result = Eigen::MatrixXf::Zero(h_dim, w_dim);
+  points.resize(h_dim * w_dim, 0.f);
+  Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic,
+             Eigen::Dynamic>> result(points.data(), h_dim, w_dim);
   if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32
   && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
     // get tensor info
@@ -312,10 +314,6 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
           Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
       result.noalias() += matrix_disp.cwiseProduct(matrix_spx);
     }
-
-    // write the result to the points
-    points.resize(h_dim * w_dim, 0.f);
-    Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result;
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32
   && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
     // get tensor info
@@ -337,7 +335,6 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
         << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
     return -1;
   }
-
   // get scale info
   float scale_constant = 1.0;
   float *disp_scale = &scale_constant;
@@ -348,11 +345,7 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
   if (tensors[1].properties.quantiType == SCALE) {
     spx_scale = tensors[1].properties.scale.scaleData;
   }
-
-  // write the result to the points
-  points.resize(h_dim * w_dim, 0.f);
-  Eigen::Map<Eigen::MatrixXf>(points.data(), h_dim, w_dim).noalias() = result * (*disp_scale) * (*spx_scale);
-
+  result *= (*disp_scale * *spx_scale);
   return 0;
 }
 
