@@ -666,6 +666,7 @@ int StereoNetNode::pub_depth_camera_info(const pub_data_t &pub_raw_data) {
       0.f, 0.f, 1.f, 0.f
   };
   depth_camera_info_pub_->publish(depth_camera_info);
+  return 0;
 }
 
 void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
