@@ -902,12 +902,21 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
   uint16_t *depth_data = (uint16_t *)model_depth_img.data;
   float factor = 1000 * (camera_fx * base_line);
   uint32_t num_pixels = points.size();
-  for (uint32_t i = 0; i < num_pixels; ++i) {
-    if (points[i] > 0) {
-      depth_data[i] = factor / points[i];
-    } else {
-      depth_data[i] = 0;
-    }
+//  for (uint32_t i = 0; i < num_pixels; ++i) {
+//    if (points[i] > 0) {
+//      depth_data[i] = factor / points[i];
+//    } else {
+//      depth_data[i] = 0;
+//    }
+//  }
+
+  float32x4_t zero_vec = vdupq_n_f32(0.f);
+  float32x4_t factor_vector = vdupq_n_f32(factor);
+  for (uint32_t i = 0; i < num_pixels; i += 4) {
+    float32x4_t points_vec = vmaxq_f32(vld1q_f32(&points[i]), zero_vec);
+    float32x4_t depth_vec = vdivq_f32(factor_vector, points_vec);
+    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(depth_vec));
+    vst1_u16(&depth_data[i], depth_int16_vec);
   }
 
   pub_raw_data.model_depth_img = model_depth_img;
@@ -925,15 +934,6 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
     depth_img = model_depth_img;
     image_size_points = points;
   }
-
-//  float32x4_t zero_vec = vdupq_n_f32(0.01f);
-//  float32x4_t factor_vector = vdupq_n_f32(factor);
-//  for (uint32_t i = 0; i < num_pixels; i += 4) {
-//    float32x4_t points_vec = vmaxq_f32(vld1q_f32(&points[i]), zero_vec);
-//    float32x4_t depth_vec = vdivq_f32(factor_vector, points_vec);
-//    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(depth_vec));
-//    vst1_u16(&depth_data[i], depth_int16_vec);
-//  }
 }
 
 void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
