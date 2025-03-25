@@ -105,6 +105,7 @@ camera_fx:=505.044342 camera_fy:=505.044342 camera_cx:=605.167053 camera_cy:=378
 | /StereoNetNode/stereonet_pointcloud2 | sensor_msgs::msg::PointCloud2 | 发布的点云深度话题                       |
 | /StereoNetNode/stereonet_depth       | sensor_msgs::msg::Image       | 发布的深度图像，像素值为深度，单位为毫米 |
 | /StereoNetNode/stereonet_visual      | sensor_msgs::msg::Image       | 发布的比较直观的可视化渲染图像           |
+| /StereoNetNode/stereonet_depth_info      | sensor_msgs::msg::CameraInfo       | 深度图像内参             |
 
 ## 参数
 
