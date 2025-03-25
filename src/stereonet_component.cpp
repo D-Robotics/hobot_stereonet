@@ -911,11 +911,13 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
 //  }
 
   float32x4_t zero_vec = vdupq_n_f32(0.f);
+  //uint16x4_t zero_vec_u16 = vget_low_u16(vdupq_n_u16(0));
   float32x4_t factor_vector = vdupq_n_f32(factor);
   for (uint32_t i = 0; i < num_pixels; i += 4) {
-    float32x4_t points_vec = vmaxq_f32(vld1q_f32(&points[i]), zero_vec);
+    float32x4_t points_vec = vld1q_f32(&points[i]);
+    uint32x4_t mask = vcgtq_f32(points_vec, zero_vec);
     float32x4_t depth_vec = vdivq_f32(factor_vector, points_vec);
-    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(depth_vec));
+    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(vbslq_f32(mask, depth_vec, zero_vec)));
     vst1_u16(&depth_data[i], depth_int16_vec);
   }
 
