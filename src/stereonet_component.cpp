@@ -645,60 +645,29 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   }
   return 0;
 }
-//
-//int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
-//  const cv::Mat &image = pub_raw_data.left_sub_img.image;
-//  const std::vector<float> &points = pub_raw_data.points;
-//  std::vector<float> points_xyz;
-//  int img_origin_width = image.cols;
-//  int img_origin_height = image.rows;
-//  sensor_msgs::msg::PointCloud2 point_cloud_msg;
-//
-//  point_cloud_msg.fields.resize(3);
-//
-//  point_cloud_msg.fields[0].name = "x";
-//  point_cloud_msg.fields[0].offset = 0;
-//  point_cloud_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
-//  point_cloud_msg.fields[0].count = 1;
-//
-//  point_cloud_msg.fields[1].name = "y";
-//  point_cloud_msg.fields[1].offset = 4;
-//  point_cloud_msg.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
-//  point_cloud_msg.fields[1].count = 1;
-//
-//  point_cloud_msg.fields[2].name = "z";
-//  point_cloud_msg.fields[2].offset = 8;
-//  point_cloud_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
-//  point_cloud_msg.fields[2].count = 1;
-//
-//  points_xyz.reserve(points.size());
-//
-//  for (int y = 0; y < img_origin_height; ++y) {
-//    for (int x = 0; x < img_origin_width; ++x) {
-//      float depth = (camera_cx * base_line) / points[y * img_origin_width + x];
-//      if (depth < height_min_ || depth > height_max_) continue;
-//      float X = (x - camera_cx) / camera_fx * depth;
-//      float Y = (y - camera_cy) / camera_fy * depth;
-//      points_xyz.emplace_back(X);
-//      points_xyz.emplace_back(Y);
-//      points_xyz.emplace_back(depth);
-//    }
-//  }
-//
-//  point_cloud_msg.height = 1;
-//  point_cloud_msg.is_bigendian = false;
-//  point_cloud_msg.point_step = 12;
-//  point_cloud_msg.is_dense = false;
-//  point_cloud_msg.width = points_xyz.size() / 3;
-//  point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
-//  point_cloud_msg.data.resize(point_cloud_msg.row_step * point_cloud_msg.height);
-//
-//
-//  std::memcpy(point_cloud_msg.data.data(), points_xyz.data(), points_xyz.size() * 4);
-//
-//  pointcloud2_pub_->publish(point_cloud_msg);
-//  return 0;
-//}
+
+int StereoNetNode::pub_depth_camera_info(const pub_data_t &pub_raw_data) {
+  sensor_msgs::msg::CameraInfo depth_camera_info;
+  if (depth_camera_info_pub_->get_subscription_count() < 1) return 0;
+  depth_camera_info.height = pub_raw_data.model_depth_img.rows;
+  depth_camera_info.width = pub_raw_data.model_depth_img.cols;
+  depth_camera_info.header = pub_raw_data.left_sub_img.header;
+
+  depth_camera_info.distortion_model = "plumb_bob";
+  depth_camera_info.d.resize(5, 0.f);
+  depth_camera_info.k = {
+      camera_fx, 0.f, camera_cx,
+      0.f, camera_fy, camera_cy,
+      0.f, 0.f, 1.f
+  };
+  depth_camera_info.p = {
+      camera_fx, 0.f, camera_cx, base_line,
+      0.f, camera_fy, camera_cy, 0.f,
+      0.f, 0.f, 1.f, 0.f
+  };
+  depth_camera_info_pub_->publish(depth_camera_info);
+  return 0;
+}
 
 void dump_rectified_image(cv::Mat &left_img, cv::Mat &right_img,
                           cv::Mat &rectified_left_img, cv::Mat &rectified_right_img) {
@@ -951,6 +920,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
   {
     ScopeProcessTime t("pub_depth_image");
     ret = pub_depth_image(pub_raw_data);
+    pub_depth_camera_info(pub_raw_data);
   }
   {
     ScopeProcessTime t("pub_pointcloud2");
@@ -1364,6 +1334,9 @@ void StereoNetNode::pub_sub_configuration() {
   rectified_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       rectified_right_image_topic_, 10);
 
+  depth_camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(
+      "~/stereonet_depth_info", 10);
+
   depth_compare = false;
   std::string compare_depth_topic = "~/stereonet_depth";
   std::string visual_topic = "~/stereonet_visual";
@@ -1518,7 +1491,8 @@ void StereoNetNode::camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstShar
   camera_cy = camera_info_msg->p[6];
   base_line = camera_info_msg->p[3] / camera_fx;
 
-  RCLCPP_WARN_ONCE(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m", camera_fx, camera_fy, camera_cx, camera_cy, base_line);
+  RCLCPP_WARN_ONCE(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m",
+      camera_fx, camera_fy, camera_cx, camera_cy, base_line);
 }
 
 }

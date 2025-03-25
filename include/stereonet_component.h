@@ -144,6 +144,7 @@ class StereoNetNode : public rclcpp::Node {
   int pub_pointcloud2(const pub_data_t &);
   int pub_visual_image(pub_data_t &);
   int pub_rectified_image(const pub_data_t &);
+  int pub_depth_camera_info(const pub_data_t &);
 
   void pub_sub_configuration();
 
@@ -160,6 +161,8 @@ class StereoNetNode : public rclcpp::Node {
 
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_, visual_image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_pub_;
+
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_;
 
  private:
   std::shared_ptr<StereonetProcess> stereonet_process_;
