@@ -337,6 +337,7 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
   }
   // get scale info
   float scale_constant = 1.0;
+  float scale_factor;
   float *disp_scale = &scale_constant;
   float *spx_scale = &scale_constant;
   if (tensors[0].properties.quantiType == SCALE) {
@@ -345,7 +346,10 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
   if (tensors[1].properties.quantiType == SCALE) {
     spx_scale = tensors[1].properties.scale.scaleData;
   }
-  result *= (*disp_scale * *spx_scale);
+  scale_factor = (*disp_scale * *spx_scale);
+  if (std::abs(scale_factor - 1.f) > 1e-2) {
+    result *= (*disp_scale * *spx_scale);
+  }
   return 0;
 }
 
