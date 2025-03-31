@@ -1284,7 +1284,6 @@ void StereoNetNode::inference_by_image() {
   std_msgs::msg::Header image_header;
   sub_image left_sub_img, right_sub_img;
   int64_t ts;
-  save_dir_ = local_image_path_ + "/result";
   while (rclcpp::ok()) {
     if (inference_que_.size() > 5) {
       RCLCPP_WARN_THROTTLE(this->get_logger(),
