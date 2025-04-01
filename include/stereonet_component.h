@@ -132,6 +132,7 @@ class StereoNetNode : public rclcpp::Node {
   int inference(inference_data_t &, std::vector<float> &points);
   void inference_func();
   void pub_func(pub_data_t &pub_raw_data);
+  void render_func();
 
   int start();
   int stop();
@@ -154,8 +155,10 @@ class StereoNetNode : public rclcpp::Node {
   std::atomic_bool is_running_ = false;
 
   std::vector<std::shared_ptr<std::thread>> work_thread_;
+  std::vector<std::shared_ptr<std::thread>> render_thread_;
 
   blockqueue<inference_data_t> inference_que_;
+  blockqueue<pub_data_t> pub_que_;
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_;
 
@@ -223,6 +226,7 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
+  bool resize_before_rectify_ = false;
 
  private:
   using SyncPolicy = message_filters::sync_policies::ApproximateTime<

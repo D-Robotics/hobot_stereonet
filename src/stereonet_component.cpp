@@ -804,6 +804,15 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   inference_que_.put(inference_data);
 }
 
+void StereoNetNode::render_func() {
+  while (is_running_ && rclcpp::ok()) {
+    pub_data_t pub_data;
+    if (pub_que_.get(pub_data)) {
+      pub_func(pub_data);
+    }
+  }
+}
+
 void StereoNetNode::inference_func() {
   int ret = 0;
   cv::Mat rectified_left_image, rectified_right_image;
@@ -839,7 +848,13 @@ void StereoNetNode::inference_func() {
         const cv::Mat &left_img = left_sub_img.image;
         cv::Mat depth;
         pub_data_t pub_data{left_sub_img, right_sub_img, points, depth};
-        pub_func(pub_data);
+        if (pub_que_.size() > 5) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(),
+                               *this->get_clock(), 5000, "pub_que is full!");
+          continue;
+        }
+        pub_que_.put(pub_data);
+ //       pub_func(pub_data);
 //        dump_one_point_disparity(pub_data,
 //            inference_data.right_sub_img.image, 659, 301);
       }
@@ -969,6 +984,9 @@ int StereoNetNode::start() {
   work_thread_.emplace_back(std::make_shared<std::thread>(
       [this] { inference_func(); }));
 
+  render_thread_.emplace_back(std::make_shared<std::thread>(
+      [this] { render_func(); }));
+
   return 0;
 }
 
@@ -979,6 +997,12 @@ int StereoNetNode::stop() {
     t->join();
   }
   work_thread_.clear();
+
+  for (auto &t : render_thread_) {
+    t->join();
+  }
+  render_thread_.clear();
+
   if (stereonet_process_) {
     stereonet_process_->stereonet_deinit();
     stereonet_process_ = nullptr;
@@ -1000,7 +1024,7 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
     if (!fs[stereo_no].empty()) {
       RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify Instance: " << stereo_no);
       stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
-          fs[stereo_no], model_input_w, model_input_h));
+          fs[stereo_no], model_input_w, model_input_h, resize_before_rectify_));
     } else {
       break;
     }
@@ -1168,6 +1192,9 @@ void StereoNetNode::parameter_configuration() {
   
   uncertainty_th_ = this->declare_parameter("uncertainty_th", uncertainty_th_);
   RCLCPP_INFO_STREAM(this->get_logger(), "uncertainty_th: " << uncertainty_th_);
+
+  this->declare_parameter("resize_before_rectify", resize_before_rectify_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "resize_before_rectify: " << resize_before_rectify);
 }
 
 void StereoNetNode::inference_by_usb_camera() {

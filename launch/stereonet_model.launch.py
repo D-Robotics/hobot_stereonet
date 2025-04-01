@@ -93,6 +93,7 @@ def generate_launch_description():
         {'name':'depth_need_filter', 'default_value':'True', 'description': 'depth_need_filter'},
         {'name':'pc_max_depth', 'default_value':'6.0', 'description': 'pc_max_depth'},
         {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
+        {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
     ]
 
     launch = declare_configurable_parameters(node_params)
