@@ -39,6 +39,7 @@ def generate_launch_description():
         'config',
         'x5baseplus_alldata_woIsaac.bin'
     )
+
     local_image_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config'
@@ -73,8 +74,8 @@ def generate_launch_description():
         {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
         {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
         {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
-        {'name':'alpha', 'default_value':'2', 'description': 'visual_alpha'},
-        {'name':'beta', 'default_value':'0', 'description': 'visual_beta'},
+        {'name':'visual_alpha', 'default_value':'2', 'description': 'visual_alpha'},
+        {'name':'visual_beta', 'default_value':'0', 'description': 'visual_beta'},
         {'name':'max_disp', 'default_value':'192', 'description': 'max_disp'},
         {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
         {'name':'image_format', 'default_value':'png', 'description': 'image_format'},

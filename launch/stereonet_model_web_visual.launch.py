@@ -36,25 +36,11 @@ def generate_launch_description():
         description='use_local_image'
     ))
 
-    node_list.append(DeclareLaunchArgument(
-        'mipi_image_width',
-        default_value='1280',
-        description='mipi_image_width'
-    ))
-
-    node_list.append(DeclareLaunchArgument(
-        'mipi_image_height',
-        default_value='640',
-        description='mipi_image_height'
-    ))
-
     dual_mipi_cam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('mipi_cam'),
                                                    'launch/mipi_cam_dual_channel.launch.py')),
-        launch_arguments={'mipi_image_width': LaunchConfiguration('mipi_image_width'),
-                          'mipi_image_height': LaunchConfiguration('mipi_image_height'),
-                          'mipi_frame_ts_type': 'sensor',
-                          'frame_id': 'default_cam',
+        launch_arguments={'mipi_frame_ts_type': 'sensor',
+                          'frame_id': 'pcl_link',
                           'log_level': 'warn'
                           }.items(),
         condition=UnlessCondition(LaunchConfiguration('use_local_image'))
@@ -64,11 +50,7 @@ def generate_launch_description():
     # 双目深度估计模型
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
-                                                   'launch/stereonet_model.launch.py')),
-        launch_arguments={'stereo_image_topic': '/image_combine_raw',
-                          'stereo_combine_mode': '1',
-                          'log_level': 'info'
-                          }.items()
+                                                   'launch/stereonet_model.launch.py'))
     )
     node_list.append(stereonet_node)
 
@@ -104,23 +86,5 @@ def generate_launch_description():
         }.items()
     )
     node_list.append(web_node)
-
-    imu_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory('imu_sensor'),
-                'launch/imu_sensor.launch.py'))
-    )
-
-    #node_list.append(imu_node)
-
-    collection_node = Node(
-        package='stereonet_model',
-        executable='data_collection',
-        output='screen',
-        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
-    )
-
-    #node_list.append(collection_node)
 
     return LaunchDescription(node_list)

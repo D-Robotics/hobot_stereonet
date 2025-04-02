@@ -1194,7 +1194,7 @@ void StereoNetNode::parameter_configuration() {
   RCLCPP_INFO_STREAM(this->get_logger(), "uncertainty_th: " << uncertainty_th_);
 
   this->declare_parameter("resize_before_rectify", resize_before_rectify_);
-  RCLCPP_INFO_STREAM(this->get_logger(), "resize_before_rectify: " << resize_before_rectify);
+  RCLCPP_INFO_STREAM(this->get_logger(), "resize_before_rectify: " << resize_before_rectify_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {
