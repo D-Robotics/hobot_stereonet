@@ -28,7 +28,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'DStereoV2.1.bin'
+        'DStereoV2.2.bin'
     )
 
     # mipi双目相机
