@@ -36,7 +36,14 @@ def generate_launch_description():
         description='use_local_image'
     ))
 
-    # mipi双目相机
+    node_list.append(DeclareLaunchArgument(
+        'stereonet_pub_web',
+        default_value='True',
+        description='stereonet_pub_web, if not, we will disable websocket and codec of stereonet depth'
+    ))
+
+
+# mipi双目相机
     dual_mipi_cam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -76,7 +83,8 @@ def generate_launch_description():
             'codec_pub_topic': '/image_jpeg',
             'codec_out_format': 'jpeg',
             'log_level': 'warn'
-        }.items()
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('stereonet_pub_web'))
     )
     node_list.append(codec_node)
 
@@ -90,7 +98,8 @@ def generate_launch_description():
             'websocket_image_topic': '/image_jpeg',
             'websocket_only_show_image': 'true',
             # 'websocket_smart_topic': '/detect_depth_result'
-        }.items()
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('stereonet_pub_web'))
     )
     node_list.append(web_node)
 
