@@ -188,7 +188,7 @@ class StereoNetNode : public rclcpp::Node {
   int depth_w_, depth_h_;
   int model_input_w_, model_input_h_;
   float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
-  bool need_rectify_, need_pcl_filter_;
+  bool need_rectify_, need_pcl_filter_, load_rectify_param_;
 
   int origin_image_width_, origin_image_height_;
   float height_min_, height_max_;

@@ -31,21 +31,6 @@ def generate_launch_description():
         'x5baseplus_alldata_woIsaac.bin'
     )
 
-    # mipi双目相机
-    dual_mipi_cam = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("mipi_cam"),
-                "launch/mipi_cam_dual_channel.launch.py",
-            )
-        ),
-        launch_arguments={
-            "mipi_frame_ts_type": "sensor",
-            "frame_id": "pcl_link",
-            "log_level": "warn",
-        }.items(),
-    )
-
     # 双目深度估计模型
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -62,7 +47,6 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            dual_mipi_cam,
             stereonet_node
         ]
     )

@@ -1032,7 +1032,7 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
     }
   } while(true);
 
-  if (need_rectify_) {
+  if (need_rectify_ || load_rectify_param_) {
     stereo_rectify_list_.back()->GetIntrinsic(camera_cx, camera_cy, camera_fx, camera_fy, base_line);
     RCLCPP_WARN(this->get_logger(), "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
                 camera_fx, camera_fy, camera_cx, camera_cy, base_line);
@@ -1197,6 +1197,9 @@ void StereoNetNode::parameter_configuration() {
 
   resize_before_rectify_ = this->declare_parameter("resize_before_rectify", resize_before_rectify_);
   RCLCPP_INFO_STREAM(this->get_logger(), "resize_before_rectify: " << resize_before_rectify_);
+
+  load_rectify_param_ = this->declare_parameter("load_rectify_param", false);
+  RCLCPP_INFO_STREAM(this->get_logger(), "load_rectify_param: " << load_rectify_param_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {

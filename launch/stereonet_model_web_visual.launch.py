@@ -30,6 +30,30 @@ def generate_launch_description():
 
     node_list = []
 
+    node_list.append(DeclareLaunchArgument(
+        'use_local_image',
+        default_value='False',
+        description='use_local_image'
+    ))
+
+    # mipi双目相机
+    dual_mipi_cam = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("mipi_cam"),
+                "launch/mipi_cam_dual_channel.launch.py",
+            )
+        ),
+        launch_arguments={
+            "mipi_frame_ts_type": "sensor",
+            "frame_id": "pcl_link",
+            "log_level": "warn",
+        }.items(),
+        condition=UnlessCondition(LaunchConfiguration('use_local_image'))
+    )
+
+    node_list.append(dual_mipi_cam)
+
     # 双目深度估计模型
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
