@@ -1146,8 +1146,8 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("visual_beta", visual_beta_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_beta: " << visual_beta_);
 
-  this->declare_parameter("alpha", visual_alpha_);
-  this->get_parameter("alpha", visual_alpha_);
+  this->declare_parameter("visual_alpha", visual_alpha_);
+  this->get_parameter("visual_alpha", visual_alpha_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_alpha: " << visual_alpha_);
 
   this->declare_parameter("max_disp", max_disp_);
