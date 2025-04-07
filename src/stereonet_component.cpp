@@ -745,8 +745,8 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   int stereo_img_width, stereo_img_height;
   builtin_interfaces::msg::Time now = this->get_clock()->now();
   RCLCPP_DEBUG(this->get_logger(),
-               "we have received stereo msg at: %ld.%09ld,\n"
-               "timestamp of stereo is: %ld.%ld, latency is %f sec,\n"
+               "we have received stereo msg at: %d.%09d,\n"
+               "timestamp of stereo is: %d.%09d, latency is %f sec,\n"
                "encoding: %s, width: %d, height: %d",
                now.sec, now.nanosec,
                img->header.stamp.sec, img->header.stamp.nanosec,
@@ -843,18 +843,20 @@ void StereoNetNode::inference_func() {
       if (ret != 0) {
         RCLCPP_ERROR(this->get_logger(), "inference failed.");
       } else {
-        const sub_image &left_sub_img = inference_data.left_sub_img;
-        const sub_image &right_sub_img = inference_data.right_sub_img;
-        const cv::Mat &left_img = left_sub_img.image;
+        sub_image left_sub_img = inference_data.left_sub_img;
+        sub_image right_sub_img = inference_data.right_sub_img;
+        left_sub_img.image = inference_data.left_sub_img.image.clone();
+        right_sub_img.image = inference_data.right_sub_img.image.clone();
+        std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
-        pub_data_t pub_data{left_sub_img, right_sub_img, points, depth};
+        pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
         if (pub_que_.size() > 5) {
           RCLCPP_WARN_THROTTLE(this->get_logger(),
                                *this->get_clock(), 5000, "pub_que is full!");
           continue;
         }
-        pub_que_.put(pub_data);
- //       pub_func(pub_data);
+         pub_que_.put(pub_data);
+ //      pub_func(pub_data);
 //        dump_one_point_disparity(pub_data,
 //            inference_data.right_sub_img.image, 659, 301);
       }
