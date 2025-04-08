@@ -12,11 +12,14 @@ namespace stereonet {
 
 struct StereoRectify {
 
-  StereoRectify(const cv::FileNode &fs, int model_input_w, int model_input_h) {
+  StereoRectify(const cv::FileNode &fs, int model_input_w, int model_input_h,
+      bool resize_before_rectify = false) {
     // Reading cam0 data
     std::vector<double> cam0_distortion_coeffs;
     std::vector<double> cam0_intrinsics;
     std::vector<int> cam0_resolution;
+    float width_scale = 1.0f, height_scale = 1.0f;
+    int stereo_input_width, stereo_input_height;
 
     fs["cam0"]["distortion_coeffs"] >> cam0_distortion_coeffs;
     fs["cam0"]["intrinsics"] >> cam0_intrinsics;
@@ -34,12 +37,22 @@ struct StereoRectify {
     fs["cam1"]["intrinsics"] >> cam1_intrinsics;
     fs["cam1"]["resolution"] >> cam1_resolution;
 
+    if (resize_before_rectify) {
+      stereo_input_width = model_input_w;
+      stereo_input_height = model_input_h;
+      width_scale = model_input_w * 1.0 / cam0_resolution[0];
+      height_scale = model_input_h * 1.0 / cam0_resolution[1];
+    } else {
+      stereo_input_width = cam0_resolution[0];
+      stereo_input_height = cam0_resolution[1];
+    }
+
     Dl = cv::Mat(1, cam0_distortion_coeffs.size(), CV_64F, cam0_distortion_coeffs.data()).clone();
     Kl = cv::Mat::zeros(3, 3, CV_64F);
-    Kl.at<double>(0, 0) = cam0_intrinsics[0];
-    Kl.at<double>(0, 2) = cam0_intrinsics[2];
-    Kl.at<double>(1, 1) = cam0_intrinsics[1];
-    Kl.at<double>(1, 2) = cam0_intrinsics[3];
+    Kl.at<double>(0, 0) = cam0_intrinsics[0] * width_scale;
+    Kl.at<double>(0, 2) = cam0_intrinsics[2] * width_scale;
+    Kl.at<double>(1, 1) = cam0_intrinsics[1] * height_scale;
+    Kl.at<double>(1, 2) = cam0_intrinsics[3] * height_scale;
     Kl.at<double>(2, 2) = 1;
 
     R_rl = cv::Mat::zeros(3, 3, CV_64F);
@@ -62,17 +75,17 @@ struct StereoRectify {
     Dr = cv::Mat(1, cam1_distortion_coeffs.size(), CV_64F, cam1_distortion_coeffs.data()).clone();
 
     Kr = cv::Mat::zeros(3, 3, CV_64F);
-    Kr.at<double>(0, 0) = cam1_intrinsics[0];
-    Kr.at<double>(0, 2) = cam1_intrinsics[2];
-    Kr.at<double>(1, 1) = cam1_intrinsics[1];
-    Kr.at<double>(1, 2) = cam1_intrinsics[3];
+    Kr.at<double>(0, 0) = cam1_intrinsics[0] * width_scale;
+    Kr.at<double>(0, 2) = cam1_intrinsics[2] * width_scale;
+    Kr.at<double>(1, 1) = cam1_intrinsics[1] * height_scale;
+    Kr.at<double>(1, 2) = cam1_intrinsics[3] * height_scale;
     Kr.at<double>(2, 2) = 1;
 
     float fov_scale = 0.8;
     if (calib_model == "pinhole")
     {
       cv::stereoRectify(Kl, Dl, Kr, Dr,
-                        cv::Size(cam0_resolution[0], cam0_resolution[1]), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                        cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
                         cv::CALIB_ZERO_DISPARITY, 0, cv::Size(model_input_w, model_input_h));
 
       cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl,
@@ -85,7 +98,7 @@ struct StereoRectify {
       }
       if (fov_scale == 0) fov_scale = 0.8;
       cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr,
-                                 cv::Size(cam0_resolution[0], cam0_resolution[1]), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                                 cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
                                  cv::fisheye::CALIB_ZERO_DISPARITY, cv::Size(model_input_w, model_input_h), 0.0, fov_scale);
       cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl,
                                            cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l, undistmap2l);
@@ -115,6 +128,8 @@ struct StereoRectify {
               << "calib file width, height: " << cam0_resolution[0] << ", " << cam0_resolution[1] << std::endl
               << "model input width, height: " << model_input_w << ", " << model_input_h << std::endl
               << "fov_scale: " << fov_scale << std::endl
+              << "resize_before_rectify: " << resize_before_rectify << std::endl
+              << "width_scale, height_scale: " << width_scale << ", " << height_scale
               << std::endl;
   }
 

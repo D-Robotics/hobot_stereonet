@@ -745,8 +745,8 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   int stereo_img_width, stereo_img_height;
   builtin_interfaces::msg::Time now = this->get_clock()->now();
   RCLCPP_DEBUG(this->get_logger(),
-               "we have received stereo msg at: %ld.%09ld,\n"
-               "timestamp of stereo is: %ld.%ld, latency is %f sec,\n"
+               "we have received stereo msg at: %d.%09d,\n"
+               "timestamp of stereo is: %d.%09d, latency is %f sec,\n"
                "encoding: %s, width: %d, height: %d",
                now.sec, now.nanosec,
                img->header.stamp.sec, img->header.stamp.nanosec,
@@ -804,6 +804,15 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   inference_que_.put(inference_data);
 }
 
+void StereoNetNode::render_func() {
+  while (is_running_ && rclcpp::ok()) {
+    pub_data_t pub_data;
+    if (pub_que_.get(pub_data)) {
+      pub_func(pub_data);
+    }
+  }
+}
+
 void StereoNetNode::inference_func() {
   int ret = 0;
   cv::Mat rectified_left_image, rectified_right_image;
@@ -834,12 +843,20 @@ void StereoNetNode::inference_func() {
       if (ret != 0) {
         RCLCPP_ERROR(this->get_logger(), "inference failed.");
       } else {
-        const sub_image &left_sub_img = inference_data.left_sub_img;
-        const sub_image &right_sub_img = inference_data.right_sub_img;
-        const cv::Mat &left_img = left_sub_img.image;
+        sub_image left_sub_img = inference_data.left_sub_img;
+        sub_image right_sub_img = inference_data.right_sub_img;
+        left_sub_img.image = inference_data.left_sub_img.image.clone();
+        right_sub_img.image = inference_data.right_sub_img.image.clone();
+        std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
-        pub_data_t pub_data{left_sub_img, right_sub_img, points, depth};
-        pub_func(pub_data);
+        pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
+        if (pub_que_.size() > 5) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(),
+                               *this->get_clock(), 5000, "pub_que is full!");
+          continue;
+        }
+         pub_que_.put(pub_data);
+ //      pub_func(pub_data);
 //        dump_one_point_disparity(pub_data,
 //            inference_data.right_sub_img.image, 659, 301);
       }
@@ -969,6 +986,9 @@ int StereoNetNode::start() {
   work_thread_.emplace_back(std::make_shared<std::thread>(
       [this] { inference_func(); }));
 
+  render_thread_.emplace_back(std::make_shared<std::thread>(
+      [this] { render_func(); }));
+
   return 0;
 }
 
@@ -979,6 +999,12 @@ int StereoNetNode::stop() {
     t->join();
   }
   work_thread_.clear();
+
+  for (auto &t : render_thread_) {
+    t->join();
+  }
+  render_thread_.clear();
+
   if (stereonet_process_) {
     stereonet_process_->stereonet_deinit();
     stereonet_process_ = nullptr;
@@ -1000,13 +1026,13 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
     if (!fs[stereo_no].empty()) {
       RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify Instance: " << stereo_no);
       stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
-          fs[stereo_no], model_input_w, model_input_h));
+          fs[stereo_no], model_input_w, model_input_h, resize_before_rectify_));
     } else {
       break;
     }
   } while(true);
 
-  if (need_rectify_) {
+  if (need_rectify_ || load_rectify_param_) {
     stereo_rectify_list_.back()->GetIntrinsic(camera_cx, camera_cy, camera_fx, camera_fy, base_line);
     RCLCPP_WARN(this->get_logger(), "rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f",
                 camera_fx, camera_fy, camera_cx, camera_cy, base_line);
@@ -1120,8 +1146,8 @@ void StereoNetNode::parameter_configuration() {
   this->get_parameter("visual_beta", visual_beta_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_beta: " << visual_beta_);
 
-  this->declare_parameter("alpha", visual_alpha_);
-  this->get_parameter("alpha", visual_alpha_);
+  this->declare_parameter("visual_alpha", visual_alpha_);
+  this->get_parameter("visual_alpha", visual_alpha_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_alpha: " << visual_alpha_);
 
   this->declare_parameter("max_disp", max_disp_);
@@ -1168,6 +1194,12 @@ void StereoNetNode::parameter_configuration() {
   
   uncertainty_th_ = this->declare_parameter("uncertainty_th", uncertainty_th_);
   RCLCPP_INFO_STREAM(this->get_logger(), "uncertainty_th: " << uncertainty_th_);
+
+  resize_before_rectify_ = this->declare_parameter("resize_before_rectify", resize_before_rectify_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "resize_before_rectify: " << resize_before_rectify_);
+
+  load_rectify_param_ = this->declare_parameter("load_rectify_param", false);
+  RCLCPP_INFO_STREAM(this->get_logger(), "load_rectify_param: " << load_rectify_param_);
 }
 
 void StereoNetNode::inference_by_usb_camera() {

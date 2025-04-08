@@ -132,6 +132,7 @@ class StereoNetNode : public rclcpp::Node {
   int inference(inference_data_t &, std::vector<float> &points);
   void inference_func();
   void pub_func(pub_data_t &pub_raw_data);
+  void render_func();
 
   int start();
   int stop();
@@ -154,8 +155,10 @@ class StereoNetNode : public rclcpp::Node {
   std::atomic_bool is_running_ = false;
 
   std::vector<std::shared_ptr<std::thread>> work_thread_;
+  std::vector<std::shared_ptr<std::thread>> render_thread_;
 
   blockqueue<inference_data_t> inference_que_;
+  blockqueue<pub_data_t> pub_que_;
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_;
 
@@ -185,7 +188,7 @@ class StereoNetNode : public rclcpp::Node {
   int depth_w_, depth_h_;
   int model_input_w_, model_input_h_;
   float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
-  bool need_rectify_, need_pcl_filter_;
+  bool need_rectify_, need_pcl_filter_, load_rectify_param_;
 
   int origin_image_width_, origin_image_height_;
   float height_min_, height_max_;
@@ -223,6 +226,7 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
+  bool resize_before_rectify_ = false;
 
  private:
   using SyncPolicy = message_filters::sync_policies::ApproximateTime<

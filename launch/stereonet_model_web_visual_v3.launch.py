@@ -24,52 +24,11 @@ from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-    stereo_calib_file_path = os.path.join(
-        get_package_share_directory("hobot_stereonet"), "config", "stereo.yaml"
-    )
 
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'DStereoV2.1.bin'
-    )
-
-    stereo_calib_path_arg = DeclareLaunchArgument(
-        "stereo_calib_path",
-        default_value=stereo_calib_file_path,
-        description="Description of my_param",
-    )
-
-    visual_alpha_arg = DeclareLaunchArgument(
-        "visual_alpha", default_value="4", description="visual alpha"
-    )
-
-    visual_beta_arg = DeclareLaunchArgument(
-        "visual_beta", default_value="0", description="visual beta"
-    )
-
-    # 零拷贝环境配置
-    shared_mem_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("hobot_shm"), "launch/hobot_shm.launch.py"
-            )
-        )
-    )
-
-    # mipi双目相机
-    dual_mipi_cam = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("mipi_cam"),
-                "launch/mipi_cam_dual_channel.launch.py",
-            )
-        ),
-        launch_arguments={
-            "mipi_frame_ts_type": "sensor",
-            "frame_id": "pcl_link",
-            "log_level": "warn",
-        }.items(),
+        'DStereoV2.2.bin'
     )
 
     # 双目深度估计模型
@@ -77,63 +36,17 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory("hobot_stereonet"),
-                "launch/stereonet_model.launch.py",
+                "launch/stereonet_model_web_visual.launch.py",
             )
         ),
-        launch_arguments={
-            "stereo_image_topic": "/image_combine_raw",
-            "stereo_calib_file_path": LaunchConfiguration("stereo_calib_path"),
-            "alpha": LaunchConfiguration("visual_alpha"),
-            "beta": LaunchConfiguration("visual_beta"),
+        launch_arguments = {
             "stereonet_model_file_path": stereonet_model_file_path,
             "postprocess": "v3",
-            "stereo_combine_mode": "1"
-        }.items(),
-    )
-
-    # 编码节点
-    codec_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("hobot_codec"),
-                "launch/hobot_codec_encode.launch.py",
-            )
-        ),
-        launch_arguments={
-            "codec_in_mode": "ros",
-            "codec_out_mode": "ros",
-            # 左图和深度拼接后的图
-            "codec_sub_topic": "/StereoNetNode/stereonet_visual",
-            "codec_in_format": "bgr8",
-            "codec_pub_topic": "/image_jpeg",
-            "codec_out_format": "jpeg",
-            "log_level": "warn",
-        }.items(),
-    )
-
-    # web展示节点
-    web_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("websocket"), "launch/websocket.launch.py"
-            )
-        ),
-        launch_arguments={
-            "websocket_image_topic": "/image_jpeg",
-            "websocket_only_show_image": "true",
-            # 'websocket_smart_topic': '/detect_depth_result'
         }.items(),
     )
 
     return LaunchDescription(
         [
-            stereo_calib_path_arg,
-            visual_alpha_arg,
-            visual_beta_arg,
-            shared_mem_node,
-            dual_mipi_cam,
-            stereonet_node,
-            codec_node,
-            web_node,
+            stereonet_node
         ]
     )
