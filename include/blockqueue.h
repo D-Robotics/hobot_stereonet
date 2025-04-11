@@ -9,19 +9,25 @@
 
 template<class T>
 struct blockqueue {
-  void put(T &&t) {
+  int put(T &&t) {
+    int ret;
     {
       std::lock_guard<std::mutex>lck (mtx);
       que.emplace_back(t);
-      cv.notify_one();
+      ret = que.size();
     }
+    cv.notify_one();
+    return ret;
   }
-  void put(T &t) {
+  int put(T &t) {
+     int ret; 
     {
       std::lock_guard<std::mutex>lck (mtx);
       que.push_back(t);
-      cv.notify_one();
+      ret = que.size();
     }
+    cv.notify_one();
+    return ret;
   }
 
   bool get(T &t, uint32_t timeout_ms = 300) {
@@ -38,6 +44,13 @@ struct blockqueue {
       }
       return false;
     }
+  }
+
+  void pop_front() {
+    {
+      std::lock_guard<std::mutex>lck (mtx);
+      que.pop_front();
+     }
   }
 
   void clear() {

@@ -796,12 +796,12 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   right_sub_img.origin_width = right_sub_img.image.cols;
 
   inference_data_t inference_data {left_sub_img, right_sub_img};
-  if (inference_que_.size() > 5) {
+  int que_size = inference_que_.put(inference_data);
+  if (que_size > 2) {
     RCLCPP_WARN_THROTTLE(this->get_logger(),
                          *this->get_clock(), 5000, "inference que is full!");
-    return;
-  }
-  inference_que_.put(inference_data);
+    inference_que_.pop_front();
+  }  
 }
 
 void StereoNetNode::render_func() {
@@ -850,12 +850,13 @@ void StereoNetNode::inference_func() {
         std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
         pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
-        if (pub_que_.size() > 5) {
+
+        int que_size = pub_que_.put(pub_data);
+        if (que_size > 2) {
           RCLCPP_WARN_THROTTLE(this->get_logger(),
                                *this->get_clock(), 5000, "pub_que is full!");
-          continue;
+          pub_que_.pop_front();
         }
-         pub_que_.put(pub_data);
  //      pub_func(pub_data);
 //        dump_one_point_disparity(pub_data,
 //            inference_data.right_sub_img.image, 659, 301);
