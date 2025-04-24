@@ -43,7 +43,7 @@ def generate_launch_description():
     ))
 
 
-# mipi双目相机
+    # mipi双目相机
     dual_mipi_cam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(

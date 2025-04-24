@@ -47,8 +47,6 @@ def generate_launch_description():
         launch_arguments={
             "need_rectify": "false",
             "use_local_image": "true",
-            "alpha": "4",
-            "postprocess": "v2",
             "log_level": "debug",
         }.items(),
     )

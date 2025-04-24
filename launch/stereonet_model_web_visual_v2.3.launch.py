@@ -28,7 +28,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'DStereoV2.2.bin'
+        'V22_disp96.bin'
     )
 
     # 双目深度估计模型
@@ -41,7 +41,8 @@ def generate_launch_description():
         ),
         launch_arguments = {
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "v3",
+            "postprocess": "v2.3",
+            "log_level": "info",
         }.items(),
     )
 
