@@ -47,7 +47,7 @@ def generate_launch_description():
 
     node_params = [
         {'name':'stereo_image_topic', 'default_value':'/image_combine_raw', 'description': 'stereo_image_topic'},
-        {'name':'camera_info_topic', 'default_value':'/camera_right_info', 'description': 'camera_info_topic'},
+        {'name':'camera_info_topic', 'default_value':'/image_right_raw/camera_info', 'description': 'camera_info_topic'},
         {'name':'camera_cx', 'default_value':'659.710', 'description': 'rectified_camera_cx'},
         {'name':'camera_cy', 'default_value':'360.584', 'description': 'rectified_camera_cy'},
         {'name':'camera_fx', 'default_value':'527.1931', 'description': 'rectified_camera_fx'},

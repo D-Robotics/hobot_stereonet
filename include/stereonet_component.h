@@ -202,6 +202,7 @@ class StereoNetNode : public rclcpp::Node {
   int KMean_;
   void convert_depth(pub_data_t &pub_raw_data);
 
+  std::string visual_topic_ = "~/stereonet_visual";
   std::string rectified_image_topic_ = "~/rectified_image";
   std::string rectified_right_image_topic_ = "~/rectified_right_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr

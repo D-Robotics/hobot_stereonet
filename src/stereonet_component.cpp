@@ -1365,8 +1365,10 @@ void StereoNetNode::pub_sub_configuration() {
   depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       "~/stereonet_depth", 10);
 
+  visual_topic_ = this->declare_parameter("visual_topic", visual_topic_);
+  RCLCPP_INFO_STREAM(this->get_logger(), "visual_topic: " << visual_topic_);
   visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-      "~/stereonet_visual", 10);
+    visual_topic_, 10);
 
   rectified_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       rectified_image_topic_, 10);
@@ -1379,7 +1381,6 @@ void StereoNetNode::pub_sub_configuration() {
 
   depth_compare = false;
   std::string compare_depth_topic = "~/stereonet_depth";
-  std::string visual_topic = "~/stereonet_visual";
   std::string compare_image_topic = "~/rectified_image";
 
   depth_compare = this->declare_parameter("depth_compare", depth_compare);
@@ -1387,9 +1388,6 @@ void StereoNetNode::pub_sub_configuration() {
 
   compare_depth_topic = this->declare_parameter("compare_depth_topic", compare_depth_topic);
   RCLCPP_INFO_STREAM(this->get_logger(), "compare_depth_topic: " << compare_depth_topic);
-
-  visual_topic = this->declare_parameter("visual_topic", visual_topic);
-  RCLCPP_INFO_STREAM(this->get_logger(), "visual_topic: " << visual_topic);
 
   compare_image_topic = this->declare_parameter("compare_image_topic", compare_image_topic);
   RCLCPP_INFO_STREAM(this->get_logger(), "compare_image_topic: " << compare_image_topic);
