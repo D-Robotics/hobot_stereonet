@@ -795,7 +795,7 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   right_sub_img.origin_height = right_sub_img.image.rows;
   right_sub_img.origin_width = right_sub_img.image.cols;
 
-  inference_data_t inference_data {left_sub_img, right_sub_img};
+  inference_data_t inference_data {left_sub_img, right_sub_img, false};
   int que_size = inference_que_.put(inference_data);
   if (que_size > 2) {
     RCLCPP_WARN_THROTTLE(this->get_logger(),
@@ -850,14 +850,16 @@ void StereoNetNode::inference_func() {
         std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
         pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
-
-        int que_size = pub_que_.put(pub_data);
-        if (que_size > 2) {
-          RCLCPP_WARN_THROTTLE(this->get_logger(),
+        if (inference_data.is_local_image) {
+          pub_func(pub_data);
+        } else {
+          int que_size = pub_que_.put(pub_data);
+          if (que_size > 2) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(),
                                *this->get_clock(), 5000, "pub_que is full!");
-          pub_que_.pop_front();
-        }
- //      pub_func(pub_data);
+            pub_que_.pop_front();
+          }          
+        }     
 //        dump_one_point_disparity(pub_data,
 //            inference_data.right_sub_img.image, 659, 301);
       }
@@ -1345,7 +1347,7 @@ void StereoNetNode::inference_by_image() {
     left_sub_img.origin_width = left_sub_img.image.cols;
     right_sub_img.origin_height = right_sub_img.image.rows;
     right_sub_img.origin_width = right_sub_img.image.cols;
-    inference_que_.put({left_sub_img, right_sub_img});
+    inference_que_.put({left_sub_img, right_sub_img, true});
   }
 }
 

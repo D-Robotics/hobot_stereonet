@@ -51,6 +51,7 @@ class StereoNetNode : public rclcpp::Node {
   struct inference_data_t {
     sub_image left_sub_img;
     sub_image right_sub_img;
+    bool is_local_image;
   };
   struct pub_data_t {
     sub_image left_sub_img;
