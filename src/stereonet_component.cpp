@@ -669,7 +669,7 @@ int StereoNetNode::pub_depth_camera_info(const pub_data_t &pub_raw_data) {
   };
   
   depth_camera_info.p = {
-      camera_fx, 0.f, camera_cx, 0.f,
+      camera_fx, 0.f, camera_cx, camera_fx * base_line,
       0.f, camera_fy, camera_cy, 0.f,
       0.f, 0.f, 1.f, 0.f
   };
@@ -1379,7 +1379,7 @@ void StereoNetNode::pub_sub_configuration() {
       rectified_right_image_topic_, 10);
 
   depth_camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(
-      "~/stereonet_depth_info", 10);
+      "~/camera_info", 10);
 
   depth_compare = false;
   std::string compare_depth_topic = "~/stereonet_depth";
