@@ -184,6 +184,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   const std::vector<float> &points = pub_raw_data.points;
   cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
+  double font_scale = 0.5;
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
 
   if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
@@ -194,6 +195,17 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
 
   cv::Mat visual_img(bgr_image.rows * 2, bgr_image.cols, CV_8UC3);
   bgr_image.copyTo(visual_img(cv::Rect(0, 0, bgr_image.cols, bgr_image.rows)));
+
+  std::stringstream perf_text;
+  perf_text << "fps: " << pub_raw_data.fps;
+  cv::putText(visual_img, perf_text.str(), cv::Point(10, 20),
+              cv::FONT_HERSHEY_SIMPLEX, font_scale,
+              CV_RGB(0, 0, 255), 2);
+  perf_text.clear();
+  perf_text << "latency: " << pub_raw_data.latency << "ms";
+  cv::putText(visual_img, perf_text.str(), cv::Point(10, 40),
+              cv::FONT_HERSHEY_SIMPLEX, font_scale,
+              CV_RGB(0, 0, 255), 2);
 
   cv::Mat disp_mat(bgr_image.rows, bgr_image.cols, CV_32FC1, const_cast<float *>(points.data()));
   cv::Mat feat_visual;
@@ -349,7 +361,6 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
 
       std::ostringstream ss;
       ss << std::fixed << std::setprecision(2) << distance << "m";
-      double font_scale = 0.5;
       cv::putText(visual_img, ss.str(), bgr_location,
                   cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
@@ -795,7 +806,7 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   right_sub_img.origin_height = right_sub_img.image.rows;
   right_sub_img.origin_width = right_sub_img.image.cols;
 
-  inference_data_t inference_data {left_sub_img, right_sub_img, false};
+  inference_data_t inference_data {left_sub_img, right_sub_img, false, now};
   int que_size = inference_que_.put(inference_data);
   if (que_size > 2) {
     RCLCPP_WARN_THROTTLE(this->get_logger(),
@@ -850,6 +861,15 @@ void StereoNetNode::inference_func() {
         std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
         pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
+        {
+          ScopeProcessTime t("convert to depth");
+          convert_depth(pub_data);
+        }
+        {
+          pub_data.latency = (this->now() - inference_data.received_time).seconds() * 1000;
+          performance_writer::Get()->record_performance(pub_data.latency);
+          pub_data.fps = performance_writer::Get()->get_fps();
+        }
         if (inference_data.is_local_image) {
           pub_func(pub_data);
         } else {
@@ -938,10 +958,6 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
 void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
   int ret = 0;
   {
-    ScopeProcessTime t("convert to depth");
-    convert_depth(pub_raw_data);
-  }
-  {
     ScopeProcessTime t("pub_visual");
     ret = pub_visual_image(pub_raw_data);
   }
@@ -982,6 +998,8 @@ int StereoNetNode::start() {
                       model_input_w_, model_input_h_);
   RCLCPP_WARN(this->get_logger(), "\033[31m=> rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m", camera_fx, camera_fy, camera_cx, camera_cy, base_line);
   compare_visual_ = cv::Mat::zeros(cv::Size(depth_w_, depth_h_ * 2), CV_8UC3);
+
+  performance_writer::Get();
 
   is_running_ = true;
   work_thread_.emplace_back(std::make_shared<std::thread>(
@@ -1334,10 +1352,11 @@ void StereoNetNode::inference_by_image() {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(image_inference_sleep_ms_));
     image_header.frame_id =  "default_cam";
+    auto now = this->now();
     if (ts != 0) {
       image_header.stamp = rclcpp::Time(ts);
     } else {
-      image_header.stamp = this->now();
+      image_header.stamp = now;
     }
     left_sub_img.image_type = sub_image_type::BGR;
     right_sub_img.image_type = sub_image_type::BGR;
@@ -1347,7 +1366,7 @@ void StereoNetNode::inference_by_image() {
     left_sub_img.origin_width = left_sub_img.image.cols;
     right_sub_img.origin_height = right_sub_img.image.rows;
     right_sub_img.origin_width = right_sub_img.image.cols;
-    inference_que_.put({left_sub_img, right_sub_img, true});
+    inference_que_.put({left_sub_img, right_sub_img, true, now});
   }
 }
 

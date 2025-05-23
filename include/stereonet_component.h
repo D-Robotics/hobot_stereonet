@@ -28,6 +28,7 @@
 #include <message_filters/synchronizer.h>
 
 #include "image_conversion.h"
+#include "performance_record.h"
 
 namespace fs = std::filesystem;
 
@@ -52,6 +53,7 @@ class StereoNetNode : public rclcpp::Node {
     sub_image left_sub_img;
     sub_image right_sub_img;
     bool is_local_image;
+    builtin_interfaces::msg::Time received_time;
   };
   struct pub_data_t {
     sub_image left_sub_img;
@@ -60,6 +62,7 @@ class StereoNetNode : public rclcpp::Node {
     std::vector<float> image_size_points;
     cv::Mat depth_img;
     cv::Mat model_depth_img;
+    int fps, latency;
   };
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
