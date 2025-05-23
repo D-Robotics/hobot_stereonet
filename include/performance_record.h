@@ -18,7 +18,7 @@ struct performance_writer {
                << now->tm_min << '_' << std::setw(2) << std::setfill('0')
                << now->tm_sec << ".txt";
     writer = std::ofstream(timestream.str(), std::ios::out);
-    writer << "#timestamp[s], fps, ddr_usage[kB], cpu_usage[%], bpu_usage[%], latency[ms]\n";
+    writer << "#timestamp[s], fps, cpu_usage[%], bpu_usage[%], latency[ms]\n";
     record_thread_ = std::make_shared<std::thread>(
             std::bind(&performance_writer::record, this));
   }
@@ -28,17 +28,17 @@ struct performance_writer {
     record_thread_->join();
     writer.close();
   }
-  int write(uint ts, uint fps, const std::string &ddr_cpu_usage,
-            const std::string &bpu_ratio, int32_t latency) {
+  int write(uint ts, uint fps, uint cpu_usage,
+            uint bpu_ratio, uint latency) {
     if (!writer.good()) {
       std::cerr << "performance.txt is not good" << std::endl;
       return -1;
     }
     writer << ts
-           << "," << fps
-           << "," << ddr_cpu_usage
-           << "," << bpu_ratio
-           << "," << latency;
+           << ", " << fps
+           << ", " << cpu_usage << "%"
+           << ", " << bpu_ratio << "%"
+           << ", " << latency << std::endl;
     writer.flush();
     return 0;
   }
@@ -62,6 +62,13 @@ struct performance_writer {
     return true_fps_;
   }
 
+  int get_cpu_usage() {
+    return cpu_usage_;
+  }
+
+  int get_bpu_usage() {
+    return bpu_ratio_;
+  }
   static std::shared_ptr<performance_writer> Get() {
     static std::shared_ptr<performance_writer> instance = nullptr;
     if (instance == nullptr) {
@@ -73,7 +80,7 @@ struct performance_writer {
 private:
   std::ofstream writer;
   std::atomic_bool is_running_ {true};
-  std::atomic_uint fps_{0}, latency_{0}, true_fps_ {0};
+  std::atomic_uint fps_{0}, latency_{0}, true_fps_ {0}, bpu_ratio_{0}, cpu_usage_{0};
   std::shared_ptr<std::thread> record_thread_ = nullptr;
   std::mutex mtx_;
   std::condition_variable cd_;
@@ -86,7 +93,7 @@ private:
     static std::string cmd =
             "top -b -n 1 -p " + pid_str +
             " | tail -n 1 "
-            "| awk '{print $6\",\"$9}'";
+            "| awk '{print $9}'";
     while (is_running_) {
       std::unique_lock<std::mutex> lock(mtx_);
       cd_.wait(lock);
@@ -104,7 +111,7 @@ private:
       pclose(fp);
       uint ts = std::chrono::system_clock::now()
                 .time_since_epoch().count() / 1e9;
-      std::string ddr_cpu_usage(buffer);
+      std::string cpu_usage(buffer);
       std::stringstream temp;
       std::ifstream bpu_ratio(
               "/sys/devices/system/bpu/bpu0/ratio", std::ios::in);
@@ -113,7 +120,10 @@ private:
       } else {
         temp << "0\n";
       }
-      write(ts, true_fps_, ddr_cpu_usage, temp.str(), latency_);
+      cpu_usage_ = std::atoi(cpu_usage.c_str());
+      bpu_ratio_ = std::atoi(temp.str().c_str());
+      write(ts, true_fps_, cpu_usage_,
+            bpu_ratio_, latency_);
     }
   }
 };

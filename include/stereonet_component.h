@@ -63,6 +63,7 @@ class StereoNetNode : public rclcpp::Node {
     cv::Mat depth_img;
     cv::Mat model_depth_img;
     int fps, latency;
+    int cpu_usage, bpu_usage;
   };
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())

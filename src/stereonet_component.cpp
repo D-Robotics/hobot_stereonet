@@ -185,6 +185,10 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
   double font_scale = 0.5;
+  int step_num = 6;
+  int x_step = bgr_image.cols / step_num;
+  int y_step = bgr_image.rows / step_num;
+  int start = 1;
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
 
   if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
@@ -205,6 +209,17 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   perf_text.clear();
   perf_text << "Latency: " << pub_raw_data.latency << "ms";
   cv::putText(visual_img, perf_text.str(), cv::Point(10, 40),
+              cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
+              CV_RGB(0, 0, 255), 2);
+
+  perf_text << "CPU: " << pub_raw_data.cpu_usage << "%";
+  cv::putText(visual_img, perf_text.str(), cv::Point(10 + x_step * 2, 18),
+              cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
+              CV_RGB(0, 0, 255), 2);
+  perf_text.str("");
+  perf_text.clear();
+  perf_text << "BPU: " << pub_raw_data.bpu_usage << "%";
+  cv::putText(visual_img, perf_text.str(), cv::Point(10 + x_step * 2 , 40),
               cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
               CV_RGB(0, 0, 255), 2);
 
@@ -312,10 +327,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   }
   */
 
-  int step_num = 6;
-  int x_step = bgr_image.cols / step_num;
-  int y_step = bgr_image.rows / step_num;
-  int start = 1;
+
   // RCLCPP_WARN_ONCE(this->get_logger(), "=> x_step: %d, y_step: %d", x_step, y_step);
   if (!depth_type_point_) {
     start = 0;
@@ -872,12 +884,14 @@ void StereoNetNode::inference_func() {
           if (latency_list_.size() >= 4) {
             current_latency = 0.1 * latency_list_[3] + 0.2 * latency_list_[2] +
                               0.3 * latency_list_[1] + 0.4 * latency_list_[0];
-            latency_list_.back() = current_latency;
+            //latency_list_.back() = current_latency;
             latency_list_.pop_front();
           }
           pub_data.latency = current_latency;
           performance_writer::Get()->record_performance(pub_data.latency);
           pub_data.fps = performance_writer::Get()->get_fps();
+          pub_data.cpu_usage = performance_writer::Get()->get_cpu_usage();
+          pub_data.bpu_usage = performance_writer::Get()->get_bpu_usage();
         }
         if (inference_data.is_local_image) {
           pub_func(pub_data);
