@@ -51,8 +51,8 @@ struct performance_writer {
     ++fps_;
     latency_ = latency;
     if (duration >= 1000) {
-      fps_ = 0;
       true_fps_ = fps_ / (duration / 1000.);
+      fps_ = 0;
       cd_.notify_one();
       last_calculation = current;
     }

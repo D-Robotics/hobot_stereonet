@@ -265,6 +265,7 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   cv::Mat userColor_;
+  std::deque<int> latency_list_;
 };
 }
 #endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_

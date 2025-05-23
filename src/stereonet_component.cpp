@@ -197,14 +197,15 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   bgr_image.copyTo(visual_img(cv::Rect(0, 0, bgr_image.cols, bgr_image.rows)));
 
   std::stringstream perf_text;
-  perf_text << "fps: " << pub_raw_data.fps;
-  cv::putText(visual_img, perf_text.str(), cv::Point(10, 20),
-              cv::FONT_HERSHEY_SIMPLEX, font_scale,
+  perf_text << "FPS: " << pub_raw_data.fps;
+  cv::putText(visual_img, perf_text.str(), cv::Point(10, 18),
+              cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
               CV_RGB(0, 0, 255), 2);
+  perf_text.str("");
   perf_text.clear();
-  perf_text << "latency: " << pub_raw_data.latency << "ms";
+  perf_text << "Latency: " << pub_raw_data.latency << "ms";
   cv::putText(visual_img, perf_text.str(), cv::Point(10, 40),
-              cv::FONT_HERSHEY_SIMPLEX, font_scale,
+              cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
               CV_RGB(0, 0, 255), 2);
 
   cv::Mat disp_mat(bgr_image.rows, bgr_image.cols, CV_32FC1, const_cast<float *>(points.data()));
@@ -866,7 +867,15 @@ void StereoNetNode::inference_func() {
           convert_depth(pub_data);
         }
         {
-          pub_data.latency = (this->now() - inference_data.received_time).seconds() * 1000;
+          int current_latency = (this->now() - inference_data.received_time).seconds() * 1000;
+          latency_list_.emplace_back(current_latency);
+          if (latency_list_.size() >= 4) {
+            current_latency = 0.1 * latency_list_[3] + 0.2 * latency_list_[2] +
+                              0.3 * latency_list_[1] + 0.4 * latency_list_[0];
+            latency_list_.back() = current_latency;
+            latency_list_.pop_front();
+          }
+          pub_data.latency = current_latency;
           performance_writer::Get()->record_performance(pub_data.latency);
           pub_data.fps = performance_writer::Get()->get_fps();
         }
