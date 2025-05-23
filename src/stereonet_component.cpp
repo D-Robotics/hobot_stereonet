@@ -185,10 +185,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
   double font_scale = 0.5;
-  int step_num = 6;
-  int x_step = bgr_image.cols / step_num;
-  int y_step = bgr_image.rows / step_num;
-  int start = 1;
+
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
 
   if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
@@ -196,6 +193,11 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   } else {
     bgr_image = image;
   }
+
+  int step_num = 6;
+  int x_step = bgr_image.cols / step_num;
+  int y_step = bgr_image.rows / step_num;
+  int start = 1;
 
   cv::Mat visual_img(bgr_image.rows * 2, bgr_image.cols, CV_8UC3);
   bgr_image.copyTo(visual_img(cv::Rect(0, 0, bgr_image.cols, bgr_image.rows)));
@@ -212,6 +214,8 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
               cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
               CV_RGB(0, 0, 255), 2);
 
+  perf_text.str("");
+  perf_text.clear();
   perf_text << "CPU: " << pub_raw_data.cpu_usage << "%";
   cv::putText(visual_img, perf_text.str(), cv::Point(10 + x_step * 2, 18),
               cv::FONT_HERSHEY_SIMPLEX, font_scale * 1.3,
@@ -980,6 +984,10 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
 
 void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
   int ret = 0;
+  RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 4000,
+      "fps: %d, latency: %dms, cpu_usage: %d%, bpu_usage: %d%",
+      pub_raw_data.fps, pub_raw_data.latency, pub_raw_data.cpu_usage, pub_raw_data.bpu_usage);
   {
     ScopeProcessTime t("pub_visual");
     ret = pub_visual_image(pub_raw_data);
