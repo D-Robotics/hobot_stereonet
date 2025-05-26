@@ -96,6 +96,7 @@ def generate_launch_description():
         {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
         {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
         {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
+        {'name':'render_perf', 'default_value':'False', 'description': 'render_perf'},
     ]
 
     launch = declare_configurable_parameters(node_params)

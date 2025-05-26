@@ -266,6 +266,7 @@ class StereoNetNode : public rclcpp::Node {
 
  private:
   cv::Mat userColor_;
+  bool render_perf_ = false;
   std::deque<int> latency_list_;
 };
 }
