@@ -63,11 +63,12 @@ int StereoNetNode::inference(inference_data_t &inference_data,
     }
   }
 
+  /*
   inference_data.left_sub_img.origin_height = left_img.rows;
   inference_data.left_sub_img.origin_width = left_img.cols;
   inference_data.right_sub_img.origin_height = right_img.rows;
   inference_data.right_sub_img.origin_width = right_img.cols;
-
+ */
   return stereonet_process_->stereonet_inference(left_img, right_img,
                                                  is_nv12, points);
 }
@@ -188,11 +189,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
 
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
 
-  if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-    cv::cvtColor(image, bgr_image, cv::COLOR_YUV2BGR_NV12);
-  } else {
-    bgr_image = image;
-  }
+  bgr_image = pub_raw_data.left_sub_img.bgr;
 
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
@@ -572,7 +569,7 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
 
 int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   uint32_t point_size = 0;
-  const cv::Mat &image = pub_raw_data.left_sub_img.image;
+  const cv::Mat &image = pub_raw_data.left_sub_img.bgr;
   const cv::Mat &depth_img = pub_raw_data.model_depth_img;
   uint16_t *depth_ptr = reinterpret_cast<uint16_t *>(depth_img.data);
 
@@ -789,39 +786,68 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
   }
 
   if (encoding == "nv12" || encoding == "NV12") {
-    ScopeProcessTime t("nv12->bgr");
-    stereo_img = cv::Mat(img->height, img->width, CV_8UC3);
-    image_conversion::nv12_to_bgr24_neon(img->data.data(), stereo_img.data, img->width, img->height);
+    if (need_rectify_ || save_image_ || save_image_all_) {
+      ScopeProcessTime t("nv12->bgr");
+      stereo_img = cv::Mat(img->height, img->width, CV_8UC3);
+      image_conversion::nv12_to_bgr24_neon(img->data.data(), stereo_img.data, img->width, img->height);
+      left_sub_img.image_type = sub_image_type::BGR;
+      right_sub_img.image_type = sub_image_type::BGR;
+    } else {
+      left_sub_img.image_type = sub_image_type::NV12;
+      right_sub_img.image_type = sub_image_type::NV12;
+    }
   } else if (encoding == "bgr8" || encoding == "BGR8") {
     ScopeProcessTime t("cv_bridge::toCvShare");
     stereo_img = cv_bridge::toCvShare(img)->image;
+    left_sub_img.image_type = sub_image_type::BGR;
+    right_sub_img.image_type = sub_image_type::BGR;
   }
 
-  if (stereo_combine_mode_ == 0) {
-    left_img = stereo_img(
-        cv::Rect(0, 0, stereo_img_width, stereo_img_height));
-    right_img = stereo_img(
-        cv::Rect(stereo_img_width, 0, stereo_img_width, stereo_img_height));
-  } else if (stereo_combine_mode_ == 1) {
-    left_img = stereo_img(
-        cv::Rect(0, 0, stereo_img_width, stereo_img_height));
-    right_img = stereo_img(
-        cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height));
+  if (left_sub_img.image_type == sub_image_type::BGR) {
+    if (stereo_combine_mode_ == 0) {
+      left_img = stereo_img(
+          cv::Rect(0, 0, stereo_img_width, stereo_img_height));
+      right_img = stereo_img(
+          cv::Rect(stereo_img_width, 0, stereo_img_width, stereo_img_height));
+    } else if (stereo_combine_mode_ == 1) {
+      left_img = stereo_img(
+          cv::Rect(0, 0, stereo_img_width, stereo_img_height));
+      right_img = stereo_img(
+          cv::Rect(0, stereo_img_height, stereo_img_width, stereo_img_height));
+    }
+    left_sub_img.image = left_img.clone();
+    right_sub_img.image = right_img.clone();
+    left_sub_img.bgr = left_sub_img.image;
+    right_sub_img.bgr = right_sub_img.image;
+  } else if (left_sub_img.image_type == sub_image_type::NV12) {
+    if (stereo_combine_mode_ == 0) {
+      RCLCPP_FATAL(this->get_logger(), "Horizontal stitching is unsupported for NV12-encoded images."
+                                       " Only Vertical stitching is supported.");
+      return;
+    } else if (stereo_combine_mode_ == 1) {
+      uint y_size = stereo_img_height * stereo_img_width;
+      uint uv_size = y_size >> 1;
+
+      left_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
+      right_sub_img.image = cv::Mat(stereo_img_height * 3 / 2, stereo_img_width, CV_8UC1);
+
+      std::memcpy(left_sub_img.image.data, img->data.data(), y_size);
+      std::memcpy(left_sub_img.image.data + y_size,
+          img->data.data() + y_size * 2, uv_size);
+
+      std::memcpy(right_sub_img.image.data, img->data.data() + y_size, y_size);
+      std::memcpy(right_sub_img.image.data + y_size,
+          img->data.data() + y_size * 2 + uv_size, uv_size);
+    }
   }
-
-  left_sub_img.image_type = sub_image_type::BGR;
-  right_sub_img.image_type = sub_image_type::BGR;
-
-  left_sub_img.image = left_img.clone();
-  right_sub_img.image = right_img.clone();
 
   left_sub_img.header = img->header;
   right_sub_img.header = img->header;
 
-  left_sub_img.origin_height = left_sub_img.image.rows;
-  left_sub_img.origin_width = left_sub_img.image.cols;
-  right_sub_img.origin_height = right_sub_img.image.rows;
-  right_sub_img.origin_width = right_sub_img.image.cols;
+  left_sub_img.origin_height = stereo_img_height;
+  left_sub_img.origin_width = stereo_img_width;
+  right_sub_img.origin_height = stereo_img_height;
+  right_sub_img.origin_width = stereo_img_width;
 
   inference_data_t inference_data {left_sub_img, right_sub_img, false, now};
   int que_size = inference_que_.put(inference_data);
@@ -875,6 +901,8 @@ void StereoNetNode::inference_func() {
         sub_image right_sub_img = inference_data.right_sub_img;
         left_sub_img.image = inference_data.left_sub_img.image.clone();
         right_sub_img.image = inference_data.right_sub_img.image.clone();
+        left_sub_img.bgr = left_sub_img.image;
+        right_sub_img.bgr = right_sub_img.image;
         std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
         pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
@@ -989,6 +1017,17 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
         this->get_logger(), *this->get_clock(), 4000,
         "fps: %d, latency: %dms, cpu_usage: %d%, bpu_usage: %d%",
         pub_raw_data.fps, pub_raw_data.latency, pub_raw_data.cpu_usage, pub_raw_data.bpu_usage);
+  }
+  {
+    if (pointcloud2_pub_->get_subscription_count() > 0 ||
+        visual_image_pub_->get_subscription_count() > 0) {
+      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
+            pub_raw_data.left_sub_img.bgr);
+        //image_conversion::nv12_to_bgr(pub_raw_data.right_sub_img.image,
+        //    pub_raw_data.right_sub_img.bgr);
+      }
+    }
   }
   {
     ScopeProcessTime t("pub_visual");

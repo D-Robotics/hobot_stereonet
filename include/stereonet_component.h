@@ -44,6 +44,7 @@ class StereoNetNode : public rclcpp::Node {
 
   struct sub_image {
     cv::Mat image;
+    cv::Mat bgr;
     sub_image_type image_type;
     std_msgs::msg::Header header;
     int origin_width, origin_height;
