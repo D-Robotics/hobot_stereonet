@@ -26,7 +26,7 @@
 
 struct pcl_filter {
   void static applyfilter(sensor_msgs::msg::PointCloud2 &pcd_msg,
-      float leaf_size = 0.03, int KMean = 5, float stdv = 0.01) {
+                          float leaf_size = 0.03, int KMean = 5, float stdv = 0.01) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
 
@@ -79,12 +79,10 @@ struct pcl_filter {
     auto d2 = std::chrono::duration_cast<std::chrono::milliseconds>(start3 - start2).count();
     auto d3 = std::chrono::duration_cast<std::chrono::milliseconds>(start4 - start3).count();
     RCLCPP_DEBUG(rclcpp::get_logger(""),
-        "ROS to PCL: %dms, "
-        "PCL filter: %dms,, "
-        "PCL to ROS: %dms", d1, d2, d3);
+                 "ROS to PCL: %dms, "
+                 "PCL filter: %dms,, "
+                 "PCL to ROS: %dms", d1, d2, d3);
   }
 };
-
-
 
 #endif //STEREONET_MODEL_INCLUDE_PCL_FILTER_H_

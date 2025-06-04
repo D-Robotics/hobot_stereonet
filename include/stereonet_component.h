@@ -101,7 +101,7 @@ class StereoNetNode : public rclcpp::Node {
     userColor_.at<cv::Vec3b>(32) = color;
     for (s = 0; s < 63; s++) {
       color[0] = 255;
-      color[1] = 4+4*s;
+      color[1] = 4 + 4 * s;
       color[2] = 0;
       userColor_.at<cv::Vec3b>(s + 33) = color;
     }
@@ -112,7 +112,7 @@ class StereoNetNode : public rclcpp::Node {
     for (s = 0; s < 62; s++) {
       color[0] = 250 - 4 * s;
       color[1] = 255;
-      color[2] = 6+4*s;
+      color[2] = 6 + 4 * s;
       userColor_.at<cv::Vec3b>(s + 97) = color;
     }
     color[0] = 1;
@@ -123,14 +123,14 @@ class StereoNetNode : public rclcpp::Node {
       color[0] = 0;
       color[1] = 252 - (s * 4);
       color[2] = 255;
-      userColor_.at<cv::Vec3b>(s+160) = color;
+      userColor_.at<cv::Vec3b>(s + 160) = color;
 
     }
     for (s = 0; s < 32; s++) {
       color[0] = 0;
       color[1] = 0;
-      color[2] = 252-4*s;
-      userColor_.at<cv::Vec3b>(s+224) = color;
+      color[2] = 252 - 4 * s;
+      userColor_.at<cv::Vec3b>(s + 224) = color;
     }
     rclcpp::on_shutdown([this]() {
       stop();
@@ -256,7 +256,7 @@ class StereoNetNode : public rclcpp::Node {
   message_filters::Subscriber<sensor_msgs::msg::CompressedImage> compare_left_subscriber_;
 
   std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
-  void sync_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& depth_msg,
+  void sync_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &depth_msg,
       //const sensor_msgs::msg::Image::ConstSharedPtr& color_msg,
                      const sensor_msgs::msg::CompressedImage::ConstSharedPtr &rs_left_msg);
 
@@ -266,9 +266,9 @@ class StereoNetNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compare_left_sub_;
 
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
-  
-  void d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
-  void c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+
+  void d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg);
+  void c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg);
   void camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstSharedPtr &camera_info_msg);
 
   cv::Mat compare_visual_;

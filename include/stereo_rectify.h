@@ -19,11 +19,10 @@
 
 namespace stereonet {
 
-
 struct StereoRectify {
 
   StereoRectify(const cv::FileNode &fs, int model_input_w, int model_input_h,
-      bool resize_before_rectify = false) {
+                bool resize_before_rectify = false) {
     // Reading cam0 data
     std::vector<double> cam0_distortion_coeffs;
     std::vector<double> cam0_intrinsics;
@@ -92,8 +91,7 @@ struct StereoRectify {
     Kr.at<double>(2, 2) = 1;
 
     float fov_scale = 0.8;
-    if (calib_model == "pinhole")
-    {
+    if (calib_model == "pinhole") {
       cv::stereoRectify(Kl, Dl, Kr, Dr,
                         cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
                         cv::CALIB_ZERO_DISPARITY, 0, cv::Size(model_input_w, model_input_h));
@@ -107,9 +105,22 @@ struct StereoRectify {
         fs["cam1"]["fov_scale"] >> fov_scale;
       }
       if (fov_scale == 0) fov_scale = 0.8;
-      cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr,
-                                 cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                                 cv::fisheye::CALIB_ZERO_DISPARITY, cv::Size(model_input_w, model_input_h), 0.0, fov_scale);
+      cv::fisheye::stereoRectify(Kl,
+                                 Dl,
+                                 Kr,
+                                 Dr,
+                                 cv::Size(stereo_input_width, stereo_input_height),
+                                 R_rl,
+                                 t_rl,
+                                 Rl,
+                                 Rr,
+                                 Pl,
+                                 Pr,
+                                 Q,
+                                 cv::fisheye::CALIB_ZERO_DISPARITY,
+                                 cv::Size(model_input_w, model_input_h),
+                                 0.0,
+                                 fov_scale);
       cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl,
                                            cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l, undistmap2l);
       cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr,

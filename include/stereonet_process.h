@@ -51,8 +51,8 @@ struct ScopeProcessTime {
     auto end = std::chrono::system_clock::now();
     const std::chrono::duration<float, std::milli> d = end - begin_;
     RCLCPP_DEBUG_STREAM(rclcpp::get_logger(""), name_ << ", consume: "
-              << std::fixed << std::setprecision(3)
-              << d.count() << "ms");
+                                                      << std::fixed << std::setprecision(3)
+                                                      << d.count() << "ms");
   }
 
  private:
@@ -73,21 +73,21 @@ struct StereonetProcess {
   StereonetProcess();
 
   int stereonet_init(const std::string &model_file_name,
-      int max_disp, const std::string &postprocess, float uncertainty_th);
-  int stereonet_deinit ();
+                     int max_disp, const std::string &postprocess, float uncertainty_th);
+  int stereonet_deinit();
 
   int stereonet_inference(const cv::Mat &left_img,
-                      const cv::Mat &right_img,
-                      bool is_nv12,
-                      std::vector<float> &points);
+                          const cv::Mat &right_img,
+                          bool is_nv12,
+                          std::vector<float> &points);
 
   void get_depth_width_height(int &width, int &height) const {
-    width  = model_output_w_;
+    width = model_output_w_;
     height = model_output_h_;
   }
 
   void get_input_width_height(int &width, int &height) const {
-    width  = model_input_w_;
+    width = model_input_w_;
     height = model_input_h_;
   }
 
@@ -97,7 +97,7 @@ struct StereonetProcess {
   int32_t prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor, hbDNNHandle_t dnn_handle);
 
  private:
-  hbDNNHandle_t		dnn_handle_;
+  hbDNNHandle_t dnn_handle_;
   hbPackedDNNHandle_t packed_dnn_handle_;
 
   std::deque<std::atomic_bool> idle_tensor_;

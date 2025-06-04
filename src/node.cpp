@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
 
   if (use_usb_camera) {
     std::thread([&]() {
-      while(rclcpp::ok()) {
+      while (rclcpp::ok()) {
         //  node->inference_by_usb_camera();
         std::this_thread::sleep_for(std::chrono::milliseconds(80));
       }

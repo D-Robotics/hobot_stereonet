@@ -103,18 +103,15 @@ static void get_hw(const hbDNNTensorProperties &properties, int32_t &height, int
 
 static void get_hw(const hbDNNTensorProperties &properties, int32_t &height, int32_t &width) {
   switch (properties.tensorLayout) {
-    case HB_DNN_LAYOUT_NHWC:
-      height = properties.validShape.dimensionSize[1];
+    case HB_DNN_LAYOUT_NHWC:height = properties.validShape.dimensionSize[1];
       width = properties.validShape.dimensionSize[2];
       break;
-    case HB_DNN_LAYOUT_NCHW:
-      height = properties.validShape.dimensionSize[2];
+    case HB_DNN_LAYOUT_NCHW:height = properties.validShape.dimensionSize[2];
       width = properties.validShape.dimensionSize[3];
       break;
   }
 }
 
 #endif
-
 
 #endif //HOBOT_STEREONET_HOBOT_STEREONET_INCLUDE_DNN_PLATFORM_DNN_PLATFORM_H_
