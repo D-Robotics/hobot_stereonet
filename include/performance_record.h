@@ -1,4 +1,17 @@
 
+// Copyright (c) 2025，D-Robotics.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 #include <unistd.h>
 #include <memory>
 #include <mutex>
@@ -11,7 +24,7 @@
 struct performance_writer {
   performance_writer() {
     time_t t = time(nullptr);
-    struct tm* now = localtime(&t);
+    struct tm *now = localtime(&t);
     std::stringstream timestream;
     timestream << "performance_" << std::setw(2) << std::setfill('0')
                << now->tm_hour << '_' << std::setw(2) << std::setfill('0')
@@ -20,7 +33,7 @@ struct performance_writer {
     writer = std::ofstream(timestream.str(), std::ios::out);
     writer << "#timestamp[s], fps, cpu_usage[%], bpu_usage[%], latency[ms]\n";
     record_thread_ = std::make_shared<std::thread>(
-            std::bind(&performance_writer::record, this));
+        std::bind(&performance_writer::record, this));
   }
   ~performance_writer() {
     is_running_ = false;
@@ -47,7 +60,7 @@ struct performance_writer {
     static auto last_calculation = std::chrono::system_clock::now();
     auto current = std::chrono::system_clock::now();
     auto duration = std::chrono::duration_cast<
-            std::chrono::milliseconds>(current - last_calculation).count();
+        std::chrono::milliseconds>(current - last_calculation).count();
     ++fps_;
     latency_ = latency;
     if (duration >= 1000) {
@@ -77,21 +90,21 @@ struct performance_writer {
     return instance;
   }
 
-private:
+ private:
   std::ofstream writer;
-  std::atomic_bool is_running_ {true};
-  std::atomic_uint fps_{0}, latency_{0}, true_fps_ {0}, bpu_ratio_{0}, cpu_usage_{0};
+  std::atomic_bool is_running_{true};
+  std::atomic_uint fps_{0}, latency_{0}, true_fps_{0}, bpu_ratio_{0}, cpu_usage_{0};
   std::shared_ptr<std::thread> record_thread_ = nullptr;
   std::mutex mtx_;
   std::condition_variable cd_;
 
-private:
+ private:
   void record() {
     static pid_t pid = getpid();
     char buffer[128] = {0};
     static std::string pid_str = std::to_string(pid);
     static std::string cmd =
-            "top -b -n 1 -p " + pid_str +
+        "top -b -n 1 -p " + pid_str +
             " | tail -n 1 "
             "| awk '{print $9}'";
     while (is_running_) {
@@ -110,11 +123,11 @@ private:
       buffer[ret - 1] = '0';
       pclose(fp);
       uint ts = std::chrono::system_clock::now()
-                .time_since_epoch().count() / 1e9;
+          .time_since_epoch().count() / 1e9;
       std::string cpu_usage(buffer);
       std::stringstream temp;
       std::ifstream bpu_ratio(
-              "/sys/devices/system/bpu/bpu0/ratio", std::ios::in);
+          "/sys/devices/system/bpu/bpu0/ratio", std::ios::in);
       if (bpu_ratio.is_open()) {
         temp << bpu_ratio.rdbuf();
       } else {

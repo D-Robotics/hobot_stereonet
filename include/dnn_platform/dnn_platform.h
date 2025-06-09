@@ -1,6 +1,16 @@
+// Copyright (c) 2025，D-Robotics.
 //
-// Created by zhy on 2/26/25.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef HOBOT_STEREONET_HOBOT_STEREONET_INCLUDE_DNN_PLATFORM_DNN_PLATFORM_H_
 #define HOBOT_STEREONET_HOBOT_STEREONET_INCLUDE_DNN_PLATFORM_DNN_PLATFORM_H_
@@ -93,18 +103,15 @@ static void get_hw(const hbDNNTensorProperties &properties, int32_t &height, int
 
 static void get_hw(const hbDNNTensorProperties &properties, int32_t &height, int32_t &width) {
   switch (properties.tensorLayout) {
-    case HB_DNN_LAYOUT_NHWC:
-      height = properties.validShape.dimensionSize[1];
+    case HB_DNN_LAYOUT_NHWC:height = properties.validShape.dimensionSize[1];
       width = properties.validShape.dimensionSize[2];
       break;
-    case HB_DNN_LAYOUT_NCHW:
-      height = properties.validShape.dimensionSize[2];
+    case HB_DNN_LAYOUT_NCHW:height = properties.validShape.dimensionSize[2];
       width = properties.validShape.dimensionSize[3];
       break;
   }
 }
 
 #endif
-
 
 #endif //HOBOT_STEREONET_HOBOT_STEREONET_INCLUDE_DNN_PLATFORM_DNN_PLATFORM_H_

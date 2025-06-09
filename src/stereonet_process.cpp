@@ -1,6 +1,16 @@
+// Copyright (c) 2025，D-Robotics.
 //
-// Created by zhy on 7/1/24.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <arm_neon.h>
 #include <fstream>
@@ -10,55 +20,32 @@
 #include "stereonet_process.h"
 #include "image_conversion.h"
 
-static std::string tensor_type_to_str(int32_t tensor_type)
-{
-    switch (tensor_type)
-    {
+static std::string tensor_type_to_str(int32_t tensor_type) {
+  switch (tensor_type) {
 #ifdef PLATFORM_X5
-    case HB_DNN_IMG_TYPE_Y:
-        return "HB_DNN_IMG_TYPE_Y";
-    case HB_DNN_IMG_TYPE_NV12:
-        return "HB_DNN_IMG_TYPE_NV12";
-    case HB_DNN_IMG_TYPE_NV12_SEPARATE:
-        return "HB_DNN_IMG_TYPE_NV12_SEPARATE";
-    case HB_DNN_IMG_TYPE_YUV444:
-        return "HB_DNN_IMG_TYPE_YUV444";
-    case HB_DNN_IMG_TYPE_RGB:
-        return "HB_DNN_IMG_TYPE_RGB";
-    case HB_DNN_IMG_TYPE_BGR:
-        return "HB_DNN_IMG_TYPE_BGR";
+    case HB_DNN_IMG_TYPE_Y:return "HB_DNN_IMG_TYPE_Y";
+    case HB_DNN_IMG_TYPE_NV12:return "HB_DNN_IMG_TYPE_NV12";
+    case HB_DNN_IMG_TYPE_NV12_SEPARATE:return "HB_DNN_IMG_TYPE_NV12_SEPARATE";
+    case HB_DNN_IMG_TYPE_YUV444:return "HB_DNN_IMG_TYPE_YUV444";
+    case HB_DNN_IMG_TYPE_RGB:return "HB_DNN_IMG_TYPE_RGB";
+    case HB_DNN_IMG_TYPE_BGR:return "HB_DNN_IMG_TYPE_BGR";
 #endif
-    case HB_DNN_TENSOR_TYPE_S4:
-        return "HB_DNN_TENSOR_TYPE_S4";
-    case HB_DNN_TENSOR_TYPE_U4:
-        return "HB_DNN_TENSOR_TYPE_U4";
-    case HB_DNN_TENSOR_TYPE_S8:
-        return "HB_DNN_TENSOR_TYPE_S8";
-    case HB_DNN_TENSOR_TYPE_U8:
-        return "HB_DNN_TENSOR_TYPE_U8";
-    case HB_DNN_TENSOR_TYPE_F16:
-        return "HB_DNN_TENSOR_TYPE_F16";
-    case HB_DNN_TENSOR_TYPE_S16:
-        return "HB_DNN_TENSOR_TYPE_S16";
-    case HB_DNN_TENSOR_TYPE_U16:
-        return "HB_DNN_TENSOR_TYPE_U16";
-    case HB_DNN_TENSOR_TYPE_F32:
-        return "HB_DNN_TENSOR_TYPE_F32";
-    case HB_DNN_TENSOR_TYPE_S32:
-        return "HB_DNN_TENSOR_TYPE_S32";
-    case HB_DNN_TENSOR_TYPE_U32:
-        return "HB_DNN_TENSOR_TYPE_U32";
-    case HB_DNN_TENSOR_TYPE_F64:
-        return "HB_DNN_TENSOR_TYPE_F64";
-    case HB_DNN_TENSOR_TYPE_S64:
-        return "HB_DNN_TENSOR_TYPE_S64";
-    case HB_DNN_TENSOR_TYPE_U64:
-        return "HB_DNN_TENSOR_TYPE_U64";
-    case HB_DNN_TENSOR_TYPE_MAX:
-        return "HB_DNN_TENSOR_TYPE_MAX";
-    default:
-        return "Unknown";
-    }
+    case HB_DNN_TENSOR_TYPE_S4:return "HB_DNN_TENSOR_TYPE_S4";
+    case HB_DNN_TENSOR_TYPE_U4:return "HB_DNN_TENSOR_TYPE_U4";
+    case HB_DNN_TENSOR_TYPE_S8:return "HB_DNN_TENSOR_TYPE_S8";
+    case HB_DNN_TENSOR_TYPE_U8:return "HB_DNN_TENSOR_TYPE_U8";
+    case HB_DNN_TENSOR_TYPE_F16:return "HB_DNN_TENSOR_TYPE_F16";
+    case HB_DNN_TENSOR_TYPE_S16:return "HB_DNN_TENSOR_TYPE_S16";
+    case HB_DNN_TENSOR_TYPE_U16:return "HB_DNN_TENSOR_TYPE_U16";
+    case HB_DNN_TENSOR_TYPE_F32:return "HB_DNN_TENSOR_TYPE_F32";
+    case HB_DNN_TENSOR_TYPE_S32:return "HB_DNN_TENSOR_TYPE_S32";
+    case HB_DNN_TENSOR_TYPE_U32:return "HB_DNN_TENSOR_TYPE_U32";
+    case HB_DNN_TENSOR_TYPE_F64:return "HB_DNN_TENSOR_TYPE_F64";
+    case HB_DNN_TENSOR_TYPE_S64:return "HB_DNN_TENSOR_TYPE_S64";
+    case HB_DNN_TENSOR_TYPE_U64:return "HB_DNN_TENSOR_TYPE_U64";
+    case HB_DNN_TENSOR_TYPE_MAX:return "HB_DNN_TENSOR_TYPE_MAX";
+    default:return "Unknown";
+  }
 }
 
 static void Dequantize(float *output,
@@ -102,9 +89,9 @@ static void Dequantize16(float *output,
   for (int32_t c = 0; c < channel; c++) {
     float scale = input_scale[c];
     for (int32_t h = 0; h < height; h++) {
-      for (int32_t w = 0; w < width; w ++) {
+      for (int32_t w = 0; w < width; w++) {
         int16_t input_data_tmp = input[h * input_aligned_shape[3] + w];
-        output[h * width + w] = (float)input_data_tmp * scale;
+        output[h * width + w] = (float) input_data_tmp * scale;
       }
     }
     input += input_aligned_shape[2] * input_aligned_shape[3];
@@ -113,10 +100,10 @@ static void Dequantize16(float *output,
 }
 
 static void Dequantize16_neon(float *output,
-                         int16_t *input,
-                         float *input_scale,
-                         int32_t *input_shape,
-                         int32_t *input_aligned_shape) {
+                              int16_t *input,
+                              float *input_scale,
+                              int32_t *input_shape,
+                              int32_t *input_aligned_shape) {
   int32_t channel = input_shape[1];
   int32_t height = input_shape[2];
   int32_t width = input_shape[3];
@@ -193,10 +180,10 @@ static int32_t feature_add(float *spg,
 }
 
 static int32_t feature_add_neon(float *spg,
-                           float *feature,
-                           int32_t input_height,
-                           int32_t input_width,
-                           int32_t maxdisp) {
+                                float *feature,
+                                int32_t input_height,
+                                int32_t input_width,
+                                int32_t maxdisp) {
   int total_elements = input_height * input_width;
 
   float32x4_t maxdisp_vec = vdupq_n_f32(maxdisp);
@@ -226,8 +213,8 @@ static int32_t dump_to_color(
 }
 
 int postprocess_v1(std::vector<hbDNNTensor> &tensors,
-                std::vector<float> &points,
-                int max_disp) {
+                   std::vector<float> &points,
+                   int max_disp) {
   int low_max_stride_ = 2;
   for (int32_t i = 0; i < 2; i++) {
     hbSysFlushMem(&(TENSOR_SYSMEM(tensors[i], 0)), HB_SYS_MEM_CACHE_INVALIDATE);
@@ -282,11 +269,11 @@ int postprocess_v1(std::vector<hbDNNTensor> &tensors,
 }
 
 int postprocess_v2(std::vector<hbDNNTensor> &tensors,
-                std::vector<float> &points,
-                int max_disp) {
+                   std::vector<float> &points,
+                   int max_disp) {
   for (int32_t i = 0; i < 2; i++) {
     hbSysFlushMem(&(TENSOR_SYSMEM(tensors[i], 0)),
-        HB_SYS_MEM_CACHE_INVALIDATE);
+                  HB_SYS_MEM_CACHE_INVALIDATE);
   }
 
   // get shape info
@@ -298,9 +285,9 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
   // calc disp
   points.resize(h_dim * w_dim, 0.f);
   Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic,
-             Eigen::Dynamic>> result(points.data(), h_dim, w_dim);
+                           Eigen::Dynamic>> result(points.data(), h_dim, w_dim);
   if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32
-  && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
+      && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
     // get tensor info
     float *disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
     float *spx = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
@@ -309,13 +296,13 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
 
     for (int i = 0; i < c_dim; ++i) {
       Eigen::Map<Eigen::Matrix<float,
-          Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
+                               Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
       Eigen::Map<Eigen::Matrix<float,
-          Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
+                               Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
       result.noalias() += matrix_disp.cwiseProduct(matrix_spx);
     }
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32
-  && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+      && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
     // get tensor info
     float *disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
     int16_t *spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
@@ -323,16 +310,16 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
     // multiply element-wise and then add in the c channel
     for (int i = 0; i < c_dim; ++i) {
       Eigen::Map<Eigen::Matrix<float,
-          Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
+                               Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
       Eigen::Map<Eigen::Matrix<int16_t,
-          Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
+                               Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
       result.noalias() += matrix_disp.cwiseProduct(matrix_spx.cast<float>());
     }
   } else {
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
-        "=> output tensor type unsupported! tensor[0]: "
-        << tensor_type_to_str(tensors[0].properties.tensorType)
-        << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
+                       "=> output tensor type unsupported! tensor[0]: "
+                           << tensor_type_to_str(tensors[0].properties.tensorType)
+                           << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
     return -1;
   }
   // get scale info
@@ -354,33 +341,33 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
 }
 
 int postprocess_v2_1(std::vector<hbDNNTensor> &tensors,
-  std::vector<float> &points,
-  int max_disp,
-  float uncertainty_th) {
-cv::Mat mask, uncert, infer_disp, init_disp;
-int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
-int32_t c_dim = disp_shape[1];
-int32_t h_dim = disp_shape[2];
-int32_t w_dim = disp_shape[3];              
-std::vector<float> infer_points, init_points;           
-std::vector<hbDNNTensor> infer_disp_tensor(tensors.begin(), tensors.begin() + 2);
-std::vector<hbDNNTensor> init_disp_tensor(tensors.begin() + 2, tensors.begin() + 4);
-postprocess_v2(infer_disp_tensor, infer_points, max_disp);
-if (uncertainty_th > 0.0f) {
-postprocess_v2(init_disp_tensor, init_points, max_disp);
-infer_disp = cv::Mat(h_dim, w_dim, CV_32FC1, infer_points.data());
-init_disp = cv::Mat(h_dim, w_dim, CV_32FC1, init_points.data());
-uncert = cv::abs(init_disp - infer_disp) / init_disp;
-cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);  
-infer_disp = infer_disp.mul(mask);
-}
-points = std::move(infer_points);
-return 0;
+                     std::vector<float> &points,
+                     int max_disp,
+                     float uncertainty_th) {
+  cv::Mat mask, uncert, infer_disp, init_disp;
+  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t c_dim = disp_shape[1];
+  int32_t h_dim = disp_shape[2];
+  int32_t w_dim = disp_shape[3];
+  std::vector<float> infer_points, init_points;
+  std::vector<hbDNNTensor> infer_disp_tensor(tensors.begin(), tensors.begin() + 2);
+  std::vector<hbDNNTensor> init_disp_tensor(tensors.begin() + 2, tensors.begin() + 4);
+  postprocess_v2(infer_disp_tensor, infer_points, max_disp);
+  if (uncertainty_th > 0.0f) {
+    postprocess_v2(init_disp_tensor, init_points, max_disp);
+    infer_disp = cv::Mat(h_dim, w_dim, CV_32FC1, infer_points.data());
+    init_disp = cv::Mat(h_dim, w_dim, CV_32FC1, init_points.data());
+    uncert = cv::abs(init_disp - infer_disp) / init_disp;
+    cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+    infer_disp = infer_disp.mul(mask);
+  }
+  points = std::move(infer_points);
+  return 0;
 }
 
 int postprocess_v2_2(std::vector<hbDNNTensor> &tensors,
-                        std::vector<float> &points,
-                        int max_disp) {
+                     std::vector<float> &points,
+                     int max_disp) {
   for (int32_t i = 0; i < 2; i++) {
     hbSysFlushMem(&(TENSOR_SYSMEM(tensors[i], 0)),
                   HB_SYS_MEM_CACHE_INVALIDATE);
@@ -441,7 +428,7 @@ int postprocess_v2_2(std::vector<hbDNNTensor> &tensors,
         vst1q_f32(result_ptr + j, vmulq_n_f32(vld1q_f32(result_ptr + j), scale_factor));
       }
     }
-  }  else {
+  } else {
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
                        "=> output tensor type unsupported! tensor[0]: "
                            << tensor_type_to_str(tensors[0].properties.tensorType)
@@ -452,8 +439,8 @@ int postprocess_v2_2(std::vector<hbDNNTensor> &tensors,
 }
 
 int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
-                        std::vector<float> &points,
-                        int max_disp) {
+                     std::vector<float> &points,
+                     int max_disp) {
   for (int32_t i = 0; i < 2; i++) {
     hbSysFlushMem(&(TENSOR_SYSMEM(tensors[i], 0)),
                   HB_SYS_MEM_CACHE_INVALIDATE);
@@ -527,7 +514,7 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
         vst1q_f32(result_ptr + j, vmulq_n_f32(vld1q_f32(result_ptr + j), scale_factor));
       }
     }
-  }  else {
+  } else {
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
                        "=> output tensor type unsupported! tensor[0]: "
                            << tensor_type_to_str(tensors[0].properties.tensorType)
@@ -537,9 +524,7 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
   return 0;
 }
 
-
-static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
-{
+static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle) {
   int32_t i = 0, j = 0;
   hbDNNHandle_t dnn_handle;
   const char **model_name_list;
@@ -625,7 +610,7 @@ static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle)
 }
 
 int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor,
-                                    hbDNNHandle_t dnn_handle) {
+                                               hbDNNHandle_t dnn_handle) {
   int model_h, model_w;
 
   int32_t input_count = 0;
@@ -660,7 +645,7 @@ int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_t
     tensor.properties = properties;
     input_tensor_type_ = properties.tensorType;
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> input tensor type: " <<
-                        tensor_type_to_str(tensor.properties.tensorType));
+                                                                        tensor_type_to_str(tensor.properties.tensorType));
 
 #ifdef PLATFORM_X5
     tensor.properties.alignedShape = tensor.properties.validShape;
@@ -673,7 +658,7 @@ int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_t
       TENSOR_SYSMEM(tensor, 0).memSize = properties.alignedByteSize;
     } else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12) {
       HB_CHECK_SUCCESS(hbSysAllocCachedMem(&TENSOR_SYSMEM(tensor, 0), (3 * model_h * model_w) / 2),
-          "hbSysAllocCachedMem failed");
+                       "hbSysAllocCachedMem failed");
       TENSOR_SYSMEM(tensor, 0).memSize = (3 * model_h * model_w) / 2;
     } else {
       return -1;
@@ -695,14 +680,14 @@ static int32_t prepare_output_tensor(std::vector<hbDNNTensor> &output_tensor,
         hbDNNGetOutputTensorProperties(&output_tensor[i].properties, dnn_handle, i),
         "hbDNNGetOutputTensorProperties failed");
     HB_CHECK_SUCCESS(hbSysAllocCachedMem(&TENSOR_SYSMEM(output_tensor[i], 0),
-        output_tensor[i].properties.alignedByteSize),
+                                         output_tensor[i].properties.alignedByteSize),
                      "hbSysAllocCachedMem failed");
   }
   return ret;
 }
 
 static int32_t get_model_input_size(hbDNNHandle_t dnn_handle,
-    int32_t &width, int32_t &height) {
+                                    int32_t &width, int32_t &height) {
   hbDNNTensorProperties properties = {0};
   HB_CHECK_SUCCESS(
       hbDNNGetInputTensorProperties(&properties, dnn_handle, 0),
@@ -727,9 +712,8 @@ static int32_t get_model_output_size(hbDNNHandle_t dnn_handle,
   return 0;
 }
 
-static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_len)
-{
-  for (auto & i : output_tensor) {
+static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_len) {
+  for (auto &i : output_tensor) {
     for (int j = 0; j < mem_len; ++j) {
       HB_CHECK_SUCCESS(hbSysFreeMem(&(TENSOR_SYSMEM(i, j))),
                        "hbSysFreeMem failed");
@@ -739,7 +723,7 @@ static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_l
 }
 
 int StereonetProcess::stereonet_init(const std::string &model_file_name,
-    int max_disp, const std::string &postprocess, float uncertainty_th) {
+                                     int max_disp, const std::string &postprocess, float uncertainty_th) {
   postprocess_ = postprocess;
   int32_t model_count = 0;
   hbDNNTensorProperties properties;
@@ -750,7 +734,7 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
 //  hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **)&model_file, 1);
   // 加载模型
   HB_CHECK_SUCCESS(
-      hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **)&model_file, 1),
+      hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **) &model_file, 1),
       "hbDNNInitializeFromFiles failed"); // 从本地文件加载模型
 
   // 打印模型信息
@@ -774,7 +758,6 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
   get_model_input_size(dnn_handle_, model_input_w_, model_input_h_);
   get_model_output_size(dnn_handle_, model_output_w_, model_output_h_);
 
-
   for (int i = 0; i < MAX_PROCESS_COUNT; i++) {
     idle_tensor_.emplace_back(true);
   }
@@ -791,22 +774,22 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
 
   max_disp_ = max_disp;
   HB_CHECK_SUCCESS(hbDNNGetOutputCount(&output_count_, dnn_handle_),
-      "hbDNNGetOutputCount failed");  
-      
+                   "hbDNNGetOutputCount failed");
+
   uncertainty_th_ = uncertainty_th;
-      
+
   return 0;
 }
 
 int StereonetProcess::stereonet_deinit() {
-  for (auto & input_tensor : input_tensors_) {
+  for (auto &input_tensor : input_tensors_) {
     release_tensor(input_tensor, 1);
   }
-  for (auto & output_tensor : output_tensors_) {
+  for (auto &output_tensor : output_tensors_) {
     release_tensor(output_tensor, 1);
   }
   HB_CHECK_SUCCESS(hbDNNRelease(packed_dnn_handle_),
-      "hbDNNRelease failed");
+                   "hbDNNRelease failed");
   return 0;
 }
 
@@ -821,7 +804,7 @@ int StereonetProcess::get_idle_tensor() {
 }
 
 int StereonetProcess::set_tensor_idle(int tensor_id) {
-  if (tensor_id >=0 || tensor_id < MAX_PROCESS_COUNT) {
+  if (tensor_id >= 0 || tensor_id < MAX_PROCESS_COUNT) {
     idle_tensor_[tensor_id] = true;
     return 0;
   }
@@ -853,35 +836,35 @@ int StereonetProcess::stereonet_inference(
 
   if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
     hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0),
-        (char *)left_img_nv12.data,
-        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize);
+                  (char *) left_img_nv12.data,
+                  TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize);
 
     hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0),
-        (char *) left_img_nv12.data + TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize,
-        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0).memSize);
+                  (char *) left_img_nv12.data + TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize,
+                  TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0).memSize);
 
     hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0),
-        (char *)right_img_nv12.data,
-        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0).memSize);
+                  (char *) right_img_nv12.data,
+                  TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0).memSize);
 
     hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0),
-        (char *) right_img_nv12.data + TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0).memSize,
-        TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0).memSize);
+                  (char *) right_img_nv12.data + TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0).memSize,
+                  TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0).memSize);
 
     hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), HB_SYS_MEM_CACHE_CLEAN);
     hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), HB_SYS_MEM_CACHE_CLEAN);
     hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][2], 0), HB_SYS_MEM_CACHE_CLEAN);
     hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][3], 0), HB_SYS_MEM_CACHE_CLEAN);
   } else if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12) {
-    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), (char *)left_img_nv12.data,
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), (char *) left_img_nv12.data,
                   TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0).memSize);
-    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), (char *)right_img_nv12.data,
+    hbSysWriteMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), (char *) right_img_nv12.data,
                   TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0).memSize);
 
     hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][0], 0), HB_SYS_MEM_CACHE_CLEAN);
     hbSysFlushMem(&TENSOR_SYSMEM(input_tensors_[idle_tensor_id][1], 0), HB_SYS_MEM_CACHE_CLEAN);
   } else {
-    std::cout <<"\033[31m=> input tensor flush mem errror:"
+    std::cout << "\033[31m=> input tensor flush mem errror:"
               << tensor_type_to_str(input_tensor_type_) << "!\033[0m";
     return StereonetErrorCode::INPUT_ERROR;
   }
@@ -925,22 +908,15 @@ int StereonetProcess::stereonet_inference(
   }
 
   ScopeProcessTime t("postprocess");
-  if (postprocess_ == "v1")
-  {
+  if (postprocess_ == "v1") {
     postprocess_v1(output_tensors_[idle_tensor_id], points, max_disp_);
-  }
-  else if (postprocess_ == "v2")
-  {
+  } else if (postprocess_ == "v2") {
     postprocess_v2(output_tensors_[idle_tensor_id], points, max_disp_);
-  }
-  else if (postprocess_ == "v2.1")
-  {
+  } else if (postprocess_ == "v2.1") {
     postprocess_v2_1(output_tensors_[idle_tensor_id], points, max_disp_, uncertainty_th_);
-  }
-  else if (postprocess_ == "v2.2") {
+  } else if (postprocess_ == "v2.2") {
     postprocess_v2_2(output_tensors_[idle_tensor_id], points, max_disp_);
-  }
-  else if (postprocess_ == "v2.3") {
+  } else if (postprocess_ == "v2.3") {
     postprocess_v2_3(output_tensors_[idle_tensor_id], points, max_disp_);
   }
   return StereonetErrorCode::OK;

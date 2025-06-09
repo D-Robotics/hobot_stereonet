@@ -1,3 +1,16 @@
+// Copyright (c) 2025，D-Robotics.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
@@ -5,12 +18,11 @@
 #include <opencv2/opencv.hpp>
 #include <fstream>
 
-
 class Ros2SubNode : public rclcpp::Node {
  public:
   Ros2SubNode() : Node("data_collector"),
-                                             image_queue_limit_(50),
-                                             imu_queue_limit_(800) {
+                  image_queue_limit_(50),
+                  imu_queue_limit_(800) {
 
     this->declare_parameter("image0_topic", "/StereoNetNode/rectified_image");
     this->get_parameter("image0_topic", sub_image0_topic_);
@@ -65,7 +77,7 @@ class Ros2SubNode : public rclcpp::Node {
     imu_data[4] = imu->angular_velocity.y;
     imu_data[5] = imu->angular_velocity.z;
     imu_file_ << timestamp << "," << imu_data[3] << "," << imu_data[4] << "," << imu_data[5]
-             << "," << imu_data[0] << "," << imu_data[1] << "," << imu_data[2] << std::endl;
+              << "," << imu_data[0] << "," << imu_data[1] << "," << imu_data[2] << std::endl;
   }
 
   void CollectImage(const sensor_msgs::msg::Image::SharedPtr img, int type) {
@@ -90,7 +102,7 @@ class Ros2SubNode : public rclcpp::Node {
       } else if (type == 1) {
         cv::imwrite("storage/cam1/data/" + stamp_str + ".png", image);
       }
-    } catch (cv_bridge::Exception& e) {
+    } catch (cv_bridge::Exception &e) {
       std::cout << "receive unknow image: " << e.what() << std::endl;
       return;
     }

@@ -1,16 +1,26 @@
+// Copyright (c) 2025，D-Robotics.
 //
-// Created by zhy on 7/22/24.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <arm_neon.h>
 #include <cstdint>
 #include "image_conversion.h"
 
-void image_conversion::nv12_to_bgr24_neon(uint8_t* nv12, uint8_t* bgr24, int width, int height) {
-  const uint8_t* yptr = nv12;
-  const uint8_t* uvptr = nv12 + width * height;
+void image_conversion::nv12_to_bgr24_neon(uint8_t *nv12, uint8_t *bgr24, int width, int height) {
+  const uint8_t *yptr = nv12;
+  const uint8_t *uvptr = nv12 + width * height;
   uint8x8_t _v128 = vdup_n_u8(128);
-  int8x8_t _v127= vdup_n_s8(127);
+  int8x8_t _v127 = vdup_n_s8(127);
   uint8x8_t _v16 = vdup_n_u8(16);
   uint8x8_t _v75 = vdup_n_u8(75);
   uint8x8_t _vu64 = vdup_n_u8(64);
@@ -19,16 +29,14 @@ void image_conversion::nv12_to_bgr24_neon(uint8_t* nv12, uint8_t* bgr24, int wid
   int8x8_t _v102 = vdup_n_s8(102);
   int16x8_t _v64 = vdupq_n_s16(64);
 
-  for (int y = 0; y < height; y += 2)
-  {
-    const uint8_t* yptr0 = yptr;
-    const uint8_t* yptr1 = yptr + width;
-    unsigned char* rgb0 = bgr24;
-    unsigned char* rgb1 = bgr24 + width * 3;
+  for (int y = 0; y < height; y += 2) {
+    const uint8_t *yptr0 = yptr;
+    const uint8_t *yptr1 = yptr + width;
+    unsigned char *rgb0 = bgr24;
+    unsigned char *rgb1 = bgr24 + width * 3;
     int nn = width >> 3;
 
-    for (; nn > 0; nn--)
-    {
+    for (; nn > 0; nn--) {
       int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vqsub_u8(vld1_u8(yptr0), _v16), _v75));
       int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vqsub_u8(vld1_u8(yptr1), _v16), _v75));
 //      int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr0), _v75));
@@ -42,7 +50,6 @@ void image_conversion::nv12_to_bgr24_neon(uint8_t* nv12, uint8_t* bgr24, int wid
       int16x8_t _g0 = vmlsl_s8(_yy0, _vv, _v52);
       _g0 = vmlsl_s8(_g0, _uu, _v25);
       int16x8_t _b0 = vmlal_s8(_yy0, _uu, _v127);
-
 
       int16x8_t _r1 = vmlal_s8(_yy1, _vv, _v102);
       int16x8_t _g1 = vmlsl_s8(_yy1, _vv, _v52);
@@ -73,7 +80,7 @@ void image_conversion::nv12_to_bgr24_neon(uint8_t* nv12, uint8_t* bgr24, int wid
   }
 }
 
-void image_conversion::bgr24_to_nv12_neon(uint8_t* bgr24, uint8_t* nv12, int width, int height) {
+void image_conversion::bgr24_to_nv12_neon(uint8_t *bgr24, uint8_t *nv12, int width, int height) {
   int frameSize = width * height;
   int yIndex = 0;
   int uvIndex = frameSize;

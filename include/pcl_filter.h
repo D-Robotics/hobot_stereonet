@@ -1,6 +1,16 @@
+// Copyright (c) 2025，D-Robotics.
 //
-// Created by zhy on 7/25/24.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef STEREONET_MODEL_INCLUDE_PCL_FILTER_H_
 #define STEREONET_MODEL_INCLUDE_PCL_FILTER_H_
@@ -16,7 +26,7 @@
 
 struct pcl_filter {
   void static applyfilter(sensor_msgs::msg::PointCloud2 &pcd_msg,
-      float leaf_size = 0.03, int KMean = 5, float stdv = 0.01) {
+                          float leaf_size = 0.03, int KMean = 5, float stdv = 0.01) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
 
@@ -69,12 +79,10 @@ struct pcl_filter {
     auto d2 = std::chrono::duration_cast<std::chrono::milliseconds>(start3 - start2).count();
     auto d3 = std::chrono::duration_cast<std::chrono::milliseconds>(start4 - start3).count();
     RCLCPP_DEBUG(rclcpp::get_logger(""),
-        "ROS to PCL: %dms, "
-        "PCL filter: %dms,, "
-        "PCL to ROS: %dms", d1, d2, d3);
+                 "ROS to PCL: %dms, "
+                 "PCL filter: %dms,, "
+                 "PCL to ROS: %dms", d1, d2, d3);
   }
 };
-
-
 
 #endif //STEREONET_MODEL_INCLUDE_PCL_FILTER_H_
