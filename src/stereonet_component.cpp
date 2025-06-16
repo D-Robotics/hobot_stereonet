@@ -90,6 +90,26 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
                                   "mono16", depth_img);
   img_bridge.toImageMsg(depth_img_msg);
   depth_image_pub_->publish(depth_img_msg);
+
+  if (depthcompressed_image_pub_->get_subscription_count() < 1) return 0;
+  sensor_msgs::msg::CompressedImage depth_compressed_img_msg;
+  depth_compressed_img_msg.format = "compressedDepth";
+  depth_compressed_img_msg.header = depth_img_msg.header;
+  std::vector<uchar> compressed_png;
+  cv::imencode(".png", depth_img, compressed_png);
+  std::vector<uchar> header(16);
+  uint32_t quant = 1000;
+  uint32_t reserved = 0;
+  std::memcpy(&header[0], &camera_fx, 4);
+  std::memcpy(&header[4], &quant, 4);
+  std::memcpy(&header[8], &reserved, 4);
+  std::memcpy(&header[12], &reserved, 4);
+  depth_compressed_img_msg.data.reserve(header.size() + compressed_png.size());
+  depth_compressed_img_msg.data.insert(depth_compressed_img_msg.data.end(),
+      header.begin(), header.end());
+  depth_compressed_img_msg.data.insert(depth_compressed_img_msg.data.end(),
+      compressed_png.begin(), compressed_png.end());
+  depthcompressed_image_pub_->publish(depth_compressed_img_msg);
   return 0;
 }
 
@@ -1478,6 +1498,9 @@ void StereoNetNode::pub_sub_configuration() {
 
   depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       "~/stereonet_depth", 10);
+
+  depthcompressed_image_pub_ = this->create_publisher<sensor_msgs::msg::CompressedImage>(
+      "~/stereonet_compresseddepth", 10);
 
   visual_topic_ = this->declare_parameter("visual_topic", visual_topic_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_topic: " << visual_topic_);
