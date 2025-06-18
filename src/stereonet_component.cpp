@@ -1152,7 +1152,7 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
           fs[stereo_no], model_input_w, model_input_h, resize_before_rectify_));
     } else {
       if (i == 0) {
-        RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify Instance: " << stereo_no);
+        RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify fake Instance: " << stereo_no);
         stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
             fs, model_input_w, model_input_h, resize_before_rectify_));
       }
