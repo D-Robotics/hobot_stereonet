@@ -20,8 +20,8 @@
 namespace stereonet {
 
 struct StereoRectify {
-
-  StereoRectify(const cv::FileNode &fs, int model_input_w, int model_input_h,
+  template <typename T>
+  StereoRectify(const T &fs, int model_input_w, int model_input_h,
                 bool resize_before_rectify = false) {
     // Reading cam0 data
     std::vector<double> cam0_distortion_coeffs;
