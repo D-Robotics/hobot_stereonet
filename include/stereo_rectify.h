@@ -33,7 +33,7 @@ struct StereoRectify {
     fs["cam0"]["distortion_coeffs"] >> cam0_distortion_coeffs;
     fs["cam0"]["intrinsics"] >> cam0_intrinsics;
     fs["cam0"]["resolution"] >> cam0_resolution;
-    fs["cam0"]["camera_model"] >> calib_model;
+    fs["cam0"]["distortion_model"] >> distortion_model;
 
     // Reading cam1 data
     std::vector<std::vector<double>> cam1_T_cn_cnm1;
@@ -91,7 +91,8 @@ struct StereoRectify {
     Kr.at<double>(2, 2) = 1;
 
     float fov_scale = 0.8;
-    if (calib_model == "pinhole") {
+    if (distortion_model == "radtan" ||
+        distortion_model == "rational_polynomial") {
       cv::stereoRectify(Kl, Dl, Kr, Dr,
                         cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
                         cv::CALIB_ZERO_DISPARITY, 0, cv::Size(model_input_w, model_input_h));
@@ -100,7 +101,7 @@ struct StereoRectify {
                                   cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l, undistmap2l);
       cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr,
                                   cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1r, undistmap2r);
-    } else if (calib_model == "fish") {
+    } else if (distortion_model == "equidistant") {
       if (!fs["cam1"]["fov_scale"].empty()) {
         fs["cam1"]["fov_scale"] >> fov_scale;
       }
@@ -134,7 +135,7 @@ struct StereoRectify {
     //  const cv::Mat t = Rr * t_rl;
     base_line = std::abs(1 / Q.at<double>(3, 2));
 
-    std::cout << "calib model: " << calib_model << std::endl
+    std::cout << "distortion_model: " << distortion_model << std::endl
               << "Kl:" << std::endl
               << Kl << std::endl
               << "Dl:" << std::endl
@@ -170,7 +171,7 @@ struct StereoRectify {
     bl = base_line;
   }
 
-  std::string calib_model;
+  std::string distortion_model;
   cv::Mat Rl, Rr, Pl, Pr, Q;
   cv::Mat Kl, Kr, Dl, Dr, R_rl, t_rl;
   cv::Mat undistmap1l, undistmap2l, undistmap1r, undistmap2r;
