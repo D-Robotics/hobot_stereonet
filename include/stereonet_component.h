@@ -179,6 +179,7 @@ class StereoNetNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_;
 
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_, visual_image_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr depthcompressed_image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_pub_;
 
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_;

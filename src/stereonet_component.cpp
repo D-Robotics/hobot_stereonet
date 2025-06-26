@@ -84,12 +84,25 @@ int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   sensor_msgs::msg::Image depth_img_msg;
   const cv::Mat &depth_img = pub_raw_data.depth_img;
 
-  if (depth_image_pub_->get_subscription_count() < 1) return 0;
+  if (depth_image_pub_->get_subscription_count() > 0) {
+    img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
+                                    "mono16", depth_img);
+    img_bridge.toImageMsg(depth_img_msg);
+    depth_image_pub_->publish(depth_img_msg);
+  }
 
-  img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
-                                  "mono16", depth_img);
-  img_bridge.toImageMsg(depth_img_msg);
-  depth_image_pub_->publish(depth_img_msg);
+  if (depthcompressed_image_pub_->get_subscription_count() > 0) {
+    sensor_msgs::msg::CompressedImage depth_compressed_img_msg;
+    depth_compressed_img_msg.format = "compressedDepth";
+    depth_compressed_img_msg.header = pub_raw_data.left_sub_img.header;
+    std::vector<uchar> compressed_png;
+    cv::imencode(".png", depth_img, compressed_png);
+    depth_compressed_img_msg.data.reserve(compressed_png.size());
+    depth_compressed_img_msg.data.insert(depth_compressed_img_msg.data.end(),
+                                         compressed_png.begin(), compressed_png.end());
+    depthcompressed_image_pub_->publish(depth_compressed_img_msg);
+  }
+
   return 0;
 }
 
@@ -1132,14 +1145,20 @@ void StereoNetNode::camera_config_parse(const std::string &file_path,
   }
 
   do {
-    std::string stereo_no = "stereo" + std::to_string(i++);
+    std::string stereo_no = "stereo" + std::to_string(i);
     if (!fs[stereo_no].empty()) {
       RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify Instance: " << stereo_no);
       stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
           fs[stereo_no], model_input_w, model_input_h, resize_before_rectify_));
     } else {
+      if (i == 0) {
+        RCLCPP_WARN_STREAM(this->get_logger(), "Add StereoRectify fake Instance: " << stereo_no);
+        stereo_rectify_list_.emplace_back(std::make_shared<StereoRectify>(
+            fs, model_input_w, model_input_h, resize_before_rectify_));
+      }
       break;
     }
+    i++;
   } while (true);
 
   if (need_rectify_ || load_rectify_param_) {
@@ -1478,6 +1497,9 @@ void StereoNetNode::pub_sub_configuration() {
 
   depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
       "~/stereonet_depth", 10);
+
+  depthcompressed_image_pub_ = this->create_publisher<sensor_msgs::msg::CompressedImage>(
+      "~/stereonet_compresseddepth", 10);
 
   visual_topic_ = this->declare_parameter("visual_topic", visual_topic_);
   RCLCPP_INFO_STREAM(this->get_logger(), "visual_topic: " << visual_topic_);
