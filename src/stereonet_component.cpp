@@ -204,11 +204,10 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   const std::vector<float> &points = pub_raw_data.points;
   cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
-  double font_scale = 0.5;
-
-  if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
-
   bgr_image = pub_raw_data.left_sub_img.bgr;
+  double font_scale = 0.5 * bgr_image.cols / 640;
+ 
+  if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
 
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
@@ -401,7 +400,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
       }
 
       std::ostringstream ss;
-      ss << std::fixed << std::setprecision(2) << distance << "m";
+      ss << std::fixed << std::setprecision(3) << distance << "m";
       cv::putText(visual_img, ss.str(), bgr_location,
                   cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   cv::Scalar(255, 255, 255), 2);
@@ -1628,7 +1627,7 @@ void StereoNetNode::sync_callback(const sensor_msgs::msg::CompressedImage::Const
       uint16_t Z = depth_image.at<uint16_t>(i * y_step, j * x_step);
       double distance = static_cast<double>(Z) / 1000.0;
       std::ostringstream ss;
-      ss << std::fixed << std::setprecision(2) << distance << "m";
+      ss << std::fixed << std::setprecision(3) << distance << "m";
 
       cv::putText(rs_image, ss.str(), cv::Point2i(j * x_step + 3,
                                                   i * y_step - 3),
