@@ -106,7 +106,7 @@ def generate_launch_description():
         name=LaunchConfiguration('stereo_node_name'),
         output='screen',
         parameters=[set_configurable_parameters(node_params)],
-        arguments=['--ros-args', '--log-level', 'debug']
+        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     ))
 
     boost = ExecuteProcess(
