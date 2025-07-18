@@ -75,7 +75,6 @@ int StereoNetNode::inference(inference_data_t &inference_data,
   inference_data.right_sub_img.origin_height = right_img.rows;
   inference_data.right_sub_img.origin_width = right_img.cols;
  */
-  std::lock_guard<std::mutex> lck(inference_mtx_);
   return stereonet_process_->stereonet_inference(left_img, right_img,
                                                  is_nv12, points);
 }
@@ -799,6 +798,13 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
                img->header.stamp.sec, img->header.stamp.nanosec,
                (rclcpp::Time(now) - rclcpp::Time(img->header.stamp)).seconds(),
                encoding.c_str(), img->width, img->height);
+  {
+    auto pub_data = std::make_shared<pub_data_t>();
+    pub_data->ts = img->header.stamp.sec * 1e9 + img->header.stamp.nanosec;
+    pub_data->is_dummy = true;
+    pub_que_.put_silence(pub_data->ts, pub_data);
+  }
+
   if (stereo_combine_mode_ == 0) {
     stereo_img_width = img->width / 2;
     stereo_img_height = img->height;
@@ -882,9 +888,13 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
 
 void StereoNetNode::render_func() {
   while (is_running_ && rclcpp::ok()) {
-    pub_data_t pub_data;
+    std::shared_ptr<pub_data_t> pub_data;
     if (pub_que_.get(pub_data)) {
-      pub_func(pub_data);
+      if (pub_data->is_dummy) {
+        pub_que_.put_silence(pub_data->ts, pub_data);
+      } else {
+        pub_func(*pub_data);
+      }
     }
   }
 }
@@ -927,10 +937,17 @@ void StereoNetNode::inference_func() {
         right_sub_img.bgr = right_sub_img.image;
         std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
-        pub_data_t pub_data{left_sub_img, right_sub_img, points_pub, depth};
+        auto pub_data = std::make_shared<pub_data_t>();
+        pub_data->left_sub_img = left_sub_img;
+        pub_data->right_sub_img = right_sub_img;
+        pub_data->points = points_pub;
+        pub_data->depth_img = depth;
+        pub_data->ts = left_sub_img.header.stamp.sec * 1e9
+            + left_sub_img.header.stamp.nanosec;
+        pub_data->is_dummy = false;
         {
           ScopeProcessTime t("convert to depth");
-          convert_depth(pub_data);
+          convert_depth(*pub_data);
         }
         if (render_perf_) {
           int current_latency = (this->now() - inference_data.received_time).seconds() * 1000;
@@ -941,21 +958,22 @@ void StereoNetNode::inference_func() {
             //latency_list_.back() = current_latency;
             latency_list_.pop_front();
           }
-          pub_data.latency = current_latency;
-          performance_writer::Get()->record_performance(pub_data.latency);
-          pub_data.fps = performance_writer::Get()->get_fps();
-          pub_data.cpu_usage = performance_writer::Get()->get_cpu_usage();
-          pub_data.bpu_usage = performance_writer::Get()->get_bpu_usage();
+          pub_data->latency = current_latency;
+          performance_writer::Get()->record_performance(pub_data->latency);
+          pub_data->fps = performance_writer::Get()->get_fps();
+          pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
+          pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
         }
         if (inference_data.is_local_image) {
-          pub_func(pub_data);
+          pub_func(*pub_data);
         } else {
-          int que_size = pub_que_.put(pub_data);
+          int que_size = pub_que_.size();
           if (que_size > 2) {
             RCLCPP_WARN_THROTTLE(this->get_logger(),
                                  *this->get_clock(), 5000, "pub_que is full!");
-            pub_que_.pop_front();
+            pub_que_.clear();
           }
+          pub_que_.put(pub_data->ts, pub_data);
         }
 //        dump_one_point_disparity(pub_data,
 //            inference_data.right_sub_img.image, 659, 301);
@@ -1034,6 +1052,13 @@ void StereoNetNode::convert_depth(pub_data_t &pub_raw_data) {
 
 void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
   int ret = 0;
+  static uint64_t last_ts;
+  if (last_ts > pub_raw_data.ts) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "disorder find! current_ts: %f, last_ts: %f",
+                pub_raw_data.ts * 1e-9, last_ts * 1e-9);
+    return;
+  }
   if (render_perf_) {
     RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 4000,
