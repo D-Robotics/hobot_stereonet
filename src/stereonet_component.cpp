@@ -75,6 +75,7 @@ int StereoNetNode::inference(inference_data_t &inference_data,
   inference_data.right_sub_img.origin_height = right_img.rows;
   inference_data.right_sub_img.origin_width = right_img.cols;
  */
+  std::lock_guard<std::mutex> lck(inference_mtx_);
   return stereonet_process_->stereonet_inference(left_img, right_img,
                                                  is_nv12, points);
 }

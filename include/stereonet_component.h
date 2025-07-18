@@ -185,6 +185,7 @@ class StereoNetNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_;
 
  private:
+  std::mutex inference_mtx_;
   std::shared_ptr<StereonetProcess> stereonet_process_;
   void save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format);
   void save_mat_to_bin(const cv::Mat &mat, const std::string &filename);
