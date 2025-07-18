@@ -24,7 +24,7 @@ struct order_blockqueue {
     {
       std::lock_guard<std::mutex> lck(mtx);
       que[ts] = t;
-      ret = length;
+      ret = que.size();
     }
     cv.notify_one();
     return ret;
@@ -34,7 +34,7 @@ struct order_blockqueue {
     {
       std::lock_guard<std::mutex> lck(mtx);
       que[ts] = t;
-      ret = length;
+      ret = que.size();
     }
     cv.notify_one();
     return ret;
@@ -45,7 +45,7 @@ struct order_blockqueue {
     {
       std::lock_guard<std::mutex> lck(mtx);
       que[ts] = t;
-      ret = length;
+      ret = que.size();
     }
     return ret;
   }
@@ -55,7 +55,7 @@ struct order_blockqueue {
     {
       std::lock_guard<std::mutex> lck(mtx);
       que[ts] = t;
-      ret = length;
+      ret = que.size();
     }
     return ret;
   }
@@ -66,13 +66,12 @@ struct order_blockqueue {
       if (!que.empty() || cv.wait_for(
           lck, std::chrono::milliseconds(timeout_ms),
           [&]() {
-            return length > 0;
+            return que.size() > 0;
           })) {
 
         auto data = que.begin();
         t = data->second;
         que.erase(data);
-        --length;
         return true;
       }
       return false;
@@ -83,24 +82,22 @@ struct order_blockqueue {
     {
       std::lock_guard<std::mutex> lck(mtx);
       que.erase(que.begin());
-      --length;
     }
   }
 
   void clear() {
     std::lock_guard<std::mutex> lck(mtx);
     que.clear();
-    length = 0;
   }
 
   uint size() {
-    return length;
+    std::lock_guard<std::mutex> lck(mtx);
+    return que.size();
   }
 
  private:
   std::condition_variable cv;
   std::mutex mtx;
   std::map<uint64_t, T> que;
-  std::atomic_uint64_t length;
 };
 

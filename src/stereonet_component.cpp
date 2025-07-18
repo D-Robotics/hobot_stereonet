@@ -892,10 +892,11 @@ void StereoNetNode::render_func() {
     if (pub_que_.get(pub_data)) {
       if (pub_data->is_dummy) {
         pub_que_.put_silence(pub_data->ts, pub_data);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
       } else {
         pub_func(*pub_data);
       }
-    }
+    } 
   }
 }
 
