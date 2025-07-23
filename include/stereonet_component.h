@@ -161,11 +161,11 @@ class StereoNetNode : public rclcpp::Node {
   void inference_by_usb_camera();
   void inference_by_image();
 
-  int pub_depth_image(const pub_data_t &);
-  int pub_pointcloud2(const pub_data_t &);
+  int pub_depth_image(pub_data_t &);
+  int pub_pointcloud2(pub_data_t &);
   int pub_visual_image(pub_data_t &);
-  int pub_rectified_image(const pub_data_t &);
-  int pub_depth_camera_info(const pub_data_t &);
+  int pub_rectified_image(pub_data_t &);
+  int pub_depth_camera_info(pub_data_t &);
 
   void pub_sub_configuration();
 
