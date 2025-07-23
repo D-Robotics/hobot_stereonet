@@ -524,17 +524,19 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
     cv::Mat nv12_image;
 
     pub_img_msg.header = pub_raw_data.left_sub_img.header;
-    pub_img_msg.height = height;
-    pub_img_msg.width = width;
 
     if (pub_rectified_bgr_) {
       pub_img_msg.encoding = "bgr8";
       pub_img_msg.step = width * 3;
+      pub_img_msg.height = height;
+      pub_img_msg.width = width;
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
       pub_img_msg.data.resize(data_len);
       memcpy(pub_img_msg.data.data(), image.data, data_len);
     } else {
       pub_img_msg.encoding = "nv12";
+      pub_img_msg.height = height * 2 / 3;
+      pub_img_msg.width = width;
       pub_img_msg.step = width;
       if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
         nv12_data_ptr = image.ptr<uint8_t>();
@@ -559,17 +561,19 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
     cv::Mat nv12_image;
 
     pub_img_msg.header = pub_raw_data.right_sub_img.header;
-    pub_img_msg.height = height;
-    pub_img_msg.width = width;
 
     if (pub_rectified_bgr_) {
       pub_img_msg.encoding = "bgr8";
+      pub_img_msg.height = height;
+      pub_img_msg.width = width;
       pub_img_msg.step = width * 3;
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
       pub_img_msg.data.resize(data_len);
       memcpy(pub_img_msg.data.data(), image.data, data_len);
     } else {
       pub_img_msg.encoding = "nv12";
+      pub_img_msg.height = height * 2 / 3;
+      pub_img_msg.width = width;      
       pub_img_msg.step = width;
       if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
         nv12_data_ptr = image.ptr<uint8_t>();
