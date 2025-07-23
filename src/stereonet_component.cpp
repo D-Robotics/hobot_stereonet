@@ -82,7 +82,7 @@ int StereoNetNode::inference(inference_data_t &inference_data,
 int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
   sensor_msgs::msg::Image depth_img_msg;
-  const cv::Mat &depth_img = pub_raw_data.depth_img;
+  const cv::Mat &depth_img = pub_raw_data.model_depth_img;
 
   if (depth_image_pub_->get_subscription_count() > 0) {
     img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
@@ -206,7 +206,7 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   cv::Mat bgr_image;
   bgr_image = pub_raw_data.left_sub_img.bgr;
   double font_scale = 0.5 * bgr_image.cols / 640;
- 
+
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
 
   int step_num = 6;
@@ -526,20 +526,22 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
 
     if (pub_rectified_bgr_) {
       pub_img_msg.encoding = "bgr8";
-      pub_img_msg.step = width * 3;
       pub_img_msg.height = height;
       pub_img_msg.width = width;
+      pub_img_msg.step = width * 3;
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
       pub_img_msg.data.resize(data_len);
       memcpy(pub_img_msg.data.data(), image.data, data_len);
     } else {
       pub_img_msg.encoding = "nv12";
-      pub_img_msg.height = height * 2 / 3;
-      pub_img_msg.width = width;
       pub_img_msg.step = width;
       if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        pub_img_msg.height = height / 3 * 2;
+        pub_img_msg.width = width;
         nv12_data_ptr = image.ptr<uint8_t>();
       } else {
+        pub_img_msg.height = height;
+        pub_img_msg.width = width;
         nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
         image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
         nv12_data_ptr = nv12_image.ptr<uint8_t>();
@@ -571,12 +573,15 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
       memcpy(pub_img_msg.data.data(), image.data, data_len);
     } else {
       pub_img_msg.encoding = "nv12";
-      pub_img_msg.height = height * 2 / 3;
-      pub_img_msg.width = width;      
+
       pub_img_msg.step = width;
       if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        pub_img_msg.height = height / 3 * 2;
+        pub_img_msg.width = width;
         nv12_data_ptr = image.ptr<uint8_t>();
       } else {
+        pub_img_msg.height = height;
+        pub_img_msg.width = width;
         nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
         image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
         nv12_data_ptr = nv12_image.ptr<uint8_t>();
@@ -900,7 +905,7 @@ void StereoNetNode::render_func() {
       } else {
         pub_func(*pub_data);
       }
-    } 
+    }
   }
 }
 
