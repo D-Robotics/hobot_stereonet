@@ -1087,17 +1087,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
         "fps: %d, latency: %dms, cpu_usage: %d%, bpu_usage: %d%",
         pub_raw_data.fps, pub_raw_data.latency, pub_raw_data.cpu_usage, pub_raw_data.bpu_usage);
   }
-  {
-    if (pointcloud2_pub_->get_subscription_count() > 0 ||
-        visual_image_pub_->get_subscription_count() > 0) {
-      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-        image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
-                                      pub_raw_data.left_sub_img.bgr);
-        //image_conversion::nv12_to_bgr(pub_raw_data.right_sub_img.image,
-        //    pub_raw_data.right_sub_img.bgr);
-      }
-    }
-  }
+
   {
     ScopeProcessTime t("pub_visual");
     ret = pub_visual_image(pub_raw_data);
