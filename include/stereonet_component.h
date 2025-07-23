@@ -40,6 +40,8 @@
 #include "image_conversion.h"
 #include "performance_record.h"
 
+#include "oroder_blockqueue.h"
+
 namespace fs = std::filesystem;
 
 namespace stereonet {
@@ -75,6 +77,8 @@ class StereoNetNode : public rclcpp::Node {
     cv::Mat model_depth_img;
     int fps, latency;
     int cpu_usage, bpu_usage;
+    bool is_dummy;
+    uint64_t ts;
   };
 
   StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
@@ -174,7 +178,7 @@ class StereoNetNode : public rclcpp::Node {
   std::vector<std::shared_ptr<std::thread>> render_thread_;
 
   blockqueue<inference_data_t> inference_que_;
-  blockqueue<pub_data_t> pub_que_;
+  order_blockqueue<std::shared_ptr<pub_data_t>> pub_que_;
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_;
 
@@ -185,7 +189,8 @@ class StereoNetNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_;
 
  private:
-  std::mutex inference_mtx_;
+  std::mutex order_set_mtx_;
+  std::set<uint64_t> pub_order_set_;
   std::shared_ptr<StereonetProcess> stereonet_process_;
   void save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format);
   void save_mat_to_bin(const cv::Mat &mat, const std::string &filename);
