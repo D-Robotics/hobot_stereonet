@@ -79,7 +79,7 @@ int StereoNetNode::inference(inference_data_t &inference_data,
                                                  is_nv12, points);
 }
 
-int StereoNetNode::pub_depth_image(const pub_data_t &pub_raw_data) {
+int StereoNetNode::pub_depth_image(pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
   sensor_msgs::msg::Image depth_img_msg;
   const cv::Mat &depth_img = pub_raw_data.model_depth_img;
@@ -204,10 +204,14 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   const std::vector<float> &points = pub_raw_data.points;
   cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
-  bgr_image = pub_raw_data.left_sub_img.bgr;
-  double font_scale = 0.5 * bgr_image.cols / 640;
 
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
+  double font_scale = 0.5 * bgr_image.cols / 640;
+  if (pub_raw_data.left_sub_img.bgr.empty()) {
+    image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
+                                  pub_raw_data.left_sub_img.bgr);
+  }
+  bgr_image = pub_raw_data.left_sub_img.bgr;
 
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
@@ -513,37 +517,40 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   return 0;
 }
 
-int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
+int StereoNetNode::pub_rectified_image(pub_data_t &pub_raw_data) {
   if (rectified_image_pub_->get_subscription_count() > 0) {
     sensor_msgs::msg::Image pub_img_msg;
     const cv::Mat &image = pub_raw_data.left_sub_img.image;
-    int height = image.rows;
-    int width = image.cols;
     const uint8_t *nv12_data_ptr = nullptr;
     cv::Mat nv12_image;
 
     pub_img_msg.header = pub_raw_data.left_sub_img.header;
 
     if (pub_rectified_bgr_) {
+      if (pub_raw_data.left_sub_img.bgr.empty()) {
+        image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
+                                      pub_raw_data.left_sub_img.bgr);
+      }
+      const cv::Mat &bgr_image = pub_raw_data.left_sub_img.bgr;
       pub_img_msg.encoding = "bgr8";
-      pub_img_msg.height = height;
-      pub_img_msg.width = width;
-      pub_img_msg.step = width * 3;
+      pub_img_msg.height = bgr_image.rows;
+      pub_img_msg.width = bgr_image.cols;
+      pub_img_msg.step = pub_img_msg.width * 3;
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
       pub_img_msg.data.resize(data_len);
-      memcpy(pub_img_msg.data.data(), image.data, data_len);
+      memcpy(pub_img_msg.data.data(), bgr_image.data, data_len);
     } else {
       pub_img_msg.encoding = "nv12";
-      pub_img_msg.step = width;
+      pub_img_msg.step = pub_img_msg.width;
       if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-        pub_img_msg.height = height / 3 * 2;
-        pub_img_msg.width = width;
+        pub_img_msg.height = image.rows / 3 * 2;
+        pub_img_msg.width = image.cols;
         nv12_data_ptr = image.ptr<uint8_t>();
       } else {
-        pub_img_msg.height = height;
-        pub_img_msg.width = width;
-        nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
-        image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
+        pub_img_msg.height = image.rows;
+        pub_img_msg.width = image.cols;
+        nv12_image = cv::Mat(pub_img_msg.height * 3 / 2, pub_img_msg.width, CV_8UC1);
+        image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, pub_img_msg.width, pub_img_msg.height);
         nv12_data_ptr = nv12_image.ptr<uint8_t>();
       }
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
@@ -556,34 +563,36 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
   if (rectified_right_image_pub_->get_subscription_count() > 0) {
     sensor_msgs::msg::Image pub_img_msg;
     const cv::Mat &image = pub_raw_data.right_sub_img.image;
-    int height = image.rows;
-    int width = image.cols;
     const uint8_t *nv12_data_ptr = nullptr;
     cv::Mat nv12_image;
 
     pub_img_msg.header = pub_raw_data.right_sub_img.header;
 
     if (pub_rectified_bgr_) {
+      if (pub_raw_data.right_sub_img.bgr.empty()) {
+        image_conversion::nv12_to_bgr(pub_raw_data.right_sub_img.image,
+                                      pub_raw_data.right_sub_img.bgr);
+      }
+      const cv::Mat &bgr_image = pub_raw_data.right_sub_img.bgr;
       pub_img_msg.encoding = "bgr8";
-      pub_img_msg.height = height;
-      pub_img_msg.width = width;
-      pub_img_msg.step = width * 3;
+      pub_img_msg.height = bgr_image.rows;
+      pub_img_msg.width = bgr_image.cols;
+      pub_img_msg.step = pub_img_msg.width * 3;
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3;
       pub_img_msg.data.resize(data_len);
-      memcpy(pub_img_msg.data.data(), image.data, data_len);
+      memcpy(pub_img_msg.data.data(), bgr_image.data, data_len);
     } else {
       pub_img_msg.encoding = "nv12";
-
-      pub_img_msg.step = width;
-      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-        pub_img_msg.height = height / 3 * 2;
-        pub_img_msg.width = width;
+      pub_img_msg.step = pub_img_msg.width;
+      if (pub_raw_data.right_sub_img.image_type == sub_image_type::NV12) {
+        pub_img_msg.height = image.rows / 3 * 2;
+        pub_img_msg.width = image.cols;
         nv12_data_ptr = image.ptr<uint8_t>();
       } else {
-        pub_img_msg.height = height;
-        pub_img_msg.width = width;
-        nv12_image = cv::Mat(height * 3 / 2, width, CV_8UC1);
-        image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, width, height);
+        pub_img_msg.height = image.rows;
+        pub_img_msg.width = image.cols;
+        nv12_image = cv::Mat(pub_img_msg.height * 3 / 2, pub_img_msg.width, CV_8UC1);
+        image_conversion::bgr24_to_nv12_neon(image.data, nv12_image.data, pub_img_msg.width, pub_img_msg.height);
         nv12_data_ptr = nv12_image.ptr<uint8_t>();
       }
       size_t data_len = pub_img_msg.width * pub_img_msg.height * 3 / 2;
@@ -598,14 +607,17 @@ int StereoNetNode::pub_rectified_image(const pub_data_t &pub_raw_data) {
   return 0;
 }
 
-int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
+int StereoNetNode::pub_pointcloud2(pub_data_t &pub_raw_data) {
   uint32_t point_size = 0;
-  const cv::Mat &image = pub_raw_data.left_sub_img.bgr;
   const cv::Mat &depth_img = pub_raw_data.model_depth_img;
   uint16_t *depth_ptr = reinterpret_cast<uint16_t *>(depth_img.data);
 
   if (pointcloud2_pub_->get_subscription_count() < 1) return 0;
-
+  if (pub_raw_data.left_sub_img.bgr.empty()) {
+    image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
+                                  pub_raw_data.left_sub_img.bgr);
+  }
+  const cv::Mat &image = pub_raw_data.left_sub_img.bgr;
   sensor_msgs::msg::PointCloud2 point_cloud_msg;
   sensor_msgs::PointCloud2Modifier modifier(point_cloud_msg);
 
@@ -702,7 +714,7 @@ int StereoNetNode::pub_pointcloud2(const pub_data_t &pub_raw_data) {
   return 0;
 }
 
-int StereoNetNode::pub_depth_camera_info(const pub_data_t &pub_raw_data) {
+int StereoNetNode::pub_depth_camera_info(pub_data_t &pub_raw_data) {
   sensor_msgs::msg::CameraInfo depth_camera_info;
   if (depth_camera_info_pub_->get_subscription_count() < 1) return 0;
   depth_camera_info.height = pub_raw_data.model_depth_img.rows;
@@ -1075,17 +1087,7 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
         "fps: %d, latency: %dms, cpu_usage: %d%, bpu_usage: %d%",
         pub_raw_data.fps, pub_raw_data.latency, pub_raw_data.cpu_usage, pub_raw_data.bpu_usage);
   }
-  {
-    if (pointcloud2_pub_->get_subscription_count() > 0 ||
-        visual_image_pub_->get_subscription_count() > 0) {
-      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
-        image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
-                                      pub_raw_data.left_sub_img.bgr);
-        //image_conversion::nv12_to_bgr(pub_raw_data.right_sub_img.image,
-        //    pub_raw_data.right_sub_img.bgr);
-      }
-    }
-  }
+
   {
     ScopeProcessTime t("pub_visual");
     ret = pub_visual_image(pub_raw_data);
