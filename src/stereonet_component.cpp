@@ -725,7 +725,7 @@ int StereoNetNode::pub_depth_camera_info(const pub_data_t &pub_raw_data) {
   };
 
   depth_camera_info.p = {
-      camera_fx, 0.f, camera_cx, camera_fx * base_line,
+      camera_fx, 0.f, camera_cx, 0.f,
       0.f, camera_fy, camera_cy, 0.f,
       0.f, 0.f, 1.f, 0.f
   };
