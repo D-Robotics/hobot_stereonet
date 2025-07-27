@@ -88,6 +88,7 @@ int StereoNetNode::pub_depth_image(pub_data_t &pub_raw_data) {
     img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
                                     "mono16", depth_img);
     img_bridge.toImageMsg(depth_img_msg);
+    depth_img_msg.header.frame_id = "camera_depth_frame";
     depth_image_pub_->publish(depth_img_msg);
   }
 
@@ -100,6 +101,7 @@ int StereoNetNode::pub_depth_image(pub_data_t &pub_raw_data) {
     depth_compressed_img_msg.data.reserve(compressed_png.size());
     depth_compressed_img_msg.data.insert(depth_compressed_img_msg.data.end(),
                                          compressed_png.begin(), compressed_png.end());
+    depth_compressed_img_msg.header.frame_id = "camera_depth_frame";
     depthcompressed_image_pub_->publish(depth_compressed_img_msg);
   }
 
@@ -622,6 +624,7 @@ int StereoNetNode::pub_pointcloud2(pub_data_t &pub_raw_data) {
   sensor_msgs::PointCloud2Modifier modifier(point_cloud_msg);
 
   point_cloud_msg.header = pub_raw_data.left_sub_img.header;
+  point_cloud_msg.header.frame_id = "camera_link";
   point_cloud_msg.is_dense = false;
   point_cloud_msg.fields.resize(4);
   point_cloud_msg.fields[0].name = "x";
@@ -1086,6 +1089,18 @@ void StereoNetNode::pub_func(pub_data_t &pub_raw_data) {
         this->get_logger(), *this->get_clock(), 4000,
         "fps: %d, latency: %dms, cpu_usage: %d%, bpu_usage: %d%",
         pub_raw_data.fps, pub_raw_data.latency, pub_raw_data.cpu_usage, pub_raw_data.bpu_usage);
+  }
+
+  {
+    if (pointcloud2_pub_->get_subscription_count() > 0 ||
+        visual_image_pub_->get_subscription_count() > 0) {
+      if (pub_raw_data.left_sub_img.image_type == sub_image_type::NV12) {
+        image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
+                                      pub_raw_data.left_sub_img.bgr);
+        //image_conversion::nv12_to_bgr(pub_raw_data.right_sub_img.image,
+        //    pub_raw_data.right_sub_img.bgr);
+      }
+    }
   }
 
   {
@@ -1703,6 +1718,30 @@ void StereoNetNode::camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstShar
 
   RCLCPP_WARN_ONCE(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m",
                    camera_fx, camera_fy, camera_cx, camera_cy, base_line);
+}
+
+void StereoNetNode::publish_static_tf()
+{
+  static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+  geometry_msgs::msg::TransformStamped t;
+  t.header.stamp = now();
+  t.header.frame_id = "camera_link";
+  t.child_frame_id = "camera_depth_frame";
+
+  t.transform.translation.x = 0.0;
+  t.transform.translation.y = 0.0;
+  t.transform.translation.z = 0.0;
+
+  tf2::Quaternion q;
+  q.setRPY(-M_PI / 2, 0, -M_PI / 2);
+  q.normalize();
+
+  t.transform.rotation.x = q.x();
+  t.transform.rotation.y = q.y();
+  t.transform.rotation.z = q.z();
+  t.transform.rotation.w = q.w();
+
+  static_broadcaster_->sendTransform(t);
 }
 
 }

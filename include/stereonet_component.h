@@ -37,6 +37,10 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
 
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2/LinearMath/Quaternion.h>
+
 #include "image_conversion.h"
 #include "performance_record.h"
 
@@ -89,6 +93,7 @@ class StereoNetNode : public rclcpp::Node {
     if (start() != 0) {
       RCLCPP_FATAL(get_logger(), "Node start failed");
     }
+    publish_static_tf();
     userColor_.create(256, 1, CV_8UC3); // 256 × 1 的 CV_8UC3 矩阵
     userColor_.at<cv::Vec3b>(0) = 0;
     int s;
@@ -145,6 +150,7 @@ class StereoNetNode : public rclcpp::Node {
     stop();
   }
 
+  void publish_static_tf();
   void parameter_configuration();
   void camera_config_parse(const std::string &file_path,
                            int model_input_w, int model_input_h);
@@ -273,6 +279,8 @@ class StereoNetNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compare_left_sub_;
 
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
+
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_;
 
   void d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg);
   void c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg);
