@@ -206,15 +206,13 @@ int StereoNetNode::pub_visual_image(pub_data_t &pub_raw_data) {
   const std::vector<float> &points = pub_raw_data.points;
   cv::Mat &depth_img = pub_raw_data.model_depth_img;
   cv::Mat bgr_image;
-
   if (visual_image_pub_->get_subscription_count() < 1 && !save_image_all_) return 0;
-  double font_scale = 0.5 * bgr_image.cols / 640;
   if (pub_raw_data.left_sub_img.bgr.empty()) {
     image_conversion::nv12_to_bgr(pub_raw_data.left_sub_img.image,
                                   pub_raw_data.left_sub_img.bgr);
   }
   bgr_image = pub_raw_data.left_sub_img.bgr;
-
+  double font_scale = 0.5 * bgr_image.cols / 640;
   int step_num = 6;
   int x_step = bgr_image.cols / step_num;
   int y_step = bgr_image.rows / step_num;
