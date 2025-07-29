@@ -557,6 +557,7 @@ int StereoNetNode::pub_rectified_image(pub_data_t &pub_raw_data) {
       pub_img_msg.data.resize(data_len);
       memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
     }
+    pub_img_msg.header.frame_id = "camera_depth_frame";
     rectified_image_pub_->publish(pub_img_msg);
   }
 
@@ -599,6 +600,7 @@ int StereoNetNode::pub_rectified_image(pub_data_t &pub_raw_data) {
       pub_img_msg.data.resize(data_len);
       memcpy(pub_img_msg.data.data(), nv12_data_ptr, data_len);
     }
+    pub_img_msg.header.frame_id = "camera_right_frame";
     rectified_right_image_pub_->publish(pub_img_msg);
   }
   RCLCPP_WARN_ONCE(this->get_logger(),
@@ -721,6 +723,7 @@ int StereoNetNode::pub_depth_camera_info(pub_data_t &pub_raw_data) {
   depth_camera_info.height = pub_raw_data.model_depth_img.rows;
   depth_camera_info.width = pub_raw_data.model_depth_img.cols;
   depth_camera_info.header = pub_raw_data.left_sub_img.header;
+  depth_camera_info.header.frame_id = "camera_depth_frame";
 
   depth_camera_info.distortion_model = "plumb_bob";
   depth_camera_info.d.resize(5, 0.f);
