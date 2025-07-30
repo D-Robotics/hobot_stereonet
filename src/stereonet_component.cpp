@@ -870,8 +870,8 @@ void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img
     }
     left_sub_img.image = left_img.clone();
     right_sub_img.image = right_img.clone();
-    left_sub_img.bgr = left_sub_img.image;
-    right_sub_img.bgr = right_sub_img.image;
+    //left_sub_img.bgr = left_sub_img.image;
+    //right_sub_img.bgr = right_sub_img.image;
   } else if (left_sub_img.image_type == sub_image_type::NV12) {
     if (stereo_combine_mode_ == 0) {
       RCLCPP_FATAL(this->get_logger(), "Horizontal stitching is unsupported for NV12-encoded images."
@@ -959,8 +959,10 @@ void StereoNetNode::inference_func() {
         sub_image right_sub_img = inference_data.right_sub_img;
         left_sub_img.image = inference_data.left_sub_img.image.clone();
         right_sub_img.image = inference_data.right_sub_img.image.clone();
-        left_sub_img.bgr = left_sub_img.bgr.clone();
-        right_sub_img.bgr = right_sub_img.bgr.clone();
+        if (left_sub_img.image_type == sub_image_type::BGR) {
+          left_sub_img.bgr = left_sub_img.image;
+          right_sub_img.bgr = right_sub_img.image;
+        }
         std::vector<float> points_pub = std::move(points);
         cv::Mat depth;
         auto pub_data = std::make_shared<pub_data_t>();
