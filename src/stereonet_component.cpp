@@ -1707,6 +1707,8 @@ void StereoNetNode::camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstShar
   camera_cy = camera_info_msg->p[6];
   base_line = camera_info_msg->p[3] / camera_fx;
 
+  if (base_line > 1) base_line *= 0.001f; // convert mm to m
+
   RCLCPP_WARN_ONCE(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m",
                    camera_fx, camera_fy, camera_cx, camera_cy, base_line);
 }
