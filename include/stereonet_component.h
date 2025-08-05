@@ -163,7 +163,8 @@ class StereoNetNode : public rclcpp::Node {
   int start();
   int stop();
 
-  void stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img);
+  // Subscriber ConstSharedPtr type msg to avoid memory copy
+  void stereo_image_cb(sensor_msgs::msg::Image::ConstSharedPtr img);
   void inference_by_usb_camera();
   void inference_by_image();
 

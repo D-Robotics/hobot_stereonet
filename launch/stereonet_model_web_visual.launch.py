@@ -52,7 +52,7 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "mipi_frame_ts_type": "sensor",
+            # "mipi_frame_ts_type": "sensor", # default is sensor in mipi_cam launch
             "frame_id": "pcl_link",
             "log_level": "warn",
         }.items(),
