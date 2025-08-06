@@ -27,7 +27,9 @@ from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
-
+from ament_index_python.packages import get_package_prefix
+from launch.substitutions import TextSubstitution
+import os
 
 def generate_launch_description():
     stereonet_pub_web_arg = DeclareLaunchArgument(
@@ -50,6 +52,11 @@ def generate_launch_description():
             )
         )
     )
+
+    config_file_path = os.path.join(
+        get_package_prefix('mipi_cam'),
+        "lib/mipi_cam/config/")
+    print("config_file_path is ", config_file_path)
 
     # 创建组件容器（关键步骤）
     container = ComposableNodeContainer(
@@ -76,18 +83,25 @@ def generate_launch_description():
         plugin="mipi_cam::MipiCamNode",
         name="mipi_cam_component",
         parameters=[
-            {"mipi_frame_ts_type": "sensor"},
-            {"frame_id": "pcl_link"},
-            {"device_mode": "dual"},
-            {"dual_combine": 1},
-            {"image_width": LaunchConfiguration("mipi_image_width")},
-            {"image_height": LaunchConfiguration("mipi_image_height")},
-            {"framerate": LaunchConfiguration("mipi_image_framerate")},
-            {"lpwm_enable": LaunchConfiguration("mipi_lpwm_enable")},
-            {"rotation": LaunchConfiguration("mipi_rotation")},
-            {"gdc_enable": LaunchConfiguration("mipi_gdc_enable")},
-            {"channel": 2},
-            {"channel2": 0},
+            {"config_path": LaunchConfiguration('mipi_config_path')},
+            {"camera_calibration_file_path": LaunchConfiguration(
+                'mipi_camera_calibration_file_path')},
+            {"out_format": LaunchConfiguration('mipi_out_format')},
+            {"image_width": LaunchConfiguration('mipi_image_width')},
+            {"image_height": LaunchConfiguration('mipi_image_height')},
+            {"framerate": LaunchConfiguration('mipi_image_framerate')},
+            {"io_method": LaunchConfiguration('mipi_io_method')},
+            {"video_device": LaunchConfiguration('mipi_video_device')},
+            {"device_mode": LaunchConfiguration('device_mode')},
+            {"gdc_bin_file": LaunchConfiguration('mipi_gdc_bin_file')},
+            {"dual_combine": LaunchConfiguration('dual_combine')},
+            {"lpwm_enable": LaunchConfiguration('mipi_lpwm_enable')},
+            {"channel": LaunchConfiguration('mipi_channel')},
+            {"channel2": LaunchConfiguration('mipi_channel2')},
+            {"frame_ts_type": LaunchConfiguration('mipi_frame_ts_type')},
+            {"rotation": LaunchConfiguration('mipi_rotation')},
+            {"gdc_enable": LaunchConfiguration('mipi_gdc_enable')},
+            {"frame_id": LaunchConfiguration('frame_id')},
         ],
         extra_arguments=[{"use_intra_process_comms": True}],
     )
@@ -142,6 +156,83 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "mipi_config_path", 
+                default_value=TextSubstitution(text=str(config_file_path)),
+                description='mipi camera calibration file path'),
+            DeclareLaunchArgument(
+                'mipi_camera_calibration_file_path',
+                default_value=TextSubstitution(text=str(config_file_path)+"calib_params.yaml"),
+                description='mipi camera calibration file path'),
+            DeclareLaunchArgument(
+                'mipi_out_format',
+                default_value='nv12',
+                description='mipi camera out format'),
+            DeclareLaunchArgument(
+                'mipi_image_width',
+                default_value='1280',
+                description='mipi camera out image width'),
+            DeclareLaunchArgument(
+                'mipi_image_height',
+                default_value='720',
+                description='mipi camera out image height'),
+            DeclareLaunchArgument(
+                'mipi_image_framerate',
+                default_value='10.0',
+                description='mipi camera out image framerate'),
+            DeclareLaunchArgument(
+                'mipi_io_method',
+                default_value='ros',
+                description='mipi camera out io_method'),
+            DeclareLaunchArgument(
+                'mipi_video_device',
+                default_value='default',
+                description='mipi camera device'),
+            DeclareLaunchArgument(
+                'device_mode',
+                default_value='dual',
+                description='mipi camera device mode single or dual'),
+            DeclareLaunchArgument(
+                'dual_combine',
+                default_value='1',
+                description='dual mode output channel'),
+            DeclareLaunchArgument(
+                'mipi_channel',
+                default_value='2',
+                description='mipi camera host channel'),
+            DeclareLaunchArgument(
+                'mipi_channel2',
+                default_value='0',
+                description='mipi dual camera right channel'),
+            DeclareLaunchArgument(
+                'mipi_frame_ts_type',
+                default_value='sensor',
+                description='type(sensor/realtime) of timestamp for publishing messages'),
+            DeclareLaunchArgument(
+                'frame_id',
+                default_value='default_cam',
+                description=''),
+            DeclareLaunchArgument(
+                'mipi_gdc_bin_file',
+                default_value='',
+                description='mipi camera gdc bin_file'),
+            DeclareLaunchArgument(
+                'mipi_lpwm_enable',
+                default_value='False',
+                description='mipi dual camera lpwm enable'),
+            DeclareLaunchArgument(
+                'mipi_rotation',
+                default_value='0.0',
+                description='mipi camera out image rotation'),
+            DeclareLaunchArgument(
+                'mipi_gdc_enable',
+                default_value='True',
+                description='mipi camera gdc enable'),
+            DeclareLaunchArgument(
+                'log_level',
+                default_value='warn',
+                description='log level'),
+
             DeclareLaunchArgument(
                 "mipi_image_width",
                 default_value="640",

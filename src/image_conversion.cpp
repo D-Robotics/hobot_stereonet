@@ -16,7 +16,7 @@
 #include <cstdint>
 #include "image_conversion.h"
 
-void image_conversion::nv12_to_bgr24_neon(uint8_t *nv12, uint8_t *bgr24, int width, int height) {
+void image_conversion::nv12_to_bgr24_neon(const uint8_t *nv12, uint8_t *bgr24, int width, int height) {
   const uint8_t *yptr = nv12;
   const uint8_t *uvptr = nv12 + width * height;
   uint8x8_t _v128 = vdup_n_u8(128);

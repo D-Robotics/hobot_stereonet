@@ -81,15 +81,20 @@ int StereoNetNode::inference(inference_data_t &inference_data,
 
 int StereoNetNode::pub_depth_image(pub_data_t &pub_raw_data) {
   cv_bridge::CvImage img_bridge;
-  sensor_msgs::msg::Image depth_img_msg;
+  // Publish unique ptr to avoid memory copy
+  // Skip msg initialization to avoid extra time cost
+  auto depth_img_msg = std::make_unique<sensor_msgs::msg::Image>(
+      rosidl_runtime_cpp::MessageInitialization::SKIP
+    );
+
   const cv::Mat &depth_img = pub_raw_data.model_depth_img;
 
   if (depth_image_pub_->get_subscription_count() > 0) {
     img_bridge = cv_bridge::CvImage(pub_raw_data.left_sub_img.header,
                                     "mono16", depth_img);
-    img_bridge.toImageMsg(depth_img_msg);
-    depth_img_msg.header.frame_id = "camera_depth_frame";
-    depth_image_pub_->publish(depth_img_msg);
+    img_bridge.toImageMsg(*depth_img_msg);
+    depth_img_msg->header.frame_id = "camera_depth_frame";
+    depth_image_pub_->publish(std::move(depth_img_msg));
   }
 
   if (depthcompressed_image_pub_->get_subscription_count() > 0) {
@@ -620,9 +625,10 @@ int StereoNetNode::pub_pointcloud2(pub_data_t &pub_raw_data) {
                                   pub_raw_data.left_sub_img.bgr);
   }
   const cv::Mat &image = pub_raw_data.left_sub_img.bgr;
-  sensor_msgs::msg::PointCloud2 point_cloud_msg;
-  sensor_msgs::PointCloud2Modifier modifier(point_cloud_msg);
-
+  auto pcl_msg = std::make_unique<sensor_msgs::msg::PointCloud2>(
+      rosidl_runtime_cpp::MessageInitialization::SKIP
+    );
+  sensor_msgs::msg::PointCloud2& point_cloud_msg = *pcl_msg;
   point_cloud_msg.header = pub_raw_data.left_sub_img.header;
   point_cloud_msg.header.frame_id = "camera_link";
   point_cloud_msg.is_dense = false;
@@ -712,7 +718,7 @@ int StereoNetNode::pub_pointcloud2(pub_data_t &pub_raw_data) {
 //  }
   {
     ScopeProcessTime t("pcd publisher");
-    pointcloud2_pub_->publish(point_cloud_msg);
+    pointcloud2_pub_->publish(std::move(pcl_msg));
   }
   return 0;
 }
@@ -809,7 +815,7 @@ void save_images(cv::Mat &left_img, cv::Mat &right_img, uint64_t ts,
   //cv::imwrite("./images/cam_combine/data/combine_" + image_seq + "." + image_format, image_combine);
 }
 
-void StereoNetNode::stereo_image_cb(const sensor_msgs::msg::Image::SharedPtr img) {
+void StereoNetNode::stereo_image_cb(sensor_msgs::msg::Image::ConstSharedPtr img) {
   cv::Mat stereo_img, left_img, right_img;
   sub_image left_sub_img, right_sub_img;
   const std::string &encoding = img->encoding;

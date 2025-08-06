@@ -113,6 +113,7 @@ def generate_launch_description():
                     plugin="stereonet::StereoNetNode",
                     name="StereoNetNode",
                     parameters=[set_configurable_parameters(node_params)],
+                    extra_arguments=[{"use_intra_process_comms": True}],
                 )
             ]
         )
