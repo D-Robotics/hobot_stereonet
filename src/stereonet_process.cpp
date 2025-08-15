@@ -315,6 +315,20 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
                                Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
       result.noalias() += matrix_disp.cwiseProduct(matrix_spx.cast<float>());
     }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32
+      && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    // get tensor info
+    int32_t *disp = reinterpret_cast<int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    int16_t *spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    // multiply element-wise and then add in the c channel
+    for (int i = 0; i < c_dim; ++i) {
+      Eigen::Map<Eigen::Matrix<int32_t,
+                               Eigen::Dynamic, Eigen::Dynamic>> matrix_disp(disp + i * h_dim * w_dim, h_dim, w_dim);
+      Eigen::Map<Eigen::Matrix<int16_t,
+                               Eigen::Dynamic, Eigen::Dynamic>> matrix_spx(spx + i * h_dim * w_dim, h_dim, w_dim);
+      result.noalias() += matrix_disp.cast<float>().cwiseProduct(matrix_spx.cast<float>());
+    }
   } else {
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
                        "=> output tensor type unsupported! tensor[0]: "
@@ -514,6 +528,44 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
         vst1q_f32(result_ptr + j, vmulq_n_f32(vld1q_f32(result_ptr + j), scale_factor));
       }
     }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32
+    && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
+    float *disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    float *spx = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    for (int32_t i = 0; i < spx_c_dim; ++i) {
+      for (int32_t y = 0; y < spx_h_dim; ++y) {
+        int32_t idx_y = y / scale_h;
+        int32_t output_offset = spx_w_dim * y;
+        for (int32_t x = 0; x < spx_w_dim; x += 4) {
+          int32_t idx_x = x / scale_w;
+
+          // 1. 加载 spx float32 权重
+          float32x4_t spx_f32 = vld1q_f32(&spx[y * spx_w_dim + x]);
+
+          // 2. 加载 disp float32 标量并广播
+          float disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
+          float32x4_t disp_f32 = vdupq_n_f32(disp_val_scalar);
+
+          // 3. 执行乘法并累加到 result 中
+          float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
+          float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
+          float32x4_t updated_output = vaddq_f32(current_output, mul_result);
+          vst1q_f32(&result_ptr[output_offset + x], updated_output);
+        }
+      }
+
+      disp += total_disp_size;
+      spx += total_size;
+    }
+
+    if (scale_factor != 1.0f) {
+      for (int32_t j = 0; j < total_size; j += 4) {
+        float32x4_t cur = vld1q_f32(result_ptr + j);
+        float32x4_t scaled = vmulq_n_f32(cur, scale_factor);
+        vst1q_f32(result_ptr + j, scaled);
+      }
+    }
   } else {
     RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
                        "=> output tensor type unsupported! tensor[0]: "
@@ -523,6 +575,35 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
   }
   return 0;
 }
+
+int postprocess_v2_1_s100(std::vector<hbDNNTensor> &tensors,
+                     std::vector<float> &points,
+                     int max_disp,
+                     float uncertainty_th) {
+  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  // int32_t c_dim = disp_shape[1];
+  int32_t h_dim = disp_shape[2];
+  int32_t w_dim = disp_shape[3];
+  std::vector<float> infer_points;
+  std::vector<hbDNNTensor> infer_disp_tensor(tensors.begin(), tensors.begin() + 2);
+  postprocess_v2(infer_disp_tensor, infer_points, max_disp);
+
+  if (uncertainty_th > 0.0f) {
+    std::vector<hbDNNTensor> init_disp_tensor(tensors.begin() + 2, tensors.begin() + 4);
+    std::vector<float> init_points;
+    postprocess_v2(init_disp_tensor, init_points, max_disp);
+
+    cv::Mat mask, uncert, infer_disp, init_disp;
+    infer_disp = cv::Mat(h_dim, w_dim, CV_32FC1, infer_points.data());
+    init_disp = cv::Mat(h_dim, w_dim, CV_32FC1, init_points.data());
+    uncert = cv::abs(init_disp - infer_disp) / init_disp;
+    cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+    infer_disp = infer_disp.mul(mask);
+  }
+  points = std::move(infer_points);
+  return 0;
+}
+
 
 static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle) {
   int32_t i = 0, j = 0;
@@ -918,6 +999,8 @@ int StereonetProcess::stereonet_inference(
     postprocess_v2_2(output_tensors_[idle_tensor_id], points, max_disp_);
   } else if (postprocess_ == "v2.3") {
     postprocess_v2_3(output_tensors_[idle_tensor_id], points, max_disp_);
+  } else if (postprocess_ == "v2.1_s100") {
+    postprocess_v2_1_s100(output_tensors_[idle_tensor_id], points, max_disp_, uncertainty_th_);
   }
   return StereonetErrorCode::OK;
 }

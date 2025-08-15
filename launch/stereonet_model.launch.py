@@ -37,7 +37,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'x5baseplus_alldata_woIsaac.bin'
+        'DStereoV2.0.bin'
     )
 
     local_image_path =  os.path.join(
@@ -109,12 +109,12 @@ def generate_launch_description():
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     ))
 
-    boost = ExecuteProcess(
-        cmd=[[
-            'echo 1 > /sys/devices/system/cpu/cpufreq/boost '
-        ]],
-        shell=True
-    )
-    launch.append(boost)
+    #boost = ExecuteProcess(
+    #    cmd=[[
+    #        'echo 1 > /sys/devices/system/cpu/cpufreq/boost '
+    #    ]],
+    #    shell=True
+    #)
+    #launch.append(boost)
 
     return LaunchDescription(launch)

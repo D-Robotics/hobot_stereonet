@@ -42,6 +42,12 @@ def generate_launch_description():
         description='stereonet_pub_web, if not, we will disable websocket and codec of stereonet depth'
     ))
 
+    node_list.append(DeclareLaunchArgument(
+        'use_mipi_cam',
+        default_value='True',
+        description='use_mipi_cam'
+    ))
+
 
     # mipi双目相机
     dual_mipi_cam = IncludeLaunchDescription(
@@ -56,7 +62,13 @@ def generate_launch_description():
             "frame_id": "pcl_link",
             "log_level": "warn",
         }.items(),
-        condition=UnlessCondition(LaunchConfiguration('use_local_image'))
+        condition=IfCondition(
+            PythonExpression([
+                LaunchConfiguration('use_mipi_cam'),
+                ' and ',
+                'not ', LaunchConfiguration('use_local_image')
+            ])
+        )
     )
 
     node_list.append(dual_mipi_cam)

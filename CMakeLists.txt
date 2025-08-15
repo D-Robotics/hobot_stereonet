@@ -78,10 +78,12 @@ set(DNN_LIBS "")
 if(PLATFORM_S100)
   message("hobot_stereonet build platform S100")
   add_definitions(-DPLATFORM_S100)
+  set(LAUNCH_DIR "s100")
   list(APPEND DNN_LIBS dnn hbucp)
 else()
   message("hobot_stereonet build platform X5")
   add_definitions(-DPLATFORM_X5)
+  set(LAUNCH_DIR "x5")
   list(APPEND DNN_LIBS dnn cnn_intf hbrt_bayes_aarch64)
 endif()
 
@@ -236,7 +238,12 @@ install(
 )
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME}/)
+file(GLOB LAUNCH_FILES
+  launch/*launch.py
+  launch/${LAUNCH_DIR}/*launch.py
+)
+install(FILES ${LAUNCH_FILES} DESTINATION share/${PROJECT_NAME}/launch)
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY data DESTINATION share/${PROJECT_NAME})
 
 ament_package()
