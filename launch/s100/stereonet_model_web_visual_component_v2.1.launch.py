@@ -42,7 +42,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "v2.1_s100",
+            "postprocess": "v2.1",
         }.items(),
     )
 
