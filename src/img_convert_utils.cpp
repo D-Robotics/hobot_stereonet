@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <arm_neon.h>
-#include <cstdint>
-#include "image_conversion.h"
+#include "img_convert_utils.h"
 
-void image_conversion::nv12_to_bgr24_neon(const uint8_t *nv12, uint8_t *bgr24, int width, int height) {
+void ImgConvertUtils::nv12_to_bgr24_neon(uint8_t *nv12, uint8_t *bgr24, int width, int height) {
   const uint8_t *yptr = nv12;
   const uint8_t *uvptr = nv12 + width * height;
   uint8x8_t _v128 = vdup_n_u8(128);
@@ -39,8 +37,8 @@ void image_conversion::nv12_to_bgr24_neon(const uint8_t *nv12, uint8_t *bgr24, i
     for (; nn > 0; nn--) {
       int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vqsub_u8(vld1_u8(yptr0), _v16), _v75));
       int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vqsub_u8(vld1_u8(yptr1), _v16), _v75));
-//      int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr0), _v75));
-//      int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr1), _v75));
+      //      int16x8_t _yy0 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr0), _v75));
+      //      int16x8_t _yy1 = vreinterpretq_s16_u16(vmull_u8(vld1_u8(yptr1), _v75));
       int8x8_t _uuvv = vreinterpret_s8_u8(vsub_u8(vld1_u8(uvptr), _v128));
       int8x8x2_t _uuuuvvvv = vtrn_s8(_uuvv, _uuvv);
       int8x8_t _uu = _uuuuvvvv.val[0];
@@ -80,7 +78,7 @@ void image_conversion::nv12_to_bgr24_neon(const uint8_t *nv12, uint8_t *bgr24, i
   }
 }
 
-void image_conversion::bgr24_to_nv12_neon(uint8_t *bgr24, uint8_t *nv12, int width, int height) {
+void ImgConvertUtils::bgr24_to_nv12_neon(uint8_t *bgr24, uint8_t *nv12, int width, int height) {
   int frameSize = width * height;
   int yIndex = 0;
   int uvIndex = frameSize;
@@ -169,16 +167,20 @@ void image_conversion::bgr24_to_nv12_neon(uint8_t *bgr24, uint8_t *nv12, int wid
   }
 }
 
-void image_conversion::bgr_to_nv12(const cv::Mat &bgr, cv::Mat &nv12) {
+void ImgConvertUtils::bgr_mat_to_nv12_mat(const cv::Mat &bgr, cv::Mat &nv12) {
   int width = bgr.cols;
   int height = bgr.rows;
   nv12 = cv::Mat(height * 3 / 2, width, CV_8UC1);
   bgr24_to_nv12_neon(bgr.data, nv12.data, width, height);
 }
 
-void image_conversion::nv12_to_bgr(const cv::Mat &nv12, cv::Mat &bgr) {
-  int width = nv12.cols;
-  int height = nv12.rows * 2 / 3;
-  bgr = cv::Mat(height, width, CV_8UC3);
-  nv12_to_bgr24_neon(nv12.data, bgr.data, width, height);
+void ImgConvertUtils::nv12_mat_to_bgr_mat(const uint8_t *nv12, cv::Mat &bgr24, int width, int height) {
+  bgr24 = cv::Mat(height, width, CV_8UC3);
+  nv12_to_bgr24_neon(const_cast<uint8_t *>(nv12), bgr24.data, width, height);
+}
+
+void ImgConvertUtils::bgr_mat_to_nv12(const cv::Mat &bgr, uint8_t *nv12) {
+  int width = bgr.cols;
+  int height = bgr.rows;
+  bgr24_to_nv12_neon(bgr.data, nv12, width, height);
 }

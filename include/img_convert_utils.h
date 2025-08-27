@@ -12,16 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef STEREONET_MODEL_INCLUDE_IMAGE_CONVERSION_H_
-#define STEREONET_MODEL_INCLUDE_IMAGE_CONVERSION_H_
+#ifndef HOBOT_STEREONET_INCLUDE_IMAGE_CONVERSION_H_
+#define HOBOT_STEREONET_INCLUDE_IMAGE_CONVERSION_H_
 
 #include <opencv2/opencv.hpp>
+#include <arm_neon.h>
 
-struct image_conversion {
-  static void nv12_to_bgr24_neon(const uint8_t *nv12, uint8_t *bgr24, int width, int height);
+class ImgConvertUtils {
+public:
+  // delete the default constructor
+  ImgConvertUtils() = delete;
+
+  // utility functions
+  static void nv12_to_bgr24_neon(uint8_t *nv12, uint8_t *bgr24, int width, int height);
   static void bgr24_to_nv12_neon(uint8_t *bgr24, uint8_t *nv12, int width, int height);
-  static void bgr_to_nv12(const cv::Mat &bgr, cv::Mat &nv12);
-  static void nv12_to_bgr(const cv::Mat &nv12, cv::Mat &bgr);
+  static void bgr_mat_to_nv12_mat(const cv::Mat &bgr, cv::Mat &nv12);
+  static void nv12_mat_to_bgr_mat(const uint8_t *nv12, cv::Mat &bgr24, int width, int height);
+  static void bgr_mat_to_nv12(const cv::Mat &bgr, uint8_t *nv12);
 };
 
-#endif //STEREONET_MODEL_INCLUDE_IMAGE_CONVERSION_H_
+#endif // HOBOT_STEREONET_INCLUDE_IMAGE_CONVERSION_H_

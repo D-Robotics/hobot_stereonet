@@ -12,109 +12,139 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef HOBOT_STEREONET_INCLUDE_STEREONET_PROCESS_H_
+#define HOBOT_STEREONET_INCLUDE_STEREONET_PROCESS_H_
+
 #include <atomic>
 #include <deque>
 #include <string>
-#include <opencv2/opencv.hpp>
-
-#include "dnn_platform/dnn_platform.h"
-
-#include "image_conversion.h"
-
-#include "Eigen/Dense"
-
-#ifndef STEREO_INCLUDE_STEREONET_PROCESS_H_
-#define STEREO_INCLUDE_STEREONET_PROCESS_H_
-
-#define ALIGN_16(v) ((v + 15) & ~15)
-#define ALIGN(value, alignment) (((value) + ((alignment)-1)) & ~((alignment)-1))
-#define ALIGN_32(value) ALIGN(value, 32)
-
-#define HB_CHECK_SUCCESS(value, errmsg)                          \
-do {                                                             \
-  /*value can be call of function*/                              \
-  int32_t ret_code = value;                                      \
-  if (ret_code != 0) {                                           \
-      std::cout << "[BPU ERROR]" << errmsg << "error code: " << std::endl; \
-  }                                                              \
-} while (0);
-
 #include <rclcpp/rclcpp.hpp>
+#include <opencv2/opencv.hpp>
+#include "Eigen/Dense"
+#include "magic_enum/magic_enum.hpp"
+#include "dnn_platform.h"
+#include "timer_utils.h"
 
-struct ScopeProcessTime {
- public:
-  ScopeProcessTime(const std::string &name) : name_(name) {
-    //std::cout << name << " START" << std::endl;
-    begin_ = std::chrono::system_clock::now();
-  }
-  ~ScopeProcessTime() {
-    auto end = std::chrono::system_clock::now();
-    const std::chrono::duration<float, std::milli> d = end - begin_;
-    RCLCPP_DEBUG_STREAM(rclcpp::get_logger(""), name_ << ", consume: "
-                                                      << std::fixed << std::setprecision(3)
-                                                      << d.count() << "ms");
-  }
+namespace stereonet {
+// =================================================================================================================================
+#define HB_CHECK_SUCCESS(logger, ret_code, errmsg)                                                                     \
+  do {                                                                                                                 \
+    /*value can be call of function*/                                                                                  \
+    if (ret_code != 0) {                                                                                               \
+      RCLCPP_ERROR_STREAM(logger, "=> [BPU ERROR]: " << errmsg << ", error code: " << ret_code);                       \
+    }                                                                                                                  \
+  } while (0);
 
- private:
-  std::string name_;
-  std::chrono::system_clock::time_point begin_;
-};
+// =================================================================================================================================
 
-struct StereonetProcess {
+/**
+ * @brief StereonetProcess class for StereoNet model inference
+ * This class is used to initialize and manage the StereoNet model inference process.
+ */
+class StereonetProcess {
+public:
+  explicit StereonetProcess(const rclcpp::Logger &logger);
+  ~StereonetProcess() = default;
 
-  enum StereonetErrorCode {
-    OK = 0,
-    TENSOR_BUSY = -1,
-    DNN_ERROR = -2,
-    INPUT_ERROR = -3
-  };
+  /**
+   * @brief Initialize the StereoNet model
+   * @param model_path Path to the StereoNet model file
+   * @param max_memory_count Maximum number of memory buffers to allocate
+   * @return 0 on success, -1 on failure
+   */
+  int init(const std::string &model_path, const int &max_memory_count = 5);
 
-  const int MAX_PROCESS_COUNT = 5;
-  StereonetProcess();
+  /**
+   * @brief Perform forward inference using the StereoNet model
+   * @return 0 on success, -1 on failure
+   */
+  int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, const int &img_w,
+              const int &img_h, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
 
-  int stereonet_init(const std::string &model_file_name,
-                     int max_disp, const std::string &postprocess, float uncertainty_th);
-  int stereonet_deinit();
+private:
+  // ===================================== member functions =======================================
+  /**
+   * @brief prepare input tensor for model inference
+   * @param input_tensors vector to hold the prepared input tensors
+   * @return 0 on success, -1 on failure
+   */
+  int prepare_input_tensor(std::vector<hbDNNTensor> &input_tensors);
 
-  int stereonet_inference(const cv::Mat &left_img,
-                          const cv::Mat &right_img,
-                          bool is_nv12,
-                          std::vector<float> &points);
+  /**
+   * @brief prepare output tensor for model inference
+   * @param output_tensors vector to hold the prepared output tensors
+   * @return 0 on success, -1 on failure
+   */
+  int prepare_output_tensor(std::vector<hbDNNTensor> &output_tensors);
 
-  void get_depth_width_height(int &width, int &height) const {
-    width = model_output_w_;
-    height = model_output_h_;
-  }
-
-  void get_input_width_height(int &width, int &height) const {
-    width = model_input_w_;
-    height = model_input_h_;
-  }
-
- private:
+  /**
+   * @brief Get an idle tensor index for processing
+   * @return Index of an idle tensor, or -1 if none are available
+   */
   int get_idle_tensor();
+
+  /**
+   * @brief Set a tensor as idle after processing
+   * @param tensor_id Index of the tensor to set as idle
+   * @return 0 on success, -1 on failure
+   */
   int set_tensor_idle(int tensor_id);
-  int32_t prepare_input_tensor(std::vector<hbDNNTensor> &input_tensor, hbDNNHandle_t dnn_handle);
 
- private:
-  hbDNNHandle_t dnn_handle_;
+  /**
+   * @brief Fill image data into the input tensor
+   * @param input_tensors Vector of input tensors to fill
+   * @param left_img_data Pointer to the left image data
+   * @param right_img_data Pointer to the right image data
+   * @return 0 on success, -1 on failure
+   */
+  int fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_tensors, uint8_t *left_img_data,
+                               uint8_t *right_img_data);
+
+  /**
+   * @brief Postprocess the output tensors to generate disparity and uncertainty maps
+   * @param output_tensors Vector of output tensors from the model
+   * @param uncertainty_th Threshold for uncertainty filtering
+   * @param disp Output disparity map
+   * @param uncert Output uncertainty map
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess(const std::vector<hbDNNTensor> &output_tensors, const double& uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
+
+  /**
+   * @brief Postprocess the output tensors using convex upsampling
+   * @param tensors Vector of output tensors from the model
+   * @param out_mat Output matrix to hold the processed result
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess_convex_upsampling(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
+
+  // ===================================== member variables =======================================
+  rclcpp::Logger logger_;
+  std::string model_path_;
   hbPackedDNNHandle_t packed_dnn_handle_;
+  const char **model_name_list_;
+  int model_count_ = 0;
+  hbDNNHandle_t dnn_handle_;
+  int input_count_ = 0;
+  int output_count_ = 0;
 
-  std::deque<std::atomic_bool> idle_tensor_;
-  std::vector<std::vector<hbDNNTensor>> output_tensors_;
-  std::vector<std::vector<hbDNNTensor>> input_tensors_;
   int32_t input_tensor_type_;
+
+  int max_memory_count_ = 5;
+  std::deque<std::atomic_bool> idle_tensor_;
+  std::vector<std::vector<hbDNNTensor>> batch_output_tensors_;
+  std::vector<std::vector<hbDNNTensor>> batch_input_tensors_;
+
+  int model_input_w_;
+  int model_input_h_;
+  int model_output_w_;
+  int model_output_h_;
 
   std::string postprocess_;
 
-  int model_input_w_, model_input_h_;
-  int model_output_w_, model_output_h_;
-  int output_count_;
-
   int max_disp_ = 192;
-
-  float focal_, baseline_;
-  float uncertainty_th_ = 0.09;
+  float uncertainty_th_ = 0.10;
 };
+} // namespace stereonet
 
-#endif //STEREO_INCLUDE_STEREONET_PROCESS_H_
+#endif // HOBOT_STEREONET_INCLUDE_STEREONET_PROCESS_H_

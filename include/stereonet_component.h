@@ -12,289 +12,132 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_
-#define STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_
+#ifndef HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
+#define HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
 
-#include "blockqueue.h"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
+#include "blockingconcurrentqueue.h"
+#include "img_convert_utils.h"
 #include "stereonet_process.h"
-#include "stereo_rectify.h"
-
-#include <fstream>
-#include <filesystem>
-#include <opencv2/opencv.hpp>
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/point_field.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <sensor_msgs/msg/camera_info.hpp>
-#include <cv_bridge/cv_bridge.h>
-#include <builtin_interfaces/msg/time.hpp>
-#include <rclcpp/time.hpp>
-#include <sensor_msgs/msg/compressed_image.hpp>
-
-#include <message_filters/subscriber.h>
-#include <message_filters/sync_policies/approximate_time.h>
-#include <message_filters/synchronizer.h>
-
-#include <geometry_msgs/msg/transform_stamped.hpp>
-#include <tf2_ros/static_transform_broadcaster.h>
-#include <tf2/LinearMath/Quaternion.h>
-
-#include "image_conversion.h"
-#include "performance_record.h"
-
-#include "oroder_blockqueue.h"
-
-namespace fs = std::filesystem;
+#include "order_blockqueue.hpp"
 
 namespace stereonet {
+/**
+ * @struct CameraIntrinsic
+ * @brief Structure to hold camera intrinsic parameters.
+ */
+struct CameraIntrinsic {
+  double cx = 0.0;
+  double cy = 0.0;
+  double fx = 0.0;
+  double fy = 0.0;
+  double baseline = 0.0; // in meters
+};
 
+/**
+ * @class StereoNetNode
+ * @brief A ROS2 node that performs stereo depth estimation using the StereoNet model.
+ */
 class StereoNetNode : public rclcpp::Node {
- public:
+public:
+  explicit StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions(),
+                         const std::string &node_name = "StereoNetNode");
+  ~StereoNetNode();
 
-  enum sub_image_type {
-    BGR,
-    NV12
-  };
-
-  struct sub_image {
-    cv::Mat image;
-    cv::Mat bgr;
-    sub_image_type image_type;
+private:
+  struct PubData {
     std_msgs::msg::Header header;
-    int origin_width, origin_height;
-  };
-
-  struct inference_data_t {
-    sub_image left_sub_img;
-    sub_image right_sub_img;
-    bool is_local_image;
-    builtin_interfaces::msg::Time received_time;
-  };
-  struct pub_data_t {
-    sub_image left_sub_img;
-    sub_image right_sub_img;
-    std::vector<float> points;
-    std::vector<float> image_size_points;
-    cv::Mat depth_img;
-    cv::Mat model_depth_img;
+    cv::Mat disp;
     int fps, latency;
     int cpu_usage, bpu_usage;
-    bool is_dummy;
-    uint64_t ts;
   };
 
-  StereoNetNode(const rclcpp::NodeOptions &node_options = rclcpp::NodeOptions())
-      : rclcpp::Node("StereoNetNode", node_options) {
-    is_running_ = false;
-    parameter_configuration();
-    pub_sub_configuration();
-    if (start() != 0) {
-      RCLCPP_FATAL(get_logger(), "Node start failed");
-    }
-    publish_static_tf();
-    userColor_.create(256, 1, CV_8UC3); // 256 × 1 的 CV_8UC3 矩阵
-    userColor_.at<cv::Vec3b>(0) = 0;
-    int s;
-    cv::Vec3b color;
-    for (s = 1; s < 32; s++) {
-      color[0] = 128 + 4 * s;
-      color[1] = 0;
-      color[2] = 0;
-      userColor_.at<cv::Vec3b>(s) = color;
-    }
-    color[0] = 255;
-    color[1] = 0;
-    color[2] = 0;
-    userColor_.at<cv::Vec3b>(32) = color;
-    for (s = 0; s < 63; s++) {
-      color[0] = 255;
-      color[1] = 4 + 4 * s;
-      color[2] = 0;
-      userColor_.at<cv::Vec3b>(s + 33) = color;
-    }
-    color[0] = 254;
-    color[1] = 255;
-    color[2] = 2;
-    userColor_.at<cv::Vec3b>(96) = color;
-    for (s = 0; s < 62; s++) {
-      color[0] = 250 - 4 * s;
-      color[1] = 255;
-      color[2] = 6 + 4 * s;
-      userColor_.at<cv::Vec3b>(s + 97) = color;
-    }
-    color[0] = 1;
-    color[1] = 255;
-    color[2] = 254;
-    userColor_.at<cv::Vec3b>(159) = color;
-    for (s = 0; s < 64; s++) {
-      color[0] = 0;
-      color[1] = 252 - (s * 4);
-      color[2] = 255;
-      userColor_.at<cv::Vec3b>(s + 160) = color;
+  // ============================================ member functions ============================================
+  /**
+   * @brief Set parameters for the node
+   */
+  void set_node_params();
 
-    }
-    for (s = 0; s < 32; s++) {
-      color[0] = 0;
-      color[1] = 0;
-      color[2] = 252 - 4 * s;
-      userColor_.at<cv::Vec3b>(s + 224) = color;
-    }
-    rclcpp::on_shutdown([this]() {
-      stop();
-    });
-  }
+  /**
+   * @brief Set up subscriptions and publishers for the node
+   */
+  void set_subscription_publisher();
 
-  ~StereoNetNode() {
-    stop();
-  }
+  /**
+   * @brief Load and set up the DNN model for inference
+   */
+  void set_dnn_model();
 
-  void publish_static_tf();
-  void parameter_configuration();
-  void camera_config_parse(const std::string &file_path,
-                           int model_input_w, int model_input_h);
+  /**
+   * @brief Set up worker threads for processing
+   */
+  void set_worker_threads();
 
-  int inference(inference_data_t &, std::vector<float> &points);
-  void inference_func();
-  void pub_func(pub_data_t &pub_raw_data);
-  void render_func();
+  /**
+   * @brief Callback function for stereo image subscription
+   * @param msg The received stereo image message
+   */
+  void stereo_image_callback(const sensor_msgs::msg::Image::SharedPtr msg);
 
-  int start();
-  int stop();
+  /**
+   * @brief Callback function for camera info subscription
+   * @param msg The received camera info message
+   */
+  void camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
 
-  // Subscriber ConstSharedPtr type msg to avoid memory copy
-  void stereo_image_cb(sensor_msgs::msg::Image::ConstSharedPtr img);
-  void inference_by_usb_camera();
-  void inference_by_image();
+  /**
+   * @brief Inference function to process stereo images and generate disparity maps
+   * This function runs in a separate thread and continuously processes images from the input queue.
+   * @param thread_id The ID of the thread for logging purposes
+   */
+  void infer_function(const int &thread_id);
 
-  int pub_depth_image(pub_data_t &);
-  int pub_pointcloud2(pub_data_t &);
-  int pub_visual_image(pub_data_t &);
-  int pub_rectified_image(pub_data_t &);
-  int pub_depth_camera_info(pub_data_t &);
+  /**
+   * @brief Preprocess function to convert stereo image message to left and right image data
+   * @param stereo_msg The received stereo image message
+   * @param left_img_data Output shared pointer to the left image data
+   * @param right_img_data Output shared pointer to the right image data
+   * @param single_img_w Output width of a single image
+   * @param single_img_h Output height of a single image
+   */
+  void preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_msg, std::vector<uint8_t> &left_img_data,
+                  std::vector<uint8_t> &right_img_data, int &single_img_w, int &single_img_h);
 
-  void pub_sub_configuration();
+  /**
+   * @brief Publish function to publish the processed disparity maps
+   * This function runs in a separate thread and continuously publishes disparity maps.
+   */
+  void publish_function();
 
-  void dump_one_point_disparity(pub_data_t &pub_raw_data,
-                                const cv::Mat &right_image, int x, int y);
+  /**
+   * @brief Publish the visual image based on the disparity map
+   * @param pub_data The processed data containing the disparity map and metadata
+   * @return int Status code (0 for success, non-zero for failure)
+   */
+  void publish_visual_image(const std::shared_ptr<PubData> &pub_data);
 
-  std::atomic_bool is_running_ = false;
-
-  std::vector<std::shared_ptr<std::thread>> work_thread_;
-  std::vector<std::shared_ptr<std::thread>> render_thread_;
-
-  blockqueue<inference_data_t> inference_que_;
-  order_blockqueue<std::shared_ptr<pub_data_t>> pub_que_;
-
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_;
-
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_, visual_image_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr depthcompressed_image_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_pub_;
-
-  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_;
-
- private:
-  std::mutex order_set_mtx_;
-  std::set<uint64_t> pub_order_set_;
-  std::shared_ptr<StereonetProcess> stereonet_process_;
-  void save_images_with_nv12(cv::Mat &left_img, cv::Mat &right_img, const std::string &image_format);
-  void save_mat_to_bin(const cv::Mat &mat, const std::string &filename);
-
- private:
-  bool save_image_;
-  std::string save_dir_ = "./stereonet_images";
-
-  std::mutex mtx_;
-  bool save_image_all_;
-  bool save_image_to_nv12_;
-  int save_cnt_ = 0;
-  int save_freq_ = 1;
-  int save_total_ = -1;
-
-  std::string postprocess_;
-
-  int depth_w_, depth_h_;
-  int model_input_w_, model_input_h_;
-  float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
-  bool need_rectify_, need_pcl_filter_, load_rectify_param_;
-
-  int origin_image_width_, origin_image_height_;
-  float height_min_, height_max_;
-  std::string stereonet_model_file_path_,
-      stereo_image_topic_,
-      local_image_path_,
-      stereo_calib_file_path_,
-      camera_info_topic_;
-  int stereo_combine_mode_ = 1;
-  float leaf_size_, stdv_;
-  int KMean_;
-  void convert_depth(pub_data_t &pub_raw_data);
-
+  // ============================================ member variables ============================================
+  std::string stereo_image_topic_ = "/image_combine_raw";
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_ = nullptr;
+  std::string camera_info_topic_ = "/image_right_raw/camera_info";
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_ = nullptr;
   std::string visual_topic_ = "~/stereonet_visual";
-  std::string rectified_image_topic_ = "~/rectified_image";
-  std::string rectified_right_image_topic_ = "~/rectified_right_image";
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
-      rectified_image_pub_ = nullptr, rectified_right_image_pub_ = nullptr;
-  bool pub_rectified_bgr_ = false;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr visual_image_pub_ = nullptr;
 
-  int visual_alpha_ = 1, visual_beta_ = 0;
-  int max_disp_ = 192;
-  int image_inference_sleep_ms_ = 1;
+  std::string stereonet_model_file_path_ = "";
 
-  bool depth_type_point_ = true;
-  std::string image_format_ = "png";
+  double uncertainty_th_ = 0.0;
+  std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
 
-  int render_type_ = 0;
-  bool render_need_filter_ = true;
-  uint16_t render_max_depth_ = 10000;
+  // DNN model processing class
+  std::shared_ptr<StereonetProcess> stereonet_process_ = nullptr;
 
-  bool depth_need_filter_ = true;
-  float pc_max_depth_ = 6.0;
-
-  float uncertainty_th_ = -0.09;
-
- private:
-  std::vector<std::shared_ptr<StereoRectify>> stereo_rectify_list_;
-  bool resize_before_rectify_ = false;
-
- private:
-  using SyncPolicy = message_filters::sync_policies::ApproximateTime<
-      sensor_msgs::msg::CompressedImage,
-      //sensor_msgs::msg::Image,
-      sensor_msgs::msg::CompressedImage
-  >;
-  message_filters::Subscriber<sensor_msgs::msg::CompressedImage> depth_subscriber_;
-  message_filters::Subscriber<sensor_msgs::msg::Image> color_subscriber_;
-  message_filters::Subscriber<sensor_msgs::msg::CompressedImage> compare_left_subscriber_;
-
-  std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
-  void sync_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &depth_msg,
-      //const sensor_msgs::msg::Image::ConstSharedPtr& color_msg,
-                     const sensor_msgs::msg::CompressedImage::ConstSharedPtr &rs_left_msg);
-
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr compare_visual_image_pub_;
-
-  rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr depth_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compare_left_sub_;
-
-  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
-
-  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_;
-
-  void d_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg);
-  void c_callback(const sensor_msgs::msg::CompressedImage::ConstSharedPtr &msg);
-  void camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstSharedPtr &camera_info_msg);
-
-  cv::Mat compare_visual_;
-  std::mutex compare_visual_mtx_;
-  bool depth_compare = false;
-
- private:
-  cv::Mat userColor_;
-  bool render_perf_ = false;
-  std::deque<int> latency_list_;
+  moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
+  std::vector<std::thread> infer_threads_;
+  order_blockqueue<std::shared_ptr<PubData>> pub_data_queue_;
+  std::thread publish_thread_;
 };
-}
-#endif //STEREONET_MODEL_INCLUDE_STEREONET_COMPONENT_H_
+} // namespace stereonet
+#endif // HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_

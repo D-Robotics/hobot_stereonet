@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef STEREO_HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_
-#define STEREO_HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_
+#ifndef HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_
+#define HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_
 
 #include <opencv2/opencv.hpp>
 
@@ -21,8 +21,7 @@ namespace stereonet {
 
 struct StereoRectify {
   template <typename T>
-  StereoRectify(const T &fs, int model_input_w, int model_input_h,
-                bool resize_before_rectify = false) {
+  StereoRectify(const T &fs, int model_input_w, int model_input_h, bool resize_before_rectify = false) {
     // Reading cam0 data
     std::vector<double> cam0_distortion_coeffs;
     std::vector<double> cam0_intrinsics;
@@ -91,41 +90,26 @@ struct StereoRectify {
     Kr.at<double>(2, 2) = 1;
 
     float fov_scale = 0.8;
-    if (distortion_model == "radtan" ||
-        distortion_model == "rational_polynomial") {
-      cv::stereoRectify(Kl, Dl, Kr, Dr,
-                        cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                        cv::CALIB_ZERO_DISPARITY, 0, cv::Size(model_input_w, model_input_h));
+    if (distortion_model == "radtan" || distortion_model == "rational_polynomial") {
+      cv::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr,
+                        Q, cv::CALIB_ZERO_DISPARITY, 0, cv::Size(model_input_w, model_input_h));
 
-      cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl,
-                                  cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l, undistmap2l);
-      cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr,
-                                  cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1r, undistmap2r);
+      cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l,
+                                  undistmap2l);
+      cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1r,
+                                  undistmap2r);
     } else if (distortion_model == "equidistant") {
       if (!fs["cam1"]["fov_scale"].empty()) {
         fs["cam1"]["fov_scale"] >> fov_scale;
       }
       if (fov_scale == 0) fov_scale = 0.8;
-      cv::fisheye::stereoRectify(Kl,
-                                 Dl,
-                                 Kr,
-                                 Dr,
-                                 cv::Size(stereo_input_width, stereo_input_height),
-                                 R_rl,
-                                 t_rl,
-                                 Rl,
-                                 Rr,
-                                 Pl,
-                                 Pr,
-                                 Q,
-                                 cv::fisheye::CALIB_ZERO_DISPARITY,
-                                 cv::Size(model_input_w, model_input_h),
-                                 0.0,
-                                 fov_scale);
-      cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl,
-                                           cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1l, undistmap2l);
-      cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr,
-                                           cv::Size(model_input_w, model_input_h), CV_32FC1, undistmap1r, undistmap2r);
+      cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(stereo_input_width, stereo_input_height), R_rl, t_rl, Rl, Rr,
+                                 Pl, Pr, Q, cv::fisheye::CALIB_ZERO_DISPARITY, cv::Size(model_input_w, model_input_h),
+                                 0.0, fov_scale);
+      cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(model_input_w, model_input_h), CV_32FC1,
+                                           undistmap1l, undistmap2l);
+      cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(model_input_w, model_input_h), CV_32FC1,
+                                           undistmap1r, undistmap2r);
     }
 
     camera_fx = Q.at<double>(2, 3);
@@ -151,13 +135,10 @@ struct StereoRectify {
               << "model input width, height: " << model_input_w << ", " << model_input_h << std::endl
               << "fov_scale: " << fov_scale << std::endl
               << "resize_before_rectify: " << resize_before_rectify << std::endl
-              << "width_scale, height_scale: " << width_scale << ", " << height_scale
-              << std::endl;
+              << "width_scale, height_scale: " << width_scale << ", " << height_scale << std::endl;
   }
 
-  void Rectify(const cv::Mat &left_image,
-               const cv::Mat &right_image,
-               cv::Mat &rectified_left_image,
+  void Rectify(const cv::Mat &left_image, const cv::Mat &right_image, cv::Mat &rectified_left_image,
                cv::Mat &rectified_right_image) {
     cv::remap(left_image, rectified_left_image, undistmap1l, undistmap2l, cv::INTER_LINEAR);
     cv::remap(right_image, rectified_right_image, undistmap1r, undistmap2r, cv::INTER_LINEAR);
@@ -178,6 +159,6 @@ struct StereoRectify {
   float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
 };
 
-}
+} // namespace stereonet
 
-#endif //STEREO_HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_
+#endif // HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_

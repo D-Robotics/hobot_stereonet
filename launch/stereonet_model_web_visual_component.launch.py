@@ -65,7 +65,7 @@ def generate_launch_description():
         package="rclcpp_components",
         executable="component_container",
         output="screen",
-        arguments=["--ros-args", "--log-level", "warn"],
+        arguments=["--ros-args", "--log-level", "info"],
         condition=IfCondition(
             PythonExpression(
                 [
@@ -103,7 +103,9 @@ def generate_launch_description():
             {"gdc_enable": LaunchConfiguration('mipi_gdc_enable')},
             {"frame_id": LaunchConfiguration('frame_id')},
         ],
-        extra_arguments=[{"use_intra_process_comms": True}],
+        extra_arguments=[
+            {"use_intra_process_comms": True},
+        ],
     )
 
     # 双目节点
@@ -115,6 +117,7 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
+            "log_level": "info",
             "target_container": LaunchConfiguration("target_container_name"),
         }.items(),
     )
@@ -157,7 +160,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "mipi_config_path", 
+                "mipi_config_path",
                 default_value=TextSubstitution(text=str(config_file_path)),
                 description='mipi camera calibration file path'),
             DeclareLaunchArgument(
@@ -228,10 +231,10 @@ def generate_launch_description():
                 'mipi_gdc_enable',
                 default_value='True',
                 description='mipi camera gdc enable'),
-            DeclareLaunchArgument(
-                'log_level',
-                default_value='warn',
-                description='log level'),
+            # DeclareLaunchArgument(
+            #     'log_level',
+            #     default_value='warn',
+            #     description='log level'),
 
             DeclareLaunchArgument(
                 "mipi_image_width",

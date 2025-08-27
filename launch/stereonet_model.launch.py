@@ -46,15 +46,26 @@ def generate_launch_description():
     )
 
     node_params = [
+        {'name':'log_level', 'default_value':'info', 'description': 'log_level'},
+
         {'name':'stereo_image_topic', 'default_value':'/image_combine_raw', 'description': 'stereo_image_topic'},
         {'name':'camera_info_topic', 'default_value':'/image_right_raw/camera_info', 'description': 'camera_info_topic'},
+
+        {'name':'stereonet_model_file_path', 'default_value': stereonet_model_file_path, 'description': 'stereonet_model_file_path'},
+
+        {'name':'calib_method', 'default_value':'1280', 'description': ''},
+
         {'name':'camera_cx', 'default_value':'659.710', 'description': 'rectified_camera_cx'},
         {'name':'camera_cy', 'default_value':'360.584', 'description': 'rectified_camera_cy'},
         {'name':'camera_fx', 'default_value':'527.1931', 'description': 'rectified_camera_fx'},
         {'name':'camera_fy', 'default_value':'527.1931', 'description': 'rectified_camera_fy'},
+        {'name':'baseline', 'default_value':'0.119893', 'description': 'baseline of stereo'},
+
+        {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
+
         {'name':'need_rectify', 'default_value':'True', 'description': 'whether need_rectify or not'},
         {'name':'need_pcl_filter', 'default_value':'False', 'description': 'whether need_pcl_filter or not'},
-        {'name':'base_line', 'default_value':'0.119893', 'description': 'base_line of stereo'},
+
         {'name':'height_min', 'default_value':'0.03', 'description': 'height_min'},
         {'name':'height_max', 'default_value':'5.0', 'description': 'height_max'},
         {'name':'save_image', 'default_value':'False', 'description': 'save_image'},
@@ -68,9 +79,9 @@ def generate_launch_description():
         {'name':'use_usb_camera', 'default_value':'False', 'description': 'use_usb_camera'},
         {'name':'stereo_combine_mode', 'default_value':'1', 'description': 'stereo_combine_mode'},
         {'name':'stereo_calib_file_path', 'default_value': stereo_calib_file_path, 'description': 'stereo_calib_file_path'},
-        {'name':'stereonet_model_file_path', 'default_value': stereonet_model_file_path, 'description': 'stereonet_model_file_path'},
+
         {'name':'local_image_path', 'default_value': local_image_path, 'description': 'local_image_path'},
-        {'name':'log_level', 'default_value':'info', 'description': 'log_level'},
+
         {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
         {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
         {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
@@ -93,7 +104,7 @@ def generate_launch_description():
         {'name':'stereo_node_name', 'default_value':'StereoNetNode', 'description': 'stereo_node_name'},
         {'name':'depth_need_filter', 'default_value':'True', 'description': 'depth_need_filter'},
         {'name':'pc_max_depth', 'default_value':'6.0', 'description': 'pc_max_depth'},
-        {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
+
         {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
         {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
         {'name':'render_perf', 'default_value':'False', 'description': 'render_perf'},
