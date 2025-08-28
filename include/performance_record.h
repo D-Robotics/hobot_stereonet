@@ -13,9 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H
-#define HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H
+#ifndef HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H_
+#define HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H_
 
+#include <fstream>
 #include <unistd.h>
 #include <memory>
 #include <mutex>
@@ -76,6 +77,7 @@ struct performance_writer {
   int get_bpu_usage() {
     return bpu_ratio_;
   }
+
   static std::shared_ptr<performance_writer> Get() {
     static std::shared_ptr<performance_writer> instance = nullptr;
     if (instance == nullptr) {
@@ -131,4 +133,4 @@ private:
   }
 };
 
-#endif // HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H
+#endif // HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H_

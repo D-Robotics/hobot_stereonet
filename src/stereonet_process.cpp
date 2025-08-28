@@ -13,14 +13,48 @@
 // limitations under the License.
 
 #include "stereonet_process.h"
+#include <string>
 
 namespace stereonet {
 StereonetProcess::StereonetProcess(const rclcpp::Logger &logger) : logger_(logger) {
 }
 
+StereonetProcess::~StereonetProcess() {
+  int ret_code = 0;
+  // Free input memory
+  for (int i = 0; i < max_memory_count_; i++) {
+    for (size_t j = 0; j < batch_input_tensors_[i].size(); j++) {
+#ifdef PLATFORM_X5
+      ret_code = hbSysFreeMem(&(batch_input_tensors_[i][j].sysMem[0]));
+      if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
+        ret_code = hbSysFreeMem(&(batch_input_tensors_[i][j].sysMem[1]));
+      }
+#endif
+#ifdef PLATFORM_S100
+      ret_code = hbUCPFree(&(batch_input_tensors_[i][j].sysMem));
+#endif
+      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFreeMem failed");
+    }
+  }
+  // Free output memory
+  for (int i = 0; i < max_memory_count_; i++) {
+    for (size_t j = 0; j < batch_output_tensors_[i].size(); j++) {
+#ifdef PLATFORM_X5
+      ret_code = hbSysFreeMem(&(batch_output_tensors_[i][j].sysMem[0]));
+#endif
+#ifdef PLATFORM_S100
+      ret_code = hbUCPFree(&(batch_output_tensors_[i][j].sysMem));
+#endif
+      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFreeMem failed");
+    }
+  }
+  // Release dnn handle
+  ret_code = hbDNNRelease(packed_dnn_handle_);
+  HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
+}
+
 int StereonetProcess::init(const std::string &model_path, const int &max_memory_count) {
   int ret_code = 0;
-  RCLCPP_INFO(logger_, "=> ==================== init stereonet model start ====================");
   // load model
   model_path_ = model_path;
   const char *model_path_cstr = model_path_.c_str();
@@ -40,10 +74,21 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputCount failed");
   ret_code = hbDNNGetOutputCount(&output_count_, dnn_handle_);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputCount failed");
+  RCLCPP_INFO_ONCE(logger_, "=> ============ init model start ============");
   RCLCPP_INFO_STREAM(logger_, "=> model name: " << model_name_list_[0]);
   RCLCPP_INFO_STREAM(logger_, "=> input_count: " << input_count_);
   RCLCPP_INFO_STREAM(logger_, "=> output_count: " << output_count_);
 
+  // get model input size from input tensor[0]
+  hbDNNTensorProperties properties;
+  ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, 0);
+#ifdef PLATFORM_S100
+  properties.quantizeAxis = 3;
+#endif
+  hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
+  RCLCPP_INFO_STREAM(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
+
+  // prepare input tensor and output tensor
   max_memory_count_ = max_memory_count;
   for (int i = 0; i < max_memory_count_; i++) {
     idle_tensor_.emplace_back(true);
@@ -58,20 +103,15 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   for (int i = 0; i < max_memory_count_; ++i) {
     ret_code = prepare_output_tensor(batch_output_tensors_[i]);
   }
+  RCLCPP_INFO_ONCE(logger_, "=> ============ init model end ============");
 
   return ret_code;
 }
 
 int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                              const int &img_w, const int &img_h, const double &uncertainty_th, cv::Mat &disp,
+                              const double &uncertainty_th, const std::string &postprocess, cv::Mat &disp,
                               cv::Mat &uncert) {
-  RCLCPP_INFO_STREAM(logger_, "=> ==================== infer by model =======================");
   int ret_code = 0;
-  if (img_w != model_input_w_ || img_h != model_input_h_) {
-    RCLCPP_ERROR_STREAM(logger_, "=> input image size does not match model input size, expected: "
-                                     << model_input_w_ << "x" << model_input_h_ << ", got: " << img_w << "x" << img_h);
-    return -1;
-  }
 
   int idle_tensor_id = get_idle_tensor();
   {
@@ -112,18 +152,32 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
 
   {
     ScopeProcessTime t(logger_, "postprocess");
-    postprocess(batch_output_tensors_[idle_tensor_id], uncertainty_th, disp, uncert);
+    if (postprocess == "convex_upsampling") {
+      ret_code = postprocess_convex_upsampling(batch_output_tensors_[idle_tensor_id], disp);
+    } else if (postprocess == "convex_upsampling_with_uncert") {
+      std::vector<hbDNNTensor> infer_disp_tensor(batch_output_tensors_[idle_tensor_id].begin(),
+                                                 batch_output_tensors_[idle_tensor_id].begin() + 2);
+      ret_code = postprocess_convex_upsampling(infer_disp_tensor, disp);
+      if (uncertainty_th > 0) {
+        std::vector<hbDNNTensor> init_disp_tensor(batch_output_tensors_[idle_tensor_id].begin() + 2,
+                                                  batch_output_tensors_[idle_tensor_id].begin() + 4);
+        cv::Mat init_disp, mask;
+        ret_code = postprocess_convex_upsampling(init_disp_tensor, init_disp);
+        // filter disp with uncert
+        uncert = cv::abs(init_disp - disp) / init_disp;
+        cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+        disp = disp.mul(mask);
+      }
+    } else if (postprocess == "convex_upsampling_with_interp") {
+      ret_code = postprocess_convex_upsampling_with_interp(batch_output_tensors_[idle_tensor_id], disp);
+    } else {
+      RCLCPP_ERROR_STREAM(logger_, "=> not support postprocess: " << postprocess);
+      ret_code = -1;
+    }
   }
 
   set_tensor_idle(idle_tensor_id);
 
-  return ret_code;
-}
-
-int StereonetProcess::postprocess(const std::vector<hbDNNTensor> &output_tensors, const double &uncertainty_th,
-                                  cv::Mat &disp, cv::Mat &uncert) {
-  int ret_code = 0;
-  ret_code = postprocess_convex_upsampling(output_tensors, disp);
   return ret_code;
 }
 
@@ -244,28 +298,150 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   return 0;
 }
 
+int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors,
+                                                                cv::Mat &out_mat) {
+  const int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  int disp_c_dim = disp_shape[1];
+  int disp_h_dim = disp_shape[2];
+  int disp_w_dim = disp_shape[3];
+  int total_disp_size = disp_h_dim * disp_w_dim;
+
+  const int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
+  int spx_c_dim = spx_shape[1];
+  int spx_h_dim = spx_shape[2];
+  int spx_w_dim = spx_shape[3];
+  int total_size = spx_h_dim * spx_w_dim;
+  int32_t scale_h = spx_h_dim / disp_h_dim, scale_w = spx_w_dim / disp_w_dim;
+
+  // get scale info
+  float scale_constant = 1.0;
+  float scale_factor;
+  float *disp_scale = &scale_constant;
+  float *spx_scale = &scale_constant;
+  if (tensors[0].properties.quantiType == SCALE) {
+    disp_scale = tensors[0].properties.scale.scaleData;
+  }
+  if (tensors[1].properties.quantiType == SCALE) {
+    spx_scale = tensors[1].properties.scale.scaleData;
+  }
+  scale_factor = (*disp_scale * *spx_scale);
+  // calc disp
+  out_mat = cv::Mat::zeros(spx_h_dim, spx_w_dim, CV_32FC1);
+  float *result_ptr = reinterpret_cast<float *>(out_mat.data);
+  if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32 &&
+      tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+#ifdef PLATFORM_X5
+    auto disp = reinterpret_cast<int32_t *>(tensors[0].sysMem[0].virAddr);
+    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
+#endif
+#ifdef PLATFORM_S100
+    auto disp = reinterpret_cast<int32_t *>(tensors[0].sysMem.virAddr);
+    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem.virAddr);
+#endif
+
+    for (int32_t i = 0; i < spx_c_dim; ++i) {
+      for (int32_t y = 0; y < spx_h_dim; ++y) {
+        int32_t idx_y = y / scale_h;
+        int32_t output_offset = spx_w_dim * y;
+        for (int32_t x = 0; x < spx_w_dim; x += 4) {
+          int32_t idx_x = x / scale_w;
+
+          // 1. 加载 int16 spx 权重并扩展为 int32
+          int16x4_t spx_s16 = vld1_s16(&spx[y * spx_w_dim + x]);
+          int32x4_t spx_s32 = vmovl_s16(spx_s16);
+
+          // 2. 加载 disp 值并复制成 int32x4_t
+          int32_t disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
+          int32x4_t disp_s32 = vdupq_n_s32(disp_val_scalar);
+
+          // 3. 转换为 float32
+          float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
+          float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
+
+          // 4. 执行 float 乘法并加到 result_ptr 中
+          float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
+          float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
+          float32x4_t updated_output = vaddq_f32(current_output, mul_result);
+          vst1q_f32(&result_ptr[output_offset + x], updated_output);
+        }
+      }
+      disp += total_disp_size;
+      spx += total_size;
+    }
+
+    if (scale_factor != 1.0f) {
+      for (int32_t j = 0; j < total_size; j += 4) {
+        vst1q_f32(result_ptr + j, vmulq_n_f32(vld1q_f32(result_ptr + j), scale_factor));
+      }
+    }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
+             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
+#ifdef PLATFORM_X5
+    auto disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
+    auto spx = reinterpret_cast<float *>(tensors[1].sysMem[0].virAddr);
+#endif
+#ifdef PLATFORM_S100
+    auto disp = reinterpret_cast<float *>(tensors[0].sysMem.virAddr);
+    auto spx = reinterpret_cast<float *>(tensors[1].sysMem.virAddr);
+#endif
+    for (int32_t i = 0; i < spx_c_dim; ++i) {
+      for (int32_t y = 0; y < spx_h_dim; ++y) {
+        int32_t idx_y = y / scale_h;
+        int32_t output_offset = spx_w_dim * y;
+        for (int32_t x = 0; x < spx_w_dim; x += 4) {
+          int32_t idx_x = x / scale_w;
+
+          // 1. 加载 spx float32 权重
+          float32x4_t spx_f32 = vld1q_f32(&spx[y * spx_w_dim + x]);
+
+          // 2. 加载 disp float32 标量并广播
+          float disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
+          float32x4_t disp_f32 = vdupq_n_f32(disp_val_scalar);
+
+          // 3. 执行乘法并累加到 result 中
+          float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
+          float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
+          float32x4_t updated_output = vaddq_f32(current_output, mul_result);
+          vst1q_f32(&result_ptr[output_offset + x], updated_output);
+        }
+      }
+
+      disp += total_disp_size;
+      spx += total_size;
+    }
+
+    if (scale_factor != 1.0f) {
+      for (int32_t j = 0; j < total_size; j += 4) {
+        float32x4_t cur = vld1q_f32(result_ptr + j);
+        float32x4_t scaled = vmulq_n_f32(cur, scale_factor);
+        vst1q_f32(result_ptr + j, scaled);
+      }
+    }
+  } else {
+    RCLCPP_ERROR_STREAM(logger_,
+                        "=> output tensor type unsupported! tensor[0]: "
+                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[0].properties.tensorType))
+                            << ", tensor[1]: "
+                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
+    return -1;
+  }
+  return 0;
+}
+
 int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensors) {
   int ret_code = 0;
-  RCLCPP_INFO(logger_, "=> ----- prepare_input_tensor -----");
-
-  // get model input size from input tensor[0]
-  hbDNNTensorProperties properties;
-  ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, 0);
-#ifdef PLATFORM_S100
-  properties.quantizeAxis = 3;
-#endif
-  hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
-  RCLCPP_INFO_STREAM(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
+  RCLCPP_INFO_ONCE(logger_, "=> ----- prepare_input_tensor -----");
 
   // allocate memory for input tensor
   input_tensors.resize(input_count_);
   for (int i = 0; i < input_count_; i++) {
     auto &tensor = input_tensors[i];
     // get input tensor properties
+    hbDNNTensorProperties properties;
     ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputTensorProperties failed");
-    RCLCPP_INFO_STREAM(logger_, "=> input tensor type is "
-                                    << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
+    RCLCPP_INFO_STREAM_ONCE(logger_, "=> input tensor type is "
+                                         << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
     input_tensor_type_ = properties.tensorType;
 
 #ifdef PLATFORM_X5
@@ -310,7 +486,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], (3 * model_input_h_ * model_input_w_) / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[0].memSize = (3 * model_input_h_ * model_input_w_) / 2;
-      RCLCPP_INFO_STREAM(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
+      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
     } else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], model_input_h_ * model_input_w_);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
@@ -319,8 +495,8 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[1], model_input_h_ * model_input_w_ / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[1].memSize = model_input_h_ * model_input_w_ / 2;
-      RCLCPP_INFO_STREAM(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
-      RCLCPP_INFO_STREAM(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
+      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
+      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
     } else {
       return -1;
     }
@@ -330,7 +506,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem, properties.alignedByteSize);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-      RCLCPP_INFO_STREAM(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
+      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
     } else {
       return -1;
     }
@@ -341,13 +517,13 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
 
 int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_tensors) {
   int ret_code = 0;
-  RCLCPP_INFO(logger_, "=> ----- prepare_output_tensor -----");
+  RCLCPP_INFO_ONCE(logger_, "=> ----- prepare_output_tensor -----");
   output_tensors.resize(output_count_);
   for (int i = 0; i < output_count_; ++i) {
     ret_code = hbDNNGetOutputTensorProperties(&output_tensors[i].properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputTensorProperties failed");
-    RCLCPP_INFO_STREAM(logger_, "=> output tensor type is " << magic_enum::enum_name(
-                                    static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
+    RCLCPP_INFO_STREAM_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
+                                         static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
 #ifdef PLATFORM_X5
     ret_code = hbSysAllocCachedMem(&output_tensors[i].sysMem[0], output_tensors[i].properties.alignedByteSize);
 #endif
@@ -355,7 +531,8 @@ int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_ten
     ret_code = hbSysAllocCachedMem(&output_tensors[i].sysMem, output_tensors[i].properties.alignedByteSize);
 #endif
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-    RCLCPP_INFO_STREAM(logger_, "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
+    RCLCPP_INFO_STREAM_ONCE(logger_,
+                            "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
   }
   return ret_code;
 }
@@ -469,4 +646,76 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
   return ret_code;
 }
 
+/*
+void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double &fx, const double &baseline) {
+  depth = cv::Mat::zeros(disp.size(), CV_16UC1);
+  for (int i = 0; i < disp.rows; ++i) {
+    for (int j = 0; j < disp.cols; ++j) {
+      float d = disp.at<float>(i, j);
+      if (d <= 0.0) {
+        depth.at<uint16_t>(i, j) = 0;
+      } else {
+        float z = (baseline * fx * 1000.0) / d; // in mm
+        if (z > 65535.0) {
+          depth.at<uint16_t>(i, j) = 65535;
+        } else {
+          depth.at<uint16_t>(i, j) = static_cast<uint16_t>(z);
+        }
+      }
+    }
+  }
+}
+*/
+
+void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double &fx, const double &baseline) {
+  depth.create(disp.size(), CV_16UC1);
+  const int rows = disp.rows;
+  const int cols = disp.cols;
+
+  float scale = baseline * fx * 1000.0f; // in mm
+
+  for (int i = 0; i < rows; ++i) {
+    const float *disp_ptr = disp.ptr<float>(i);
+    uint16_t *depth_ptr = depth.ptr<uint16_t>(i);
+
+    int j = 0;
+    // use NEON to process 4 pixels at a time
+    for (; j <= cols - 4; j += 4) {
+      float32x4_t d = vld1q_f32(disp_ptr + j);
+
+      // mask for d > 0
+      uint32x4_t mask = vcgtq_f32(d, vdupq_n_f32(0.0f));
+
+      // z = scale / d
+      float32x4_t z = vdivq_f32(vdupq_n_f32(scale), d);
+
+      // clamp to 65535
+      float32x4_t z_clamped = vminq_f32(z, vdupq_n_f32(65535.0f));
+
+      // set 0 if d <= 0
+      z_clamped = vbslq_f32(mask, z_clamped, vdupq_n_f32(0.0f));
+
+      // convert to uint16_t
+      uint16x4_t z_u16 = vmovn_u32(vcvtq_u32_f32(z_clamped));
+
+      vst1_u16(depth_ptr + j, z_u16);
+    }
+
+    // process remaining pixels
+    for (; j < cols; ++j) {
+      float d = disp_ptr[j];
+      if (d <= 0.0f)
+        depth_ptr[j] = 0;
+      else {
+        float z = scale / d;
+        depth_ptr[j] = (z > 65535.0f) ? 65535 : static_cast<uint16_t>(z);
+      }
+    }
+  }
+}
+
+void StereonetProcess::get_model_input_size(int &w, int &h) const {
+  w = model_input_w_;
+  h = model_input_h_;
+}
 } // namespace stereonet

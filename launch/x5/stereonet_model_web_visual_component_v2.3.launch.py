@@ -42,7 +42,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "v2.3",
+            "postprocess": "convex_upsampling_with_interp",
         }.items(),
     )
 

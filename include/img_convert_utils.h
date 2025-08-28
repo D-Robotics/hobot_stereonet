@@ -27,7 +27,7 @@ public:
   static void nv12_to_bgr24_neon(uint8_t *nv12, uint8_t *bgr24, int width, int height);
   static void bgr24_to_nv12_neon(uint8_t *bgr24, uint8_t *nv12, int width, int height);
   static void bgr_mat_to_nv12_mat(const cv::Mat &bgr, cv::Mat &nv12);
-  static void nv12_mat_to_bgr_mat(const uint8_t *nv12, cv::Mat &bgr24, int width, int height);
+  static void nv12_to_bgr_mat(const uint8_t *nv12, cv::Mat &bgr24, int width, int height);
   static void bgr_mat_to_nv12(const cv::Mat &bgr, uint8_t *nv12);
 };
 

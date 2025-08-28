@@ -44,7 +44,7 @@ namespace stereonet {
 class StereonetProcess {
 public:
   explicit StereonetProcess(const rclcpp::Logger &logger);
-  ~StereonetProcess() = default;
+  ~StereonetProcess();
 
   /**
    * @brief Initialize the StereoNet model
@@ -56,10 +56,32 @@ public:
 
   /**
    * @brief Perform forward inference using the StereoNet model
+   * @param left_img_data Pointer to the left image data in NV12 format
+   * @param right_img_data Pointer to the right image data in NV12 format
+   * @param uncertainty_th Uncertainty threshold for postprocessing
+   * @param postprocess Postprocessing method to apply (e.g., "convex_upsampling")
+   * @param disp Output disparity map
+   * @param uncert Output uncertainty map
    * @return 0 on success, -1 on failure
    */
-  int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, const int &img_w,
-              const int &img_h, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
+  int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, const double &uncertainty_th,
+              const std::string &postprocess, cv::Mat &disp, cv::Mat &uncert);
+
+  /**
+   * @brief Get the input size required by the model
+   * @param w Width of the input image
+   * @param h Height of the input image
+   */
+  void get_model_input_size(int &w, int &h) const;
+
+  /**
+   * @brief Convert disparity map to depth map
+   * @param disp Input disparity map
+   * @param depth Output depth map
+   * @param fx Focal length in x direction
+   * @param baseline Baseline distance between the two cameras
+   */
+  static void disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double &fx, const double &baseline);
 
 private:
   // ===================================== member functions =======================================
@@ -101,22 +123,20 @@ private:
                                uint8_t *right_img_data);
 
   /**
-   * @brief Postprocess the output tensors to generate disparity and uncertainty maps
-   * @param output_tensors Vector of output tensors from the model
-   * @param uncertainty_th Threshold for uncertainty filtering
-   * @param disp Output disparity map
-   * @param uncert Output uncertainty map
-   * @return 0 on success, -1 on failure
-   */
-  int postprocess(const std::vector<hbDNNTensor> &output_tensors, const double& uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
-
-  /**
    * @brief Postprocess the output tensors using convex upsampling
    * @param tensors Vector of output tensors from the model
    * @param out_mat Output matrix to hold the processed result
    * @return 0 on success, -1 on failure
    */
   int postprocess_convex_upsampling(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
+
+  /**
+   * @brief Postprocess the output tensors using convex upsampling with interpolation
+   * @param tensors Vector of output tensors from the model
+   * @param out_mat Output matrix to hold the processed result
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
 
   // ===================================== member variables =======================================
   rclcpp::Logger logger_;
@@ -137,8 +157,8 @@ private:
 
   int model_input_w_;
   int model_input_h_;
-  int model_output_w_;
-  int model_output_h_;
+  // int model_output_w_;
+  // int model_output_h_;
 
   std::string postprocess_;
 

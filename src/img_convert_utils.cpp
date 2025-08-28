@@ -174,7 +174,7 @@ void ImgConvertUtils::bgr_mat_to_nv12_mat(const cv::Mat &bgr, cv::Mat &nv12) {
   bgr24_to_nv12_neon(bgr.data, nv12.data, width, height);
 }
 
-void ImgConvertUtils::nv12_mat_to_bgr_mat(const uint8_t *nv12, cv::Mat &bgr24, int width, int height) {
+void ImgConvertUtils::nv12_to_bgr_mat(const uint8_t *nv12, cv::Mat &bgr24, int width, int height) {
   bgr24 = cv::Mat(height, width, CV_8UC3);
   nv12_to_bgr24_neon(const_cast<uint8_t *>(nv12), bgr24.data, width, height);
 }

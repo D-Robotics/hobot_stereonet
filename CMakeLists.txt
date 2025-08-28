@@ -14,6 +14,7 @@ find_package(cv_bridge REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_dependency(pcl_conversions REQUIRED)
 
 # =================================== FetchContent ====================================
 include(FetchContent)
@@ -106,6 +107,7 @@ ament_target_dependencies(stereonet_model_component
   message_filters
   tf2_ros
   geometry_msgs
+  pcl_conversions
 )
 target_link_libraries(stereonet_model_component
   ${rclcpp_LIBRARIES}

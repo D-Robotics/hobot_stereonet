@@ -8,8 +8,8 @@ ScopeProcessTime::~ScopeProcessTime() {
   auto duration = std::chrono::duration<double, std::milli>(end - start_).count();
 
   if (!name_.empty()) {
-    RCLCPP_INFO_STREAM(logger_, "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+    RCLCPP_DEBUG_STREAM(logger_, "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
   } else {
-    RCLCPP_INFO_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+    RCLCPP_DEBUG_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
   }
 }

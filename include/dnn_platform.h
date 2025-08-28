@@ -45,10 +45,6 @@ static int hbSysFlushMem(hbSysMem const *mem, int32_t flag) {
   return hbUCPMemFlush(mem, flag);
 }
 
-static int hbSysFreeMem(hbSysMem *mem) {
-  return hbUCPFree(mem);
-}
-
 static int hbDNNReleaseTask(hbDNNTaskHandle_t taskHandle) {
   return hbUCPReleaseTask(taskHandle);
 }

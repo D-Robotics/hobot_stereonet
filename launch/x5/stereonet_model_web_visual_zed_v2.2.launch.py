@@ -52,7 +52,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
                                                    'launch/stereonet_model_web_visual.launch.py')),
         launch_arguments = {"stereonet_model_file_path": stereonet_model_file_path,
-                            "postprocess": "v2.2",
+                            "postprocess": "convex_upsampling_with_interp",
                             'need_rectify': 'False'
                           }.items()
     )
