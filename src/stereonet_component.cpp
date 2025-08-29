@@ -15,7 +15,7 @@
 #include "stereonet_component.h"
 namespace stereonet {
 StereoNetNode::StereoNetNode(const rclcpp::NodeOptions &node_options, const std::string &node_name)
-    : Node(node_name, node_options), save_thread_pool_(5) {
+    : Node(node_name, node_options) {
   set_node_params();
   set_subscription_publisher();
   set_dnn_model();
@@ -32,7 +32,7 @@ StereoNetNode::~StereoNetNode() {
   if (publish_thread_.joinable()) {
     publish_thread_.join();
   }
-  save_thread_pool_.wait();
+  if (save_thread_pool_ptr_) save_thread_pool_ptr_->wait();
 }
 
 void StereoNetNode::set_node_params() {
@@ -101,6 +101,11 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<int>("infer_thread_num", 2);
   infer_thread_num_ = this->get_parameter("infer_thread_num").as_int();
 
+  this->declare_parameter<bool>("use_local_image_flag", false);
+  use_local_image_flag_ = this->get_parameter("use_local_image_flag").as_bool();
+  this->declare_parameter<std::string>("local_image_dir", "./offline_image");
+  local_image_dir_ = this->get_parameter("local_image_dir").as_string();
+
   RCLCPP_WARN_STREAM(this->get_logger(),
                      std::endl
                          << "=> ===================== init " << this->get_name() << "=====================" << std::endl
@@ -126,6 +131,8 @@ void StereoNetNode::set_node_params() {
                          << pointcloud_height_max_ << ", " << pointcloud_depth_max_ << "]" << std::endl
                          << "[save_result_flag save_dir save_freq save_total]: [" << save_result_flag_ << ", "
                          << save_dir_ << ", " << save_freq_ << ", " << save_total_ << "]" << std::endl
+                         << "[use_local_image_flag local_image_dir]: [" << use_local_image_flag_ << ", "
+                         << local_image_dir_ << "]" << std::endl
                          << "infer_thread_num: " << infer_thread_num_ << std::endl
                          << "=> ==================================================================" << std::endl);
 
@@ -138,6 +145,7 @@ void StereoNetNode::set_node_params() {
         rclcpp::shutdown();
       }
     }
+    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(5);
     if (save_freq_ <= 0) save_freq_ = 1;
   }
 }
@@ -371,7 +379,7 @@ void StereoNetNode::publish_function() {
       }
       {
         // save result
-        save_thread_pool_.detach_task([this, pub_data]() { save_result(pub_data); });
+        if (save_result_flag_) save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result(pub_data); });
       }
     }
   }
@@ -481,9 +489,8 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
   }
 }
 
-/*
 void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  // if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
@@ -537,76 +544,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   pcl_cloud->height = 1;
   pcl_cloud->is_dense = false;
 
-  pub_data->pointcloud = pcl_cloud;
-
-  sensor_msgs::msg::PointCloud2 cloud_msg;
-  pcl::toROSMsg(*pcl_cloud, cloud_msg);
-  cloud_msg.header = pub_data->header;
-  cloud_msg.header.frame_id = "camera_link";
-  cloud_msg.is_dense = false;
-  cloud_msg.is_bigendian = false;
-  pointcloud2_pub_->publish(cloud_msg);
-}
-*/
-
-void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
-  cv::Mat bgr;
-  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
-                                   pub_data->disp.rows);
-
-  const int step = 2;
-  const int rows = pub_data->depth.rows;
-  const int cols = pub_data->depth.cols;
-  const float fx = camera_intrinsic_->fx;
-  const float fy = camera_intrinsic_->fy;
-  const float cx = camera_intrinsic_->cx;
-  const float cy = camera_intrinsic_->cy;
-  const float height_min = pointcloud_height_min_;
-  const float height_max = pointcloud_height_max_;
-  const float depth_max = pointcloud_depth_max_;
-
-  int num_threads = omp_get_max_threads();
-  std::vector<std::vector<pcl::PointXYZRGB>> thread_points(num_threads);
-  size_t est_points_per_thread = (rows / step) * (cols / step) / num_threads;
-  for (auto &v : thread_points) v.reserve(est_points_per_thread);
-
-#pragma omp parallel
-  {
-    int tid = omp_get_thread_num();
-    std::vector<pcl::PointXYZRGB> &local_points = thread_points[tid];
-#pragma omp for schedule(static) collapse(2)
-    for (int v = 0; v < rows; v += step) {
-      for (int u = 0; u < cols; u += step) {
-        float z = pub_data->depth.at<uint16_t>(v, u) * 0.001f;
-        if (z <= 0 || z > depth_max) continue;
-        float x = (u - cx) * z / fx;
-        float y = (v - cy) * z / fy;
-        if (-y > height_max || -y < height_min) continue;
-        pcl::PointXYZRGB pt;
-        pt.x = z;
-        pt.y = -x;
-        pt.z = -y;
-        const cv::Vec3b &color = bgr.at<cv::Vec3b>(v, u);
-        pt.r = color[2];
-        pt.g = color[1];
-        pt.b = color[0];
-        local_points.push_back(pt);
-      }
-    }
-  }
-
-  // Count total points and reserve space in pcl_cloud
-  size_t total_points = 0;
-  for (auto &v : thread_points) total_points += v.size();
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-  pcl_cloud->points.reserve(total_points);
-  for (auto &v : thread_points) pcl_cloud->points.insert(pcl_cloud->points.end(), v.begin(), v.end());
-  pcl_cloud->width = pcl_cloud->points.size();
-  pcl_cloud->height = 1;
-  pcl_cloud->is_dense = false;
-
-  pub_data->pointcloud = pcl_cloud;
+  if (save_result_flag_) pub_data->pointcloud = pcl_cloud;
 
   sensor_msgs::msg::PointCloud2 cloud_msg;
   pcl::toROSMsg(*pcl_cloud, cloud_msg);

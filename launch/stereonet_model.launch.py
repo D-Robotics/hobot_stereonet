@@ -40,7 +40,7 @@ def generate_launch_description():
         'DStereoV2.0.bin'
     )
 
-    local_image_path =  os.path.join(
+    local_image_dir =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config'
     )
@@ -90,9 +90,8 @@ def generate_launch_description():
 
         {'name':'postprocess', 'default_value':'convex_upsampling', 'description': '[convex_upsampling convex_upsampling_with_uncert convex_upsampling_with_interp convex_upsampling_with_interp_uncert]'},
 
-        {'name':'use_local_image', 'default_value':'False', 'description': 'use_local_image'},
-
-        {'name':'local_image_path', 'default_value': local_image_path, 'description': 'local_image_path'},
+        {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
+        {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
 
         {'name':'speckle_filter_enable', 'default_value':'False', 'description': 'speckle_filter_enable'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},

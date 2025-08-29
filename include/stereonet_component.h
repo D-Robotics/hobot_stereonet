@@ -212,6 +212,10 @@ private:
   double pointcloud_height_max_ = 5.0;
   double pointcloud_depth_max_ = 5.0;
 
+  // offline infer
+  bool use_local_image_flag_ = false;
+  std::string local_image_dir_ = "./offline_image";
+
   // save params
   bool save_result_flag_ = false;
   std::string save_dir_ = "./stereonet_result";
@@ -227,7 +231,7 @@ private:
   order_blockqueue<std::shared_ptr<PubData>> pub_data_queue_;
   std::thread publish_thread_;
   uint64_t last_frame_timestamp_ = 0;
-  BS::thread_pool<> save_thread_pool_;
+  std::unique_ptr<BS::thread_pool<>> save_thread_pool_ptr_ = nullptr;
 };
 } // namespace stereonet
 #endif // HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
