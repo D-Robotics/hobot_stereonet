@@ -60,7 +60,7 @@ def generate_launch_description():
         {'name':'pointcloud2_topic', 'default_value':'/StereoNetNode/stereonet_pointcloud2', 'description': 'pointcloud2_topic'},
         {'name':'rectify_left_image_topic', 'default_value':'/StereoNetNode/rectify_left_image', 'description': 'rectify_left_image_topic'},
         {'name':'rectify_right_image_topic', 'default_value':'/StereoNetNode/rectify_right_image', 'description': 'rectify_right_image_topic'},
-        {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
+        {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
         {'name':'visual_alpha', 'default_value':'3', 'description': 'visual_alpha'},
@@ -83,8 +83,8 @@ def generate_launch_description():
 
         {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
 
-        {'name':'save_image_flag', 'default_value':'False', 'description': 'save_image_flag'},
-        {'name':'save_dir', 'default_value':'./stereonet_images', 'description': 'save_dir'},
+        {'name':'save_result_flag', 'default_value':'False', 'description': 'save_result_flag'},
+        {'name':'save_dir', 'default_value':'./stereonet_result', 'description': 'save_dir'},
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
 

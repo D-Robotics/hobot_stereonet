@@ -14,7 +14,8 @@ find_package(cv_bridge REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_dependency(pcl_conversions REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(OpenMP REQUIRED)
 
 # =================================== FetchContent ====================================
 include(FetchContent)
@@ -28,7 +29,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
   GIT_TAG v0.9.7
 )
-FetchContent_MakeAvailable(concurrentqueue magic_enum)
+FetchContent_Declare(
+  bs_thread_pool
+  GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(concurrentqueue magic_enum bs_thread_pool)
 
 # =================================== set include & link dirs =========================
 set(SYS_ROOT ${CMAKE_SYSROOT})
@@ -85,6 +91,7 @@ link_directories(
   ${SYS_ROOT}/usr/hobot/lib/
   ${SYS_ROOT}/usr/lib/aarch64-linux-gnu/
 )
+
 # =================================== build stereonet model component =================
 add_library(stereonet_model_component SHARED
   src/stereonet_component.cpp
@@ -97,6 +104,7 @@ target_include_directories(stereonet_model_component PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${concurrentqueue_SOURCE_DIR}
+  ${bs_thread_pool_SOURCE_DIR}/include
 )
 ament_target_dependencies(stereonet_model_component
   rclcpp
@@ -119,6 +127,7 @@ target_link_libraries(stereonet_model_component
   pthread
   ${PCL_LIBRARIES}
   magic_enum::magic_enum
+  OpenMP::OpenMP_CXX
 )
 
 # compile executable file

@@ -15,6 +15,10 @@
 #ifndef HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
 #define HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
 
+#include <filesystem>
+#include <sstream>
+#include <mutex>
+#include <omp.h>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
@@ -30,11 +34,13 @@
 #include "pcl/common/transforms.h"
 #include "pcl_conversions/pcl_conversions.h"
 #include "blockingconcurrentqueue.h"
+#include "BS_thread_pool.hpp"
 #include "img_convert_utils.h"
 #include "stereonet_process.h"
 #include "order_blockqueue.hpp"
 #include "performance_record.h"
 
+namespace fs = std::filesystem;
 namespace stereonet {
 /**
  * @struct CameraIntrinsic
@@ -69,6 +75,7 @@ private:
     std::vector<uint8_t> rectify_right_img_data; // nv12
     int fps, latency;
     int cpu_usage, bpu_usage;
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointcloud = nullptr;
   };
 
   // ============================================ member functions ============================================
@@ -164,14 +171,22 @@ private:
    */
   void publish_static_tf();
 
+  /**
+   * @
+   */
+  void save_result(const std::shared_ptr<PubData> &pub_data);
+
   // ============================================ member variables ============================================
+  // sub
   std::string stereo_image_topic_ = "/image_combine_raw";
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_ = nullptr;
   std::string camera_info_topic_ = "/image_right_raw/camera_info";
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_ = nullptr;
 
+  // pub
   std::string visual_image_topic_ = "~/stereonet_visual";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr visual_image_pub_ = nullptr;
+  bool render_perf_ = true;
   std::string depth_image_topic_ = "~/stereonet_depth";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_ = nullptr;
   std::string depth_camera_info_topic_ = "~/stereonet_depth/camera_info";
@@ -182,12 +197,14 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rectify_left_image_pub_ = nullptr;
   std::string rectify_right_image_topic_ = "~/rectify_right_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rectify_right_image_pub_ = nullptr;
+  bool publish_rectify_bgr_ = false;
 
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_ = nullptr;
 
+  // model params
+  std::shared_ptr<StereonetProcess> stereonet_process_ = nullptr;
   std::string stereonet_model_file_path_ = "";
   std::string postprocess_ = "convex_upsampling";
-
   double uncertainty_th_ = 0.0;
   std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
 
@@ -195,17 +212,22 @@ private:
   double pointcloud_height_max_ = 5.0;
   double pointcloud_depth_max_ = 5.0;
 
-  bool render_perf_ = true;
+  // save params
+  bool save_result_flag_ = false;
+  std::string save_dir_ = "./stereonet_result";
+  int save_freq_ = 1;
+  int save_total_ = -1;
+  int save_count_ = 0;
+  std::mutex save_mutex_;
 
-  // DNN model processing class
-  std::shared_ptr<StereonetProcess> stereonet_process_ = nullptr;
-
+  // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
   std::vector<std::thread> infer_threads_;
   int infer_thread_num_ = 2;
   order_blockqueue<std::shared_ptr<PubData>> pub_data_queue_;
   std::thread publish_thread_;
   uint64_t last_frame_timestamp_ = 0;
+  BS::thread_pool<> save_thread_pool_;
 };
 } // namespace stereonet
 #endif // HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_

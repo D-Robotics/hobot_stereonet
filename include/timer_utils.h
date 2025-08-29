@@ -21,12 +21,14 @@
 
 class ScopeProcessTime {
 public:
-  explicit ScopeProcessTime(const rclcpp::Logger &logger, const std::string &name = "");
+  explicit ScopeProcessTime(const rclcpp::Logger &logger, const std::string &name = "",
+                            const std::string &level = "debug");
   ~ScopeProcessTime();
 
 private:
   std::string name_;
   rclcpp::Logger logger_;
+  std::string level_;
   std::chrono::high_resolution_clock::time_point start_;
 };
 

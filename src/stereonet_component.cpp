@@ -13,10 +13,9 @@
 // limitations under the License.
 
 #include "stereonet_component.h"
-#include <string>
 namespace stereonet {
 StereoNetNode::StereoNetNode(const rclcpp::NodeOptions &node_options, const std::string &node_name)
-    : Node(node_name, node_options) {
+    : Node(node_name, node_options), save_thread_pool_(5) {
   set_node_params();
   set_subscription_publisher();
   set_dnn_model();
@@ -33,6 +32,7 @@ StereoNetNode::~StereoNetNode() {
   if (publish_thread_.joinable()) {
     publish_thread_.join();
   }
+  save_thread_pool_.wait();
 }
 
 void StereoNetNode::set_node_params() {
@@ -51,6 +51,8 @@ void StereoNetNode::set_node_params() {
   rectify_left_image_topic_ = this->get_parameter("rectify_left_image_topic").as_string();
   this->declare_parameter<std::string>("rectify_right_image_topic", "~/rectify_right_image");
   rectify_right_image_topic_ = this->get_parameter("rectify_right_image_topic").as_string();
+  this->declare_parameter<bool>("publish_rectify_bgr", false);
+  publish_rectify_bgr_ = this->get_parameter("publish_rectify_bgr").as_bool();
   depth_camera_info_topic_ = this->get_parameter("depth_camera_info_topic").as_string();
   this->declare_parameter<std::string>("pointcloud2_topic", "~/stereonet_pointcloud2");
   pointcloud2_topic_ = this->get_parameter("pointcloud2_topic").as_string();
@@ -87,30 +89,57 @@ void StereoNetNode::set_node_params() {
   pointcloud_height_max_ = this->get_parameter("pointcloud_height_max").as_double();
   pointcloud_depth_max_ = this->get_parameter("pointcloud_depth_max").as_double();
 
+  this->declare_parameter<bool>("save_result_flag", "false");
+  save_result_flag_ = this->get_parameter("save_result_flag").as_bool();
+  this->declare_parameter<std::string>("save_dir", "./stereonet_result");
+  save_dir_ = this->get_parameter("save_dir").as_string();
+  this->declare_parameter<int>("save_freq", 1);
+  save_freq_ = this->get_parameter("save_freq").as_int();
+  this->declare_parameter<int>("save_total", -1);
+  save_total_ = this->get_parameter("save_total").as_int();
+
   this->declare_parameter<int>("infer_thread_num", 2);
   infer_thread_num_ = this->get_parameter("infer_thread_num").as_int();
 
   RCLCPP_WARN_STREAM(this->get_logger(),
-                     "=> params:" << std::endl
-                                  << "stereonet_model_file_path: " << stereonet_model_file_path_ << std::endl
-                                  << "stereo_image_topic: " << stereo_image_topic_ << std::endl
-                                  << "camera_info_topic: " << camera_info_topic_ << std::endl
-                                  << "depth_image_topic: " << depth_image_topic_ << std::endl
-                                  << "depth_camera_info_topic: " << depth_camera_info_topic_ << std::endl
-                                  << "rectify_left_image_topic: " << rectify_left_image_topic_ << std::endl
-                                  << "rectify_right_image_topic: " << rectify_right_image_topic_ << std::endl
-                                  << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
-                                  << "visual_image_topic: " << visual_image_topic_ << std::endl
-                                  << "render_perf: " << render_perf_ << std::endl
-                                  << "postprocess: " << postprocess_ << std::endl
-                                  << "uncertainty_th: " << uncertainty_th_ << std::endl
-                                  << "camera_fx: " << camera_intrinsic_->fx << std::endl
-                                  << "camera_fy: " << camera_intrinsic_->fy << std::endl
-                                  << "camera_cx: " << camera_intrinsic_->cx << std::endl
-                                  << "camera_cy: " << camera_intrinsic_->cy << std::endl
-                                  << "baseline: " << camera_intrinsic_->baseline << std::endl
-                                  << "pointcloud [height min, heght max, depth_max] m: " << pointcloud_height_min_
-                                  << "," << pointcloud_height_max_ << "," << pointcloud_depth_max_);
+                     std::endl
+                         << "=> ===================== init " << this->get_name() << "=====================" << std::endl
+                         << "stereonet_model_file_path: " << stereonet_model_file_path_ << std::endl
+                         << "stereo_image_topic: " << stereo_image_topic_ << std::endl
+                         << "camera_info_topic: " << camera_info_topic_ << std::endl
+                         << "depth_image_topic: " << depth_image_topic_ << std::endl
+                         << "depth_camera_info_topic: " << depth_camera_info_topic_ << std::endl
+                         << "rectify_left_image_topic: " << rectify_left_image_topic_ << std::endl
+                         << "rectify_right_image_topic: " << rectify_right_image_topic_ << std::endl
+                         << "publish_rectify_bgr: " << publish_rectify_bgr_ << std::endl
+                         << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
+                         << "visual_image_topic: " << visual_image_topic_ << std::endl
+                         << "render_perf: " << render_perf_ << std::endl
+                         << "postprocess: " << postprocess_ << std::endl
+                         << "uncertainty_th: " << uncertainty_th_ << std::endl
+                         << "camera_fx: " << camera_intrinsic_->fx << std::endl
+                         << "camera_fy: " << camera_intrinsic_->fy << std::endl
+                         << "camera_cx: " << camera_intrinsic_->cx << std::endl
+                         << "camera_cy: " << camera_intrinsic_->cy << std::endl
+                         << "baseline: " << camera_intrinsic_->baseline << std::endl
+                         << "pointcloud [height min, heght max, depth_max] m: [" << pointcloud_height_min_ << ", "
+                         << pointcloud_height_max_ << ", " << pointcloud_depth_max_ << "]" << std::endl
+                         << "[save_result_flag save_dir save_freq save_total]: [" << save_result_flag_ << ", "
+                         << save_dir_ << ", " << save_freq_ << ", " << save_total_ << "]" << std::endl
+                         << "infer_thread_num: " << infer_thread_num_ << std::endl
+                         << "=> ==================================================================" << std::endl);
+
+  if (save_result_flag_) {
+    if (!fs::exists(save_dir_)) {
+      if (fs::create_directories(save_dir_)) {
+        RCLCPP_INFO(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
+      } else {
+        RCLCPP_ERROR(this->get_logger(), "=> create save_dir: %s failed", save_dir_.c_str());
+        rclcpp::shutdown();
+      }
+    }
+    if (save_freq_ <= 0) save_freq_ = 1;
+  }
 }
 
 void StereoNetNode::set_subscription_publisher() {
@@ -131,7 +160,11 @@ void StereoNetNode::set_subscription_publisher() {
 
 void StereoNetNode::set_dnn_model() {
   stereonet_process_ = std::make_shared<StereonetProcess>(this->get_logger());
-  stereonet_process_->init(stereonet_model_file_path_);
+  int ret_code = stereonet_process_->init(stereonet_model_file_path_);
+  if (ret_code != 0) {
+    RCLCPP_FATAL(this->get_logger(), "=> StereonetProcess init failed");
+    rclcpp::shutdown();
+  }
 }
 
 void StereoNetNode::set_worker_threads() {
@@ -139,6 +172,29 @@ void StereoNetNode::set_worker_threads() {
     infer_threads_.emplace_back(&StereoNetNode::infer_function, this, i);
   }
   publish_thread_ = std::thread(&StereoNetNode::publish_function, this);
+}
+
+void StereoNetNode::publish_static_tf() {
+  static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+  geometry_msgs::msg::TransformStamped t;
+  t.header.stamp = now();
+  t.header.frame_id = "camera_link";
+  t.child_frame_id = "camera_depth_frame";
+
+  t.transform.translation.x = 0.0;
+  t.transform.translation.y = 0.0;
+  t.transform.translation.z = 0.0;
+
+  tf2::Quaternion q;
+  q.setRPY(-M_PI / 2, 0, -M_PI / 2);
+  q.normalize();
+
+  t.transform.rotation.x = q.x();
+  t.transform.rotation.y = q.y();
+  t.transform.rotation.z = q.z();
+  t.transform.rotation.w = q.w();
+
+  static_broadcaster_->sendTransform(t);
 }
 
 void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
@@ -190,6 +246,11 @@ void StereoNetNode::infer_function(const int &thread_id) {
       cv::Mat disp, uncert;
       stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_, disp,
                                   uncert);
+      cv::Mat depth;
+      {
+        ScopeProcessTime t(this->get_logger(), "disp_to_depth");
+        StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
+      }
 
       // ================================== Publish ====================================
       auto pub_data = std::make_shared<PubData>();
@@ -198,14 +259,13 @@ void StereoNetNode::infer_function(const int &thread_id) {
       pub_data->header = stereo_msg->header;
       pub_data->disp = disp;
       pub_data->uncert = uncert;
-
-      cv::Mat depth;
-      StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
       pub_data->depth = depth;
 
       if (render_perf_) {
         auto now = this->get_clock()->now();
-        pub_data->latency = (now - stereo_msg->header.stamp).seconds() * 1000;
+        auto latency = (now - stereo_msg->header.stamp).seconds() * 1000;
+        // if latency > 1000ms, maybe the time stamp is not correct, set latency to 0
+        pub_data->latency = latency > 1000 ? 0 : latency;
         performance_writer::Get()->record_performance(pub_data->latency);
         pub_data->fps = performance_writer::Get()->get_fps();
         pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
@@ -301,13 +361,17 @@ void StereoNetNode::publish_function() {
       }
       // publish pointcloud2
       {
-        ScopeProcessTime t(this->get_logger(), "publish_pointcloud2");
+        ScopeProcessTime t(this->get_logger(), "publish_pointcloud2", "warn");
         publish_pointcloud2(pub_data);
       }
       // publish visual image
       {
         ScopeProcessTime t(this->get_logger(), "publish_visual_image");
         publish_visual_image(pub_data);
+      }
+      {
+        // save result
+        save_thread_pool_.detach_task([this, pub_data]() { save_result(pub_data); });
       }
     }
   }
@@ -367,13 +431,25 @@ void StereoNetNode::publish_rectified_left_image(const std::shared_ptr<PubData> 
   int height = pub_data->disp.rows;
   left_msg->height = height;
   left_msg->width = width;
-  left_msg->encoding = "nv12";
   left_msg->is_bigendian = false;
-  left_msg->step = width; // Y plane step
-  size_t size = width * height * 3 / 2;
-  left_msg->data.resize(size);
-  std::memcpy(left_msg->data.data(), pub_data->rectify_left_img_data.data(), size);
-  rectify_left_image_pub_->publish(*left_msg);
+
+  if (publish_rectify_bgr_) {
+    left_msg->encoding = "bgr8";
+    left_msg->step = width * 3; // BGR step
+    size_t size = width * height * 3;
+    left_msg->data.resize(size);
+    cv::Mat bgr;
+    ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, width, height);
+    std::memcpy(left_msg->data.data(), bgr.data, size);
+    rectify_left_image_pub_->publish(*left_msg);
+  } else {
+    left_msg->encoding = "nv12";
+    left_msg->step = width; // Y plane step
+    size_t size = width * height * 3 / 2;
+    left_msg->data.resize(size);
+    std::memcpy(left_msg->data.data(), pub_data->rectify_left_img_data.data(), size);
+    rectify_left_image_pub_->publish(*left_msg);
+  }
 }
 
 void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData> &pub_data) {
@@ -385,111 +461,159 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
   int height = pub_data->disp.rows;
   right_msg->height = height;
   right_msg->width = width;
-  right_msg->encoding = "nv12";
   right_msg->is_bigendian = false;
-  right_msg->step = width; // Y plane step
-  size_t size = width * height * 3 / 2;
-  right_msg->data.resize(size);
-  std::memcpy(right_msg->data.data(), pub_data->rectify_right_img_data.data(), size);
-  rectify_right_image_pub_->publish(*right_msg);
+  if (publish_rectify_bgr_) {
+    right_msg->encoding = "bgr8";
+    right_msg->step = width * 3; // BGR step
+    size_t size = width * height * 3;
+    right_msg->data.resize(size);
+    cv::Mat bgr;
+    ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_right_img_data.data(), bgr, width, height);
+    std::memcpy(right_msg->data.data(), bgr.data, size);
+    rectify_right_image_pub_->publish(*right_msg);
+  } else {
+    right_msg->encoding = "nv12";
+    right_msg->step = width; // Y plane step
+    size_t size = width * height * 3 / 2;
+    right_msg->data.resize(size);
+    std::memcpy(right_msg->data.data(), pub_data->rectify_right_img_data.data(), size);
+    rectify_right_image_pub_->publish(*right_msg);
+  }
 }
 
 /*
 void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  // Convert depth image to point cloud
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+  if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
-  pcl_cloud->points.reserve(pub_data->depth.rows * pub_data->depth.cols / 4); // reserve for 2x2 downsample
-  for (int v = 0; v < pub_data->depth.rows; v += 2) {
-    for (int u = 0; u < pub_data->depth.cols; u += 2) {
-      float z = pub_data->depth.at<uint16_t>(v, u) * 0.001f; // convert mm to m
+
+  const int step = 2; // downsample
+  const int rows = pub_data->depth.rows;
+  const int cols = pub_data->depth.cols;
+  const float fx = camera_intrinsic_->fx;
+  const float fy = camera_intrinsic_->fy;
+  const float cx = camera_intrinsic_->cx;
+  const float cy = camera_intrinsic_->cy;
+
+  int num_threads = omp_get_max_threads();
+  std::vector<std::vector<pcl::PointXYZRGB>> thread_points(num_threads);
+
+  // Estimate the capacity needed for each thread to avoid frequent resizing during push_back
+  size_t est_points_per_thread = (rows / step) * (cols / step) / num_threads;
+  for (auto &v : thread_points) v.reserve(est_points_per_thread);
+
+#pragma omp parallel for schedule(static)
+  for (int v = 0; v < rows; v += step) {
+    int tid = omp_get_thread_num();
+    std::vector<pcl::PointXYZRGB> &local_points = thread_points[tid];
+    const uint16_t *depth_row = pub_data->depth.ptr<uint16_t>(v);
+    const cv::Vec3b *bgr_row = bgr.ptr<cv::Vec3b>(v);
+    for (int u = 0; u < cols; u += step) {
+      float z = depth_row[u] * 0.001f;
       if (z <= 0 || z > pointcloud_depth_max_) continue;
-      float x = (u - camera_intrinsic_->cx) * z / camera_intrinsic_->fx;
-      float y = (v - camera_intrinsic_->cy) * z / camera_intrinsic_->fy;
-      if (y < 0 && abs(y) > pointcloud_height_max_) continue;
-      if (y > 0 && y > abs(pointcloud_height_min_)) continue;
-      auto r = bgr.at<cv::Vec3b>(v, u)[2];
-      auto g = bgr.at<cv::Vec3b>(v, u)[1];
-      auto b = bgr.at<cv::Vec3b>(v, u)[0];
-      pcl_cloud->points.emplace_back(z, -x, -y, r, g, b);
+      float x = (u - cx) * z / fx;
+      float y = (v - cy) * z / fy;
+      if (-y > pointcloud_height_max_ || -y < pointcloud_height_min_) continue;
+      pcl::PointXYZRGB pt;
+      pt.x = z;
+      pt.y = -x;
+      pt.z = -y;
+      const cv::Vec3b &color = bgr_row[u];
+      pt.r = color[2];
+      pt.g = color[1];
+      pt.b = color[0];
+      local_points.push_back(pt);
     }
   }
+
+  // Count total points and reserve space in pcl_cloud
+  size_t total_points = 0;
+  for (auto &v : thread_points) total_points += v.size();
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+  pcl_cloud->points.reserve(total_points);
+  for (auto &v : thread_points) pcl_cloud->points.insert(pcl_cloud->points.end(), v.begin(), v.end());
   pcl_cloud->width = pcl_cloud->points.size();
   pcl_cloud->height = 1;
+  pcl_cloud->is_dense = false;
 
-  sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg(new sensor_msgs::msg::PointCloud2());
-  pcl::toROSMsg(*pcl_cloud, *cloud_msg);
-  cloud_msg->header = pub_data->header;
-  cloud_msg->header.frame_id = "camera_link";
-  cloud_msg->is_dense = false;
-  cloud_msg->is_bigendian = false;
-  pointcloud2_pub_->publish(*cloud_msg);
-}
-*/
-
-void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  if (pointcloud2_pub_->get_subscription_count() == 0) return;
-  cv::Mat bgr;
-  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
-                                   pub_data->disp.rows);
+  pub_data->pointcloud = pcl_cloud;
 
   sensor_msgs::msg::PointCloud2 cloud_msg;
+  pcl::toROSMsg(*pcl_cloud, cloud_msg);
   cloud_msg.header = pub_data->header;
   cloud_msg.header.frame_id = "camera_link";
   cloud_msg.is_dense = false;
   cloud_msg.is_bigendian = false;
+  pointcloud2_pub_->publish(cloud_msg);
+}
+*/
 
-  // 定义字段：x, y, z, rgb
-  sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
-  modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
+  if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  cv::Mat bgr;
+  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
+                                   pub_data->disp.rows);
 
-  // 预估点数（2x2 下采样）
-  size_t reserve_size = pub_data->depth.rows * pub_data->depth.cols / 4;
-  modifier.resize(reserve_size);
+  const int step = 2;
+  const int rows = pub_data->depth.rows;
+  const int cols = pub_data->depth.cols;
+  const float fx = camera_intrinsic_->fx;
+  const float fy = camera_intrinsic_->fy;
+  const float cx = camera_intrinsic_->cx;
+  const float cy = camera_intrinsic_->cy;
+  const float height_min = pointcloud_height_min_;
+  const float height_max = pointcloud_height_max_;
+  const float depth_max = pointcloud_depth_max_;
 
-  sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
-  sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
-  sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(cloud_msg, "r");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(cloud_msg, "g");
-  sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(cloud_msg, "b");
+  int num_threads = omp_get_max_threads();
+  std::vector<std::vector<pcl::PointXYZRGB>> thread_points(num_threads);
+  size_t est_points_per_thread = (rows / step) * (cols / step) / num_threads;
+  for (auto &v : thread_points) v.reserve(est_points_per_thread);
 
-  int valid_count = 0;
-  for (int v = 0; v < pub_data->depth.rows; v += 2) {
-    const uint16_t *depth_ptr = pub_data->depth.ptr<uint16_t>(v);
-    const cv::Vec3b *color_ptr = bgr.ptr<cv::Vec3b>(v);
-
-    for (int u = 0; u < pub_data->depth.cols; u += 2) {
-      float z = depth_ptr[u] * 0.001f; // mm → m
-      if (z <= 0 || z > pointcloud_depth_max_) continue;
-      float x = (u - camera_intrinsic_->cx) * z / camera_intrinsic_->fx;
-      float y = (v - camera_intrinsic_->cy) * z / camera_intrinsic_->fy;
-      if (y < 0 && std::abs(y) > pointcloud_height_max_) continue;
-      if (y > 0 && y > std::abs(pointcloud_height_min_)) continue;
-      *iter_x = z;
-      *iter_y = -x;
-      *iter_z = -y;
-      *iter_r = color_ptr[u][2];
-      *iter_g = color_ptr[u][1];
-      *iter_b = color_ptr[u][0];
-      ++iter_x;
-      ++iter_y;
-      ++iter_z;
-      ++iter_r;
-      ++iter_g;
-      ++iter_b;
-      valid_count++;
+#pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    std::vector<pcl::PointXYZRGB> &local_points = thread_points[tid];
+#pragma omp for schedule(static) collapse(2)
+    for (int v = 0; v < rows; v += step) {
+      for (int u = 0; u < cols; u += step) {
+        float z = pub_data->depth.at<uint16_t>(v, u) * 0.001f;
+        if (z <= 0 || z > depth_max) continue;
+        float x = (u - cx) * z / fx;
+        float y = (v - cy) * z / fy;
+        if (-y > height_max || -y < height_min) continue;
+        pcl::PointXYZRGB pt;
+        pt.x = z;
+        pt.y = -x;
+        pt.z = -y;
+        const cv::Vec3b &color = bgr.at<cv::Vec3b>(v, u);
+        pt.r = color[2];
+        pt.g = color[1];
+        pt.b = color[0];
+        local_points.push_back(pt);
+      }
     }
   }
 
-  // resize to actual valid points
-  cloud_msg.width = valid_count;
-  cloud_msg.height = 1;
-  cloud_msg.row_step = cloud_msg.point_step * valid_count;
-  cloud_msg.data.resize(valid_count * cloud_msg.point_step);
+  // Count total points and reserve space in pcl_cloud
+  size_t total_points = 0;
+  for (auto &v : thread_points) total_points += v.size();
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+  pcl_cloud->points.reserve(total_points);
+  for (auto &v : thread_points) pcl_cloud->points.insert(pcl_cloud->points.end(), v.begin(), v.end());
+  pcl_cloud->width = pcl_cloud->points.size();
+  pcl_cloud->height = 1;
+  pcl_cloud->is_dense = false;
 
+  pub_data->pointcloud = pcl_cloud;
+
+  sensor_msgs::msg::PointCloud2 cloud_msg;
+  pcl::toROSMsg(*pcl_cloud, cloud_msg);
+  cloud_msg.header = pub_data->header;
+  cloud_msg.header.frame_id = "camera_link";
+  cloud_msg.is_dense = false;
+  cloud_msg.is_bigendian = false;
   pointcloud2_pub_->publish(cloud_msg);
 }
 
@@ -561,27 +685,69 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   visual_image_pub_->publish(*visual_msg);
 }
 
-void StereoNetNode::publish_static_tf() {
-  static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
-  geometry_msgs::msg::TransformStamped t;
-  t.header.stamp = now();
-  t.header.frame_id = "camera_link";
-  t.child_frame_id = "camera_depth_frame";
+void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
+  if (rclcpp::ok() == false) return;
+  bool do_save = false;
+  int current_count = 0;
+  {
+    std::lock_guard<std::mutex> lock(save_mutex_);
+    if (!save_result_flag_) return;
+    if (save_total_ > 0 && save_count_ / save_freq_ >= save_total_) {
+      RCLCPP_WARN(this->get_logger(), "\033[31m=> save total %d images, stop saving\033[0m", save_total_);
+      save_result_flag_ = false;
+      return;
+    }
+    if (save_count_ % save_freq_ != 0) {
+      save_count_++;
+      return;
+    }
+    current_count = save_count_;
+    save_count_++;
+    do_save = true;
+  }
+  if (!do_save) return;
 
-  t.transform.translation.x = 0.0;
-  t.transform.translation.y = 0.0;
-  t.transform.translation.z = 0.0;
+  if (current_count == 0) {
+    std::string intrinsic_path = fs::path(save_dir_) / fs::path("camera_intrinsic.txt");
+    std::ofstream ofs(intrinsic_path);
+    if (ofs.is_open()) {
+      ofs << std::fixed << std::setprecision(6);
+      ofs << "# fx fy cx cy baseline(m)" << std::endl;
+      ofs << camera_intrinsic_->fx << " " << camera_intrinsic_->fy << " " << camera_intrinsic_->cx << " "
+          << camera_intrinsic_->cy << " " << camera_intrinsic_->baseline << std::endl;
+      ofs.close();
+      RCLCPP_WARN(this->get_logger(), "\033[32m=> save camera intrinsic to %s\033[0m", intrinsic_path.c_str());
+    }
+  }
 
-  tf2::Quaternion q;
-  q.setRPY(-M_PI / 2, 0, -M_PI / 2);
-  q.normalize();
+  std::string timestamp_str = std::to_string(pub_data->header.stamp.sec) + "_" +
+                              std::to_string(pub_data->header.stamp.nanosec / 1'000'000); // ms
+  std::stringstream ss;
+  ss << std::setw(6) << std::setfill('0') << current_count << "_";
 
-  t.transform.rotation.x = q.x();
-  t.transform.rotation.y = q.y();
-  t.transform.rotation.z = q.z();
-  t.transform.rotation.w = q.w();
+  std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth_" + timestamp_str + ".png");
+  std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp_" + timestamp_str + ".pfm");
+  std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert_" + timestamp_str + ".png");
+  std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left_" + timestamp_str + ".png");
+  std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right_" + timestamp_str + ".png");
+  std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud_" + timestamp_str + ".pcd");
 
-  static_broadcaster_->sendTransform(t);
+  cv::Mat left_bgr, right_bgr;
+  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, pub_data->disp.cols,
+                                   pub_data->disp.rows);
+  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_right_img_data.data(), right_bgr, pub_data->disp.cols,
+                                   pub_data->disp.rows);
+
+  cv::imwrite(depth_image_path, pub_data->depth);
+  cv::imwrite(disp_image_path, pub_data->disp);
+  if (!pub_data->uncert.empty()) cv::imwrite(uncert_image_path, pub_data->uncert);
+  cv::imwrite(left_image_path, left_bgr);
+  cv::imwrite(right_image_path, right_bgr);
+  if (pub_data->pointcloud && !pub_data->pointcloud->points.empty())
+    pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
+
+  RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, save count: %d\033[0m", save_dir_.c_str(),
+              current_count);
 }
 
 } // namespace stereonet
