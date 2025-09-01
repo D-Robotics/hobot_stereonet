@@ -36,6 +36,7 @@
 #include "blockingconcurrentqueue.h"
 #include "BS_thread_pool.hpp"
 #include "img_convert_utils.h"
+#include "file_utils.h"
 #include "stereonet_process.h"
 #include "order_blockqueue.hpp"
 #include "performance_record.h"
@@ -52,6 +53,10 @@ struct CameraIntrinsic {
   double fx = 0.0;
   double fy = 0.0;
   double baseline = 0.0; // in meters
+
+  bool is_valid() const {
+    return (fx > 0.0 && fy > 0.0 && cx >= 0.0 && cy >= 0.0 && baseline > 0.0);
+  }
 };
 
 /**
@@ -75,7 +80,9 @@ private:
     std::vector<uint8_t> rectify_right_img_data; // nv12
     int fps, latency;
     int cpu_usage, bpu_usage;
+
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointcloud = nullptr;
+    cv::Mat visual_img;
   };
 
   // ============================================ member functions ============================================
@@ -172,7 +179,13 @@ private:
   void publish_static_tf();
 
   /**
-   * @
+   * @brief Inference by local image
+   */
+  void infer_offline();
+
+  /**
+   * @brief save result to local dir
+   * @param pub_data The processed data containing the disparity map and metadata
    */
   void save_result(const std::shared_ptr<PubData> &pub_data);
 
@@ -215,6 +228,7 @@ private:
   // offline infer
   bool use_local_image_flag_ = false;
   std::string local_image_dir_ = "./offline_image";
+  rclcpp::TimerBase::SharedPtr infer_offline_timer_ = nullptr;
 
   // save params
   bool save_result_flag_ = false;
@@ -223,6 +237,12 @@ private:
   int save_total_ = -1;
   int save_count_ = 0;
   std::mutex save_mutex_;
+
+  // calib params
+  std::string calib_method_ = "gdc"; // gdc, none, custom
+  std::string stereo_calib_file_path_ = "";
+  bool resize_before_rectify_ = false;
+  bool load_rectify_param_ = false;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;

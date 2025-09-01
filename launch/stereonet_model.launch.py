@@ -74,12 +74,14 @@ def generate_launch_description():
 
         {'name':'calib_method', 'default_value':'gdc', 'description': '[gdc none custom]'},
         {'name':'stereo_calib_file_path', 'default_value': stereo_calib_file_path, 'description': 'stereo_calib_file_path'},
+        {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
+        {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
 
-        {'name':'camera_cx', 'default_value':'659.710', 'description': 'rectified_camera_cx'},
-        {'name':'camera_cy', 'default_value':'360.584', 'description': 'rectified_camera_cy'},
-        {'name':'camera_fx', 'default_value':'527.1931', 'description': 'rectified_camera_fx'},
-        {'name':'camera_fy', 'default_value':'527.1931', 'description': 'rectified_camera_fy'},
-        {'name':'baseline', 'default_value':'0.119893', 'description': 'baseline of stereo'},
+        {'name':'camera_cx', 'default_value':'0.0', 'description': 'rectified_camera_cx'},
+        {'name':'camera_cy', 'default_value':'0.0', 'description': 'rectified_camera_cy'},
+        {'name':'camera_fx', 'default_value':'0.0', 'description': 'rectified_camera_fx'},
+        {'name':'camera_fy', 'default_value':'0.0', 'description': 'rectified_camera_fy'},
+        {'name':'baseline', 'default_value':'0.0', 'description': 'baseline of stereo'},
 
         {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
 
@@ -88,7 +90,7 @@ def generate_launch_description():
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
 
-        {'name':'postprocess', 'default_value':'convex_upsampling', 'description': '[convex_upsampling convex_upsampling_with_uncert convex_upsampling_with_interp convex_upsampling_with_interp_uncert]'},
+        {'name':'postprocess', 'default_value':'convex_upsampling', 'description': '[convex_upsampling convex_upsampling_with_uncert convex_upsampling_with_interp]'},
 
         {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
         {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
@@ -100,8 +102,6 @@ def generate_launch_description():
         {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
-        {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
-        {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
     ]
 
     launch = declare_configurable_parameters(node_params)
@@ -113,13 +113,5 @@ def generate_launch_description():
         parameters=[set_configurable_parameters(node_params)],
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     ))
-
-    #boost = ExecuteProcess(
-    #    cmd=[[
-    #        'echo 1 > /sys/devices/system/cpu/cpufreq/boost '
-    #    ]],
-    #    shell=True
-    #)
-    #launch.append(boost)
 
     return LaunchDescription(launch)

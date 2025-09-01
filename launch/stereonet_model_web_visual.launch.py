@@ -29,27 +29,28 @@ def generate_launch_description():
     os.environ['ROS_LOG_DIR'] = '/userdata/.roslog'
 
     node_list = []
-
-    node_list.append(DeclareLaunchArgument(
-        'use_local_image',
-        default_value='False',
-        description='use_local_image'
-    ))
-
     node_list.append(DeclareLaunchArgument(
         'stereonet_pub_web',
         default_value='True',
         description='stereonet_pub_web, if not, we will disable websocket and codec of stereonet depth'
     ))
-
     node_list.append(DeclareLaunchArgument(
         'use_mipi_cam',
         default_value='True',
         description='use_mipi_cam'
     ))
 
+    # sterenet_model.launch.py
+    stereonet_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
+                                                   'launch/stereonet_model.launch.py')),
+        launch_arguments={
+            'log_level': 'info',
+        }.items(),
+    )
+    node_list.append(stereonet_node)
 
-    # mipi双目相机
+    # mipi_cam_dual_channel.launch.py
     dual_mipi_cam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -66,24 +67,13 @@ def generate_launch_description():
             PythonExpression([
                 LaunchConfiguration('use_mipi_cam'),
                 ' and ',
-                'not ', LaunchConfiguration('use_local_image')
+                'not ', LaunchConfiguration('use_local_image_flag')
             ])
         )
     )
-
     node_list.append(dual_mipi_cam)
 
-    # 双目深度估计模型
-    stereonet_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
-                                                   'launch/stereonet_model.launch.py')),
-        launch_arguments={
-            'log_level': 'info',
-        }.items(),
-    )
-    node_list.append(stereonet_node)
-
-    # 编码节点
+    # hobot_codec_encode.launch.py
     codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -92,7 +82,6 @@ def generate_launch_description():
         launch_arguments={
             'codec_in_mode': 'ros',
             'codec_out_mode': 'ros',
-            # 左图和深度拼接后的图
             'codec_sub_topic': '/StereoNetNode/stereonet_visual',
             'codec_in_format': 'bgr8',
             'codec_pub_topic': '/image_jpeg',
@@ -103,7 +92,7 @@ def generate_launch_description():
     )
     node_list.append(codec_node)
 
-    # web展示节点
+    # websocket.launch.py
     web_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(

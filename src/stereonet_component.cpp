@@ -32,7 +32,10 @@ StereoNetNode::~StereoNetNode() {
   if (publish_thread_.joinable()) {
     publish_thread_.join();
   }
-  if (save_thread_pool_ptr_) save_thread_pool_ptr_->wait();
+  if (save_thread_pool_ptr_) {
+    save_thread_pool_ptr_->wait();
+    save_thread_pool_ptr_.reset();
+  }
 }
 
 void StereoNetNode::set_node_params() {
@@ -66,6 +69,15 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<std::string>("postprocess", "convex_upsampling");
   postprocess_ = this->get_parameter("postprocess").as_string();
+  auto is_valid_postprocess = [](const std::string &postprocess) {
+    return postprocess == "convex_upsampling" || postprocess == "convex_upsampling_with_uncert" ||
+           postprocess == "convex_upsampling_with_interp";
+  };
+  if (!is_valid_postprocess(postprocess_)) {
+    RCLCPP_FATAL(this->get_logger(), "=> postprocess parameter invalid, should be one of [convex_upsampling, "
+                                     "convex_upsampling_with_uncert, convex_upsampling_with_interp]");
+    rclcpp::shutdown();
+  }
 
   this->declare_parameter<double>("uncertainty_th", 0.0);
   uncertainty_th_ = this->get_parameter("uncertainty_th").as_double();
@@ -105,6 +117,43 @@ void StereoNetNode::set_node_params() {
   use_local_image_flag_ = this->get_parameter("use_local_image_flag").as_bool();
   this->declare_parameter<std::string>("local_image_dir", "./offline_image");
   local_image_dir_ = this->get_parameter("local_image_dir").as_string();
+  if (use_local_image_flag_) {
+    if (!fs::exists(local_image_dir_)) {
+      RCLCPP_FATAL(this->get_logger(), "=> local_image_dir: %s not exist", local_image_dir_.c_str());
+      rclcpp::shutdown();
+    }
+    if (save_result_flag_) {
+      if (local_image_dir_ == save_dir_) {
+        RCLCPP_FATAL(this->get_logger(), "=> local_image_dir: %s and save_dir: %s conflict, please set them different",
+                     local_image_dir_.c_str(), save_dir_.c_str());
+        rclcpp::shutdown();
+      }
+      // when use local image, always save all results
+      save_freq_ = 1;
+      save_total_ = -1;
+    }
+    infer_thread_num_ = 1;
+  }
+
+  this->declare_parameter<std::string>("calib_method", "gdc");
+  calib_method_ = this->get_parameter("calib_method").as_string();
+  auto is_valid_calib_method = [](const std::string &method) {
+    return method == "gdc" || method == "none" || method == "custom";
+  };
+  if (!is_valid_calib_method(calib_method_)) {
+    RCLCPP_FATAL(this->get_logger(), "=> calib_method parameter invalid, should be one of [gdc, none, custom]");
+    rclcpp::shutdown();
+  }
+  this->declare_parameter<std::string>("stereo_calib_file_path", "");
+  stereo_calib_file_path_ = this->get_parameter("stereo_calib_file_path").as_string();
+  if (calib_method_ == "custom" && stereo_calib_file_path_.empty()) {
+    RCLCPP_FATAL(this->get_logger(), "=> stereo_calib_file_path is empty, please set it when calib_method is custom");
+    rclcpp::shutdown();
+  }
+  this->declare_parameter<bool>("resize_before_rectify", false);
+  resize_before_rectify_ = this->get_parameter("resize_before_rectify").as_bool();
+  this->declare_parameter<bool>("load_rectify_param", false);
+  load_rectify_param_ = this->get_parameter("load_rectify_param").as_bool();
 
   RCLCPP_WARN_STREAM(this->get_logger(),
                      std::endl
@@ -133,6 +182,10 @@ void StereoNetNode::set_node_params() {
                          << save_dir_ << ", " << save_freq_ << ", " << save_total_ << "]" << std::endl
                          << "[use_local_image_flag local_image_dir]: [" << use_local_image_flag_ << ", "
                          << local_image_dir_ << "]" << std::endl
+                         << "calib_method: " << calib_method_ << std::endl
+                         << "stereo_calib_file_path: " << stereo_calib_file_path_ << std::endl
+                         << "resize_before_rectify: " << resize_before_rectify_ << std::endl
+                         << "load_rectify_param: " << load_rectify_param_ << std::endl
                          << "infer_thread_num: " << infer_thread_num_ << std::endl
                          << "=> ==================================================================" << std::endl);
 
@@ -141,21 +194,30 @@ void StereoNetNode::set_node_params() {
       if (fs::create_directories(save_dir_)) {
         RCLCPP_INFO(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
       } else {
-        RCLCPP_ERROR(this->get_logger(), "=> create save_dir: %s failed", save_dir_.c_str());
+        RCLCPP_ERROR(this->get_logger(), "\033[31m=> create save_dir: %s failed\033[0m", save_dir_.c_str());
         rclcpp::shutdown();
       }
     }
-    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(5);
+    // int save_thread_num = use_local_image_flag_ ? 1 : 5;
+    int save_thread_num = 5;
+    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num);
     if (save_freq_ <= 0) save_freq_ = 1;
   }
 }
 
 void StereoNetNode::set_subscription_publisher() {
   // Set up subscriptions
-  stereo_image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-      stereo_image_topic_, 10, std::bind(&StereoNetNode::stereo_image_callback, this, std::placeholders::_1));
-  camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-      camera_info_topic_, 10, std::bind(&StereoNetNode::camera_info_callback, this, std::placeholders::_1));
+  if (use_local_image_flag_) {
+    infer_offline_timer_ = this->create_wall_timer(std::chrono::milliseconds(0), [this]() {
+      this->infer_offline();
+      infer_offline_timer_->cancel();
+    });
+  } else {
+    stereo_image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+        stereo_image_topic_, 10, std::bind(&StereoNetNode::stereo_image_callback, this, std::placeholders::_1));
+    camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+        camera_info_topic_, 10, std::bind(&StereoNetNode::camera_info_callback, this, std::placeholders::_1));
+  }
 
   // Set up publishers
   visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(visual_image_topic_, 10);
@@ -369,7 +431,7 @@ void StereoNetNode::publish_function() {
       }
       // publish pointcloud2
       {
-        ScopeProcessTime t(this->get_logger(), "publish_pointcloud2", "warn");
+        ScopeProcessTime t(this->get_logger(), "publish_pointcloud2");
         publish_pointcloud2(pub_data);
       }
       // publish visual image
@@ -607,6 +669,8 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                 2);
   }
 
+  // ===================================== publish visual image ============================================
+  pub_data->visual_img = visual_img;
   // Convert cv::Mat to sensor_msgs::msg::Image
   auto visual_msg = std::make_shared<sensor_msgs::msg::Image>();
   visual_msg->header = pub_data->header;
@@ -658,17 +722,16 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
     }
   }
 
-  std::string timestamp_str = std::to_string(pub_data->header.stamp.sec) + "_" +
-                              std::to_string(pub_data->header.stamp.nanosec / 1'000'000); // ms
   std::stringstream ss;
   ss << std::setw(6) << std::setfill('0') << current_count << "_";
 
-  std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth_" + timestamp_str + ".png");
-  std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp_" + timestamp_str + ".pfm");
-  std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert_" + timestamp_str + ".png");
-  std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left_" + timestamp_str + ".png");
-  std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right_" + timestamp_str + ".png");
-  std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud_" + timestamp_str + ".pcd");
+  std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth.png");
+  std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp.pfm");
+  std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
+  std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left.png");
+  std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right.png");
+  std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
+  std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.png");
 
   cv::Mat left_bgr, right_bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, pub_data->disp.cols,
@@ -683,9 +746,77 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   cv::imwrite(right_image_path, right_bgr);
   if (pub_data->pointcloud && !pub_data->pointcloud->points.empty())
     pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
+  if (!pub_data->visual_img.empty()) cv::imwrite(visual_image_path, pub_data->visual_img);
 
   RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, save count: %d\033[0m", save_dir_.c_str(),
               current_count);
+}
+
+void StereoNetNode::infer_offline() {
+  auto img_paths = FileUtils::find_pairs(local_image_dir_);
+  RCLCPP_INFO(this->get_logger(), "\033[32m=> found %zu image pairs in %s\033[0m", img_paths.size(), local_image_dir_.c_str());
+
+  std::string camera_intrinsic_path = fs::path(local_image_dir_) / fs::path("camera_intrinsic.txt");
+  if (fs::exists(camera_intrinsic_path)) {
+    bool read_success =
+        FileUtils::read_camera_intrinsic(camera_intrinsic_path, camera_intrinsic_->fx, camera_intrinsic_->fy,
+                                         camera_intrinsic_->cx, camera_intrinsic_->cy, camera_intrinsic_->baseline);
+    if (read_success) {
+      RCLCPP_WARN_ONCE(
+          this->get_logger(),
+          "\033[31m=> read camera intrinsic from %s: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): %f\033[0m",
+          camera_intrinsic_path.c_str(), camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
+          camera_intrinsic_->cy, camera_intrinsic_->baseline);
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "\033[31m=> read camera intrinsic from %s failed\033[0m",
+                   camera_intrinsic_path.c_str());
+      rclcpp::shutdown();
+    }
+  } else if (camera_intrinsic_->is_valid()) {
+    RCLCPP_WARN_ONCE(this->get_logger(),
+                     "\033[33m=> use camera intrinsic from parameter: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): "
+                     "%f\033[0m",
+                     camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+                     camera_intrinsic_->baseline);
+  } else {
+    RCLCPP_ERROR(this->get_logger(),
+                 "\033[31m=> camera intrinsic is not set, please provide camera_intrinsic.txt in %s or set the "
+                 "camera parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] in the launch file\033[0m",
+                 local_image_dir_.c_str());
+    rclcpp::shutdown();
+  }
+
+  for (auto &img_pair : img_paths) {
+    if (rclcpp::ok() == false) break;
+    RCLCPP_INFO_STREAM(this->get_logger(),
+                       "=> processing image pair: [" << img_pair.first << ", " << img_pair.second << "]");
+    cv::Mat left_img_bgr = cv::imread(img_pair.first, cv::IMREAD_COLOR);
+    cv::Mat right_img_bgr = cv::imread(img_pair.second, cv::IMREAD_COLOR);
+    if (left_img_bgr.empty() || right_img_bgr.empty()) {
+      RCLCPP_ERROR(this->get_logger(), "=> failed to read image pair: %s and %s", img_pair.first.c_str(),
+                   img_pair.second.c_str());
+      continue;
+    }
+    cv::Mat combine_img_bgr;
+    cv::vconcat(left_img_bgr, right_img_bgr, combine_img_bgr);
+    cv::Mat combine_img_nv12;
+    ImgConvertUtils::bgr_mat_to_nv12_mat(combine_img_bgr, combine_img_nv12);
+
+    auto stereo_msg = std::make_shared<sensor_msgs::msg::Image>();
+    stereo_msg->header.stamp = this->get_clock()->now();
+    stereo_msg->header.frame_id = "camera_link";
+    stereo_msg->height = combine_img_bgr.rows;
+    stereo_msg->width = combine_img_bgr.cols;
+    stereo_msg->encoding = "nv12";
+    stereo_msg->is_bigendian = false;
+    stereo_msg->step = combine_img_bgr.cols; // Y plane step
+    size_t size = combine_img_bgr.cols * combine_img_bgr.rows * 3 / 2;
+    stereo_msg->data.resize(size);
+    std::memcpy(stereo_msg->data.data(), combine_img_nv12.data, size);
+    input_image_queue_.enqueue(stereo_msg);
+  }
+
+  RCLCPP_INFO(this->get_logger(), "\033[32m=> all images in %s have been processed\033[0m", local_image_dir_.c_str());
 }
 
 } // namespace stereonet
