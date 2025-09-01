@@ -229,6 +229,7 @@ private:
   bool use_local_image_flag_ = false;
   std::string local_image_dir_ = "./offline_image";
   rclcpp::TimerBase::SharedPtr infer_offline_timer_ = nullptr;
+  int image_sleep_ = 0; // ms
 
   // save params
   bool save_result_flag_ = false;
@@ -242,7 +243,6 @@ private:
   std::string calib_method_ = "gdc"; // gdc, none, custom
   std::string stereo_calib_file_path_ = "";
   bool resize_before_rectify_ = false;
-  bool load_rectify_param_ = false;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;

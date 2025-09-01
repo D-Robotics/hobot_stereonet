@@ -63,8 +63,6 @@ def generate_launch_description():
         {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
-        {'name':'visual_alpha', 'default_value':'3', 'description': 'visual_alpha'},
-        {'name':'visual_beta', 'default_value':'0', 'description': 'visual_beta'},
         {'name':'render_type', 'default_value':'0', 'description': 'render_type: 0-render disp, 1-render disp auto'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
 
@@ -75,7 +73,6 @@ def generate_launch_description():
         {'name':'calib_method', 'default_value':'gdc', 'description': '[gdc none custom]'},
         {'name':'stereo_calib_file_path', 'default_value': stereo_calib_file_path, 'description': 'stereo_calib_file_path'},
         {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
-        {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
 
         {'name':'camera_cx', 'default_value':'0.0', 'description': 'rectified_camera_cx'},
         {'name':'camera_cy', 'default_value':'0.0', 'description': 'rectified_camera_cy'},
@@ -94,6 +91,7 @@ def generate_launch_description():
 
         {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
         {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
+        {'name':'image_sleep', 'default_value': "0", 'description': 'image_sleep ms'},
 
         {'name':'speckle_filter_enable', 'default_value':'False', 'description': 'speckle_filter_enable'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
