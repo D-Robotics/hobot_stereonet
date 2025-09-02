@@ -112,6 +112,12 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<int>("infer_thread_num", 2);
   infer_thread_num_ = this->get_parameter("infer_thread_num").as_int();
+  this->declare_parameter<int>("save_thread_num", 4);
+  save_thread_num_ = this->get_parameter("save_thread_num").as_int();
+  if (infer_thread_num_ <= 0) infer_thread_num_ = 1;
+  if (infer_thread_num_ > 4) infer_thread_num_ = 4;
+  if (save_thread_num_ <= 0) save_thread_num_ = 1;
+  if (save_thread_num_ > 8) save_thread_num_ = 8;
 
   this->declare_parameter<std::string>("calib_method", "gdc");
   calib_method_ = this->get_parameter("calib_method").as_string();
@@ -168,6 +174,7 @@ void StereoNetNode::set_node_params() {
     if (image_sleep_ < 0) image_sleep_ = 0;
     infer_thread_num_ = 1;
     calib_method_ = "none";
+    render_perf_ = false;
   }
 
   RCLCPP_WARN_STREAM(this->get_logger(),
@@ -201,6 +208,7 @@ void StereoNetNode::set_node_params() {
                          << "stereo_calib_file_path: " << stereo_calib_file_path_ << std::endl
                          << "resize_before_rectify: " << resize_before_rectify_ << std::endl
                          << "infer_thread_num: " << infer_thread_num_ << std::endl
+                         << "save_thread_num: " << save_thread_num_ << std::endl
                          << "=> ==================================================================" << std::endl);
 
   if (save_result_flag_) {
@@ -212,9 +220,7 @@ void StereoNetNode::set_node_params() {
         rclcpp::shutdown();
       }
     }
-    // int save_thread_num = use_local_image_flag_ ? 1 : 5;
-    int save_thread_num = 5;
-    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num);
+    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num_);
     if (save_freq_ <= 0) save_freq_ = 1;
   }
 }
@@ -296,6 +302,8 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
 }
 
 void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
+  if (sub_camera_info_flag_) return;
+  // only subscribe once
   camera_intrinsic_->fx = msg->p[0];
   camera_intrinsic_->fy = msg->p[5];
   camera_intrinsic_->cx = msg->p[2];
@@ -304,9 +312,10 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
 
   if (camera_intrinsic_->baseline > 1) camera_intrinsic_->baseline *= 0.001f; // convert mm to m
 
-  RCLCPP_WARN_ONCE(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m",
-                   camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                   camera_intrinsic_->baseline);
+  RCLCPP_WARN(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m",
+              camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+              camera_intrinsic_->baseline);
+  sub_camera_info_flag_ = true;
 }
 
 void StereoNetNode::infer_function(const int &thread_id) {
@@ -333,7 +342,27 @@ void StereoNetNode::infer_function(const int &thread_id) {
       cv::Mat depth;
       {
         ScopeProcessTime t(this->get_logger(), "disp_to_depth");
-        StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
+        if (camera_intrinsic_->is_valid()) {
+          StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
+        } else {
+          if (calib_method_ == "gdc") {
+            RCLCPP_ERROR(this->get_logger(),
+                         "\033[31m=> cannot receive valid camera intrinsic from %s, please check if the topic is "
+                         "correct when calib_method is gdc\033[0m",
+                         camera_info_topic_.c_str());
+          } else if (calib_method_ == "none") {
+            RCLCPP_ERROR(this->get_logger(),
+                         "\033[31m=> camera intrinsic parameters [camera_fx, camera_fy, camera_cx, camera_cy, "
+                         "baseline] invalid, please set them when calib_method is none\033[0m");
+          } else if (calib_method_ == "custom") {
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "\033[31m=> calib_method is custom, camera intrinsic should be set from stereo_calib_file_path: "
+                "%s\033[0m",
+                stereo_calib_file_path_.c_str());
+          }
+          continue;
+        }
       }
 
       // ================================== Publish ====================================
@@ -378,8 +407,10 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
     if (calib_method_ == "gdc" || calib_method_ == "none") {
       if (single_img_w != model_input_w || single_img_h != model_input_h) {
         RCLCPP_ERROR(this->get_logger(),
-                     "=> input image size not match model input size, need resize, [%d x %d] -> [%d x %d]",
+                     "\033[31m=> input image size not match model input size, input image size [%d, %d], expect [%d, "
+                     "%d], NV12 format image does not support resolution adjustment.\033[0m",
                      single_img_w, single_img_h, model_input_w, model_input_h);
+        rclcpp::shutdown();
       }
       std::memcpy(left_img_data.data(), stereo_msg->data.data(), single_img_w * single_img_h);
       std::memcpy(left_img_data.data() + single_img_w * single_img_h,
@@ -396,6 +427,7 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
 
       cv::Mat left_bgr = stereo_bgr.rowRange(0, single_img_h).clone();
       cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, stereo_msg->height).clone();
+      // todo: rectify
     }
 
   } else if (stereo_msg->encoding == "rgb8" || stereo_msg->encoding == "bgr8") {
@@ -419,12 +451,34 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
     cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, stereo_msg->height).clone();
 
     if (calib_method_ == "gdc" || calib_method_ == "none") {
+      if (single_img_w != model_input_w || single_img_h != model_input_h) {
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 5000,
+            "\033[31m=> input image size not match model input size, need resize, [%d x %d] -> [%d x %d]\033[0m",
+            single_img_w, single_img_h, model_input_w, model_input_h);
+        cv::resize(left_bgr, left_bgr, cv::Size(model_input_w, model_input_h));
+        cv::resize(right_bgr, right_bgr, cv::Size(model_input_w, model_input_h));
+        if (camera_info_updated_ == false) {
+          camera_info_updated_ = true;
+          camera_intrinsic_->cx = camera_intrinsic_->cx * model_input_w / single_img_w;
+          camera_intrinsic_->cy = camera_intrinsic_->cy * model_input_h / single_img_h;
+          camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / single_img_w;
+          camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / single_img_h;
+          RCLCPP_WARN(this->get_logger(),
+                      "\033[31m=> after resize, update camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f\033[0m",
+                      camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy);
+        }
+        single_img_w = model_input_w;
+        single_img_h = model_input_h;
+      }
+
       size_t single_nv12_size = single_img_w * single_img_h * 3 / 2;
       left_img_data.resize(single_nv12_size);
       right_img_data.resize(single_nv12_size);
       ImgConvertUtils::bgr_mat_to_nv12(left_bgr, left_img_data.data());
       ImgConvertUtils::bgr_mat_to_nv12(right_bgr, right_img_data.data());
     } else if (calib_method_ == "custom") {
+      // todo: rectify
     }
 
   } else {
@@ -822,10 +876,11 @@ void StereoNetNode::infer_offline() {
   }
 
   bool intrinsic_updated = false;
+  int cnt = 0;
   for (auto &img_pair : img_paths) {
     if (rclcpp::ok() == false) break;
-    RCLCPP_INFO_STREAM(this->get_logger(),
-                       "=> processing image pair: [" << img_pair.first << ", " << img_pair.second << "]");
+    RCLCPP_WARN_STREAM(this->get_logger(), "\033[33m=> processing image pair: [" << img_pair.first << ", "
+                                                                                 << img_pair.second << "]\033[0m");
     cv::Mat left_img_bgr = cv::imread(img_pair.first, cv::IMREAD_COLOR);
     cv::Mat right_img_bgr = cv::imread(img_pair.second, cv::IMREAD_COLOR);
     if (left_img_bgr.empty() || right_img_bgr.empty()) {
@@ -852,6 +907,10 @@ void StereoNetNode::infer_offline() {
       RCLCPP_WARN(this->get_logger(),
                   "\033[33m=> resize input image to fit model input size, [%d x %d] -> [%d x %d]\033[0m",
                   left_img_bgr.cols, left_img_bgr.rows, model_input_w, model_input_h);
+      RCLCPP_WARN(this->get_logger(),
+                  "\033[33m=> using camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): %f\033[0m",
+                  camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+                  camera_intrinsic_->baseline);
       cv::resize(left_img_bgr, left_img_bgr, cv::Size(model_input_w, model_input_h));
       cv::resize(right_img_bgr, right_img_bgr, cv::Size(model_input_w, model_input_h));
     }
@@ -874,9 +933,11 @@ void StereoNetNode::infer_offline() {
     std::memcpy(stereo_msg->data.data(), combine_img_nv12.data, size);
     input_image_queue_.enqueue(stereo_msg);
     std::this_thread::sleep_for(std::chrono::milliseconds(image_sleep_));
+    cnt++;
   }
 
-  RCLCPP_INFO(this->get_logger(), "\033[32m=> all images in %s have been processed\033[0m", local_image_dir_.c_str());
+  RCLCPP_INFO(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
+              local_image_dir_.c_str());
 }
 
 } // namespace stereonet

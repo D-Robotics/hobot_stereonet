@@ -204,6 +204,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_ = nullptr;
   std::string depth_camera_info_topic_ = "~/stereonet_depth/camera_info";
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_ = nullptr;
+  bool sub_camera_info_flag_ = false;
   std::string pointcloud2_topic_ = "~/stereonet_pointcloud2";
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_pub_ = nullptr;
   std::string rectify_left_image_topic_ = "~/rectify_left_image";
@@ -219,7 +220,6 @@ private:
   std::string stereonet_model_file_path_ = "";
   std::string postprocess_ = "convex_upsampling";
   double uncertainty_th_ = 0.0;
-  std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
 
   double pointcloud_height_min_ = -5.0;
   double pointcloud_height_max_ = 5.0;
@@ -240,9 +240,11 @@ private:
   std::mutex save_mutex_;
 
   // calib params
+  std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
   std::string calib_method_ = "gdc"; // gdc, none, custom
   std::string stereo_calib_file_path_ = "";
   bool resize_before_rectify_ = false;
+  std::atomic<bool> camera_info_updated_{false};
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
@@ -252,6 +254,7 @@ private:
   std::thread publish_thread_;
   uint64_t last_frame_timestamp_ = 0;
   std::unique_ptr<BS::thread_pool<>> save_thread_pool_ptr_ = nullptr;
+  int save_thread_num_ = 4;
 };
 } // namespace stereonet
 #endif // HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_

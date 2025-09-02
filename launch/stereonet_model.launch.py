@@ -28,12 +28,6 @@ def set_configurable_parameters(parameters):
 
 def generate_launch_description():
 
-    stereo_calib_file_path =  os.path.join(
-        get_package_share_directory('hobot_stereonet'),
-        'config',
-        'stereo.yaml'
-    )
-
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
@@ -71,7 +65,7 @@ def generate_launch_description():
         {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
 
         {'name':'calib_method', 'default_value':'gdc', 'description': '[gdc none custom]'},
-        {'name':'stereo_calib_file_path', 'default_value': stereo_calib_file_path, 'description': 'stereo_calib_file_path'},
+        {'name':'stereo_calib_file_path', 'default_value': '', 'description': 'stereo_calib_file_path'},
         {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
 
         {'name':'camera_cx', 'default_value':'0.0', 'description': 'rectified_camera_cx'},
@@ -100,6 +94,7 @@ def generate_launch_description():
         {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
+        {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
     ]
 
     launch = declare_configurable_parameters(node_params)
