@@ -177,6 +177,9 @@ void StereoNetNode::set_node_params() {
     render_perf_ = false;
   }
 
+  this->declare_parameter<bool>("speckle_filter_enable", false);
+  speckle_filter_enable_ = this->get_parameter("speckle_filter_enable").as_bool();
+
   RCLCPP_WARN_STREAM(this->get_logger(),
                      std::endl
                          << "=> ===================== init " << this->get_name() << "=====================" << std::endl
@@ -364,6 +367,13 @@ void StereoNetNode::infer_function(const int &thread_id) {
           continue;
         }
       }
+      // ================================== Postprocess ================================
+      if (speckle_filter_enable_) {
+        ScopeProcessTime t(this->get_logger(), "speckle_filter", "warn");
+        SpeckleFilter::filter(disp, 0.0f, 100, 1.0f);
+        cv::Mat mask = (disp > 0);
+        depth.setTo(0, ~mask);
+      }
 
       // ================================== Publish ====================================
       auto pub_data = std::make_shared<PubData>();
@@ -406,20 +416,41 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
 
     if (calib_method_ == "gdc" || calib_method_ == "none") {
       if (single_img_w != model_input_w || single_img_h != model_input_h) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "\033[31m=> input image size not match model input size, input image size [%d, %d], expect [%d, "
-                     "%d], NV12 format image does not support resolution adjustment.\033[0m",
-                     single_img_w, single_img_h, model_input_w, model_input_h);
-        rclcpp::shutdown();
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 5000,
+            "\033[31m=> input image size not match model input size, need resize, [%d x %d] -> [%d x %d]\033[0m",
+            single_img_w, single_img_h, model_input_w, model_input_h);
+        cv::Mat stereo_bgr;
+        ImgConvertUtils::nv12_to_bgr_mat(const_cast<uint8_t *>(stereo_msg->data.data()), stereo_bgr, stereo_msg->width,
+                                         stereo_msg->height);
+        cv::Mat left_bgr = stereo_bgr.rowRange(0, single_img_h).clone();
+        cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, stereo_msg->height).clone();
+        cv::resize(left_bgr, left_bgr, cv::Size(model_input_w, model_input_h));
+        cv::resize(right_bgr, right_bgr, cv::Size(model_input_w, model_input_h));
+        if (camera_info_updated_ == false) {
+          camera_info_updated_ = true;
+          camera_intrinsic_->cx = camera_intrinsic_->cx * model_input_w / single_img_w;
+          camera_intrinsic_->cy = camera_intrinsic_->cy * model_input_h / single_img_h;
+          camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / single_img_w;
+          camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / single_img_h;
+          RCLCPP_WARN(this->get_logger(),
+                      "\033[31m=> after resize, update camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f\033[0m",
+                      camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy);
+        }
+        single_img_w = model_input_w;
+        single_img_h = model_input_h;
+        ImgConvertUtils::bgr_mat_to_nv12(left_bgr, left_img_data.data());
+        ImgConvertUtils::bgr_mat_to_nv12(right_bgr, right_img_data.data());
+      } else {
+        std::memcpy(left_img_data.data(), stereo_msg->data.data(), single_img_w * single_img_h);
+        std::memcpy(left_img_data.data() + single_img_w * single_img_h,
+                    stereo_msg->data.data() + stereo_msg->width * stereo_msg->height, single_img_w * single_img_h / 2);
+        std::memcpy(right_img_data.data(), stereo_msg->data.data() + single_img_w * single_img_h,
+                    single_img_w * single_img_h);
+        std::memcpy(right_img_data.data() + single_img_w * single_img_h,
+                    stereo_msg->data.data() + stereo_msg->width * stereo_msg->height + single_img_w * single_img_h / 2,
+                    single_img_w * single_img_h / 2);
       }
-      std::memcpy(left_img_data.data(), stereo_msg->data.data(), single_img_w * single_img_h);
-      std::memcpy(left_img_data.data() + single_img_w * single_img_h,
-                  stereo_msg->data.data() + stereo_msg->width * stereo_msg->height, single_img_w * single_img_h / 2);
-      std::memcpy(right_img_data.data(), stereo_msg->data.data() + single_img_w * single_img_h,
-                  single_img_w * single_img_h);
-      std::memcpy(right_img_data.data() + single_img_w * single_img_h,
-                  stereo_msg->data.data() + stereo_msg->width * stereo_msg->height + single_img_w * single_img_h / 2,
-                  single_img_w * single_img_h / 2);
     } else if (calib_method_ == "custom") {
       cv::Mat stereo_bgr;
       ImgConvertUtils::nv12_to_bgr_mat(const_cast<uint8_t *>(stereo_msg->data.data()), stereo_bgr, stereo_msg->width,
@@ -718,8 +749,10 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   cv::minMaxLoc(pub_data->disp, &minVal, &maxVal);
   pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (maxVal - minVal), -minVal * 255.0 / (maxVal - minVal));
   cv::applyColorMap(visual_img, visual_img, cv::COLORMAP_JET);
-  cv::vconcat(left_bgr, visual_img, visual_img);
+  cv::Mat mask = (pub_data->disp == 0);
+  visual_img.setTo(cv::Vec3b(0, 0, 0), mask);
 
+  cv::vconcat(left_bgr, visual_img, visual_img);
   // ===================================== render depth =====================================================
   double font_scale = std::min(left_bgr.cols, left_bgr.rows) / 700.0;
   int set_num = 6;

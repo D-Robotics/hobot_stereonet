@@ -99,6 +99,7 @@ add_library(stereonet_model_component SHARED
   src/timer_utils.cpp
   src/img_convert_utils.cpp
   src/file_utils.cpp
+  src/speckle_filter.cpp
 )
 target_compile_features(stereonet_model_component PUBLIC c_std_99 cxx_std_17) # Require C99 and C++17
 target_include_directories(stereonet_model_component PUBLIC

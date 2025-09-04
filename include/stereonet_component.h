@@ -40,6 +40,7 @@
 #include "stereonet_process.h"
 #include "order_blockqueue.hpp"
 #include "performance_record.h"
+#include "speckle_filter.h"
 
 namespace fs = std::filesystem;
 namespace stereonet {
@@ -224,6 +225,9 @@ private:
   double pointcloud_height_min_ = -5.0;
   double pointcloud_height_max_ = 5.0;
   double pointcloud_depth_max_ = 5.0;
+
+  // postprocess params
+  bool speckle_filter_enable_ = false;
 
   // offline infer
   bool use_local_image_flag_ = false;
