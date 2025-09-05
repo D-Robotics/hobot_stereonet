@@ -16,7 +16,7 @@
 
 StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rclcpp::Logger &logger)
     : stereo_calib_file_path_(stereo_calib_file_path), logger_(logger) {
-  RCLCPP_INFO_STREAM(logger_, "=> -------- init StereoRectify------------------");
+  RCLCPP_WARN_STREAM(logger_, "=> -------- init StereoRectify------------------");
   cv::FileStorage fs(stereo_calib_file_path_, cv::FileStorage::READ);
   if (!fs.isOpened()) {
     RCLCPP_ERROR_STREAM(logger_, "Failed to open " << stereo_calib_file_path_);
@@ -96,18 +96,18 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
       fov_scales_.push_back(fov_scale);
 
       // print
-      RCLCPP_INFO_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
-      RCLCPP_INFO_STREAM(logger_, "=> Kl: " << std::endl << Kl);
-      RCLCPP_INFO_STREAM(logger_, "=> Dl: " << std::endl << Dl);
-      RCLCPP_INFO_STREAM(logger_, "=> Kr: " << std::endl << Kr);
-      RCLCPP_INFO_STREAM(logger_, "=> Dr: " << std::endl << Dr);
-      RCLCPP_INFO_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
-      RCLCPP_INFO_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
-      RCLCPP_INFO_STREAM(logger_,
+      RCLCPP_WARN_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
+      RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl);
+      RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl);
+      RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr);
+      RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr);
+      RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
+      RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
+      RCLCPP_WARN_STREAM(logger_,
                          "=> cam0_resolution: " << "[" << cam0_resolution[0] << ", " << cam0_resolution[1] << "]");
-      RCLCPP_INFO_STREAM(logger_, "=> cam0_distortion_model: " << cam0_distortion_model);
-      if (cam0_distortion_model == "equidistant") RCLCPP_INFO_STREAM(logger_, "=> fov_scale: " << fov_scale);
-      RCLCPP_INFO_STREAM(logger_, "=> ---------------------------------------------");
+      RCLCPP_WARN_STREAM(logger_, "=> cam0_distortion_model: " << cam0_distortion_model);
+      if (cam0_distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
+      RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
 
       i++;
     } else {
@@ -120,7 +120,7 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
 int StereoRectify::build_undistmap(const int &input_width, const int &input_height, const int &output_width,
                                    const int &output_height) {
   if (undistmap_built_) return 0;
-  RCLCPP_INFO_STREAM(logger_, "=> -------- build_undistmap --------------------");
+  RCLCPP_WARN_STREAM(logger_, "=> -------- build_undistmap --------------------");
   for (int i = 0; i < Kls_.size(); i++) {
     cv::Mat Kl = Kls_[i].clone();
     cv::Mat Kr = Krs_[i].clone();
@@ -139,7 +139,7 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     if (i == 0) {
       tmp_input_width = input_width;
       tmp_input_height = input_height;
-    } else if (i >= 1 && i < Kls_.size() - 1) {
+    } else if (i >= 1) {
       tmp_input_width = cam_resolution[0];
       tmp_input_height = cam_resolution[1];
     }
@@ -193,27 +193,27 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     undistmap2rs_.push_back(undistmap2r);
     Qs_.push_back(Q);
 
-    RCLCPP_INFO_STREAM(logger_, "=> input_resolution: " << "[" << tmp_input_width << ", " << tmp_input_height << "]");
-    RCLCPP_INFO_STREAM(logger_, "=> cam_resolution: " << "[" << cam_resolution[0] << ", " << cam_resolution[1] << "]");
-    RCLCPP_INFO_STREAM(logger_, "=> width, height scale: " << "[" << width_scale << ", " << height_scale << "]");
-    RCLCPP_INFO_STREAM(logger_,
+    RCLCPP_WARN_STREAM(logger_, "=> input_resolution: " << "[" << tmp_input_width << ", " << tmp_input_height << "]");
+    RCLCPP_WARN_STREAM(logger_, "=> cam_resolution: " << "[" << cam_resolution[0] << ", " << cam_resolution[1] << "]");
+    RCLCPP_WARN_STREAM(logger_, "=> width, height scale: " << "[" << width_scale << ", " << height_scale << "]");
+    RCLCPP_WARN_STREAM(logger_,
                        "=> output_resolution: " << "[" << tmp_output_width << ", " << tmp_output_height << "]");
-    RCLCPP_INFO_STREAM(logger_, "=> Kl: " << std::endl << Kl);
-    RCLCPP_INFO_STREAM(logger_, "=> Dl: " << std::endl << Dl);
-    RCLCPP_INFO_STREAM(logger_, "=> Kr: " << std::endl << Kr);
-    RCLCPP_INFO_STREAM(logger_, "=> Dr: " << std::endl << Dr);
-    RCLCPP_INFO_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
-    RCLCPP_INFO_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
-    RCLCPP_INFO_STREAM(logger_, "=> distortion_model: " << distortion_model);
-    if (distortion_model == "equidistant") RCLCPP_INFO_STREAM(logger_, "=> fov_scale: " << fov_scale);
+    RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl);
+    RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl);
+    RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr);
+    RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr);
+    RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
+    RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
+    RCLCPP_WARN_STREAM(logger_, "=> distortion_model: " << distortion_model);
+    if (distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
     double fx = Q.at<double>(2, 3);
     double fy = Q.at<double>(2, 3);
     double cx = -Q.at<double>(0, 3);
     double cy = -Q.at<double>(1, 3);
     double baseline = std::abs(1 / Q.at<double>(3, 2));
-    RCLCPP_INFO_STREAM(logger_, "=> rectify fx: " << fx << ", fy: " << fy << ", cx: " << cx << ", cy: " << cy
+    RCLCPP_WARN_STREAM(logger_, "=> rectify fx: " << fx << ", fy: " << fy << ", cx: " << cx << ", cy: " << cy
                                                   << ", baseline: " << baseline);
-    RCLCPP_INFO_STREAM(logger_, "=> ---------------------------------------------");
+    RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
   }
 
   undistmap_built_ = true;
