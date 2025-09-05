@@ -65,7 +65,7 @@ def generate_launch_description():
         package="rclcpp_components",
         executable="component_container",
         output="screen",
-        arguments=["--ros-args", "--log-level", "info"],
+        arguments=["--ros-args", "--log-level", "warn"],
         condition=IfCondition(
             PythonExpression(
                 [

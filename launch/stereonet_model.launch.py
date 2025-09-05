@@ -64,9 +64,8 @@ def generate_launch_description():
         {'name':'pointcloud_height_max', 'default_value':'5.0', 'description': 'pointcloud_height_max'},
         {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
 
-        {'name':'calib_method', 'default_value':'gdc', 'description': '[gdc none custom]'},
+        {'name':'calib_method', 'default_value':'none', 'description': '[none custom]'},
         {'name':'stereo_calib_file_path', 'default_value': '', 'description': 'stereo_calib_file_path'},
-        {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
 
         {'name':'camera_cx', 'default_value':'0.0', 'description': 'rectified_camera_cx'},
         {'name':'camera_cy', 'default_value':'0.0', 'description': 'rectified_camera_cy'},
@@ -88,6 +87,8 @@ def generate_launch_description():
         {'name':'image_sleep', 'default_value': "0", 'description': 'image_sleep ms'},
 
         {'name':'speckle_filter_enable', 'default_value':'False', 'description': 'speckle_filter_enable'},
+        {'name':'max_speckle_size', 'default_value':'100', 'description': 'max_speckle_size'},
+        {'name':'max_disp_diff', 'default_value':'1.0', 'description': 'max_speckle_size'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
         {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
         {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},

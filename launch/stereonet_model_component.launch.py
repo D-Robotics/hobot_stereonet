@@ -31,19 +31,13 @@ def set_configurable_parameters(parameters):
 
 def generate_launch_description():
 
-    stereo_calib_file_path =  os.path.join(
-        get_package_share_directory('hobot_stereonet'),
-        'config',
-        'stereo.yaml'
-    )
-
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
         'DStereoV2.0.bin'
     )
 
-    local_image_path =  os.path.join(
+    local_image_dir =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config'
     )
@@ -63,11 +57,9 @@ def generate_launch_description():
         {'name':'pointcloud2_topic', 'default_value':'/StereoNetNode/stereonet_pointcloud2', 'description': 'pointcloud2_topic'},
         {'name':'rectify_left_image_topic', 'default_value':'/StereoNetNode/rectify_left_image', 'description': 'rectify_left_image_topic'},
         {'name':'rectify_right_image_topic', 'default_value':'/StereoNetNode/rectify_right_image', 'description': 'rectify_right_image_topic'},
-        {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
+        {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
-        {'name':'visual_alpha', 'default_value':'3', 'description': 'visual_alpha'},
-        {'name':'visual_beta', 'default_value':'0', 'description': 'visual_beta'},
         {'name':'render_type', 'default_value':'0', 'description': 'render_type: 0-render disp, 1-render disp auto'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
 
@@ -75,37 +67,38 @@ def generate_launch_description():
         {'name':'pointcloud_height_max', 'default_value':'5.0', 'description': 'pointcloud_height_max'},
         {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
 
-        {'name':'calib_method', 'default_value':'gdc', 'description': '[gdc none custom]'},
-        {'name':'stereo_calib_file_path', 'default_value': stereo_calib_file_path, 'description': 'stereo_calib_file_path'},
+        {'name':'calib_method', 'default_value':'none', 'description': '[none custom]'},
+        {'name':'stereo_calib_file_path', 'default_value': '', 'description': 'stereo_calib_file_path'},
 
-        {'name':'camera_cx', 'default_value':'659.710', 'description': 'rectified_camera_cx'},
-        {'name':'camera_cy', 'default_value':'360.584', 'description': 'rectified_camera_cy'},
-        {'name':'camera_fx', 'default_value':'527.1931', 'description': 'rectified_camera_fx'},
-        {'name':'camera_fy', 'default_value':'527.1931', 'description': 'rectified_camera_fy'},
-        {'name':'baseline', 'default_value':'0.119893', 'description': 'baseline of stereo'},
+        {'name':'camera_cx', 'default_value':'0.0', 'description': 'rectified_camera_cx'},
+        {'name':'camera_cy', 'default_value':'0.0', 'description': 'rectified_camera_cy'},
+        {'name':'camera_fx', 'default_value':'0.0', 'description': 'rectified_camera_fx'},
+        {'name':'camera_fy', 'default_value':'0.0', 'description': 'rectified_camera_fy'},
+        {'name':'baseline', 'default_value':'0.0', 'description': 'baseline of stereo'},
 
         {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
 
-        {'name':'save_image_flag', 'default_value':'False', 'description': 'save_image_flag'},
-        {'name':'save_dir', 'default_value':'./stereonet_images', 'description': 'save_dir'},
+        {'name':'save_result_flag', 'default_value':'False', 'description': 'save_result_flag'},
+        {'name':'save_dir', 'default_value':'./stereonet_result', 'description': 'save_dir'},
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
 
-        {'name':'postprocess', 'default_value':'convex_upsampling', 'description': '[convex_upsampling convex_upsampling_with_uncert convex_upsampling_with_interp convex_upsampling_with_interp_uncert]'},
+        {'name':'postprocess', 'default_value':'convex_upsampling', 'description': '[convex_upsampling convex_upsampling_with_uncert convex_upsampling_with_interp]'},
 
-        {'name':'use_local_image', 'default_value':'False', 'description': 'use_local_image'},
-
-        {'name':'local_image_path', 'default_value': local_image_path, 'description': 'local_image_path'},
+        {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
+        {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
+        {'name':'image_sleep', 'default_value': "0", 'description': 'image_sleep ms'},
 
         {'name':'speckle_filter_enable', 'default_value':'False', 'description': 'speckle_filter_enable'},
+        {'name':'max_speckle_size', 'default_value':'100', 'description': 'max_speckle_size'},
+        {'name':'max_disp_diff', 'default_value':'1.0', 'description': 'max_speckle_size'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
         {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
         {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
         {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
-        {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
-        {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
+        {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
     ]
 
     launch = declare_configurable_parameters(node_params)

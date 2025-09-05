@@ -51,6 +51,7 @@ StereonetProcess::~StereonetProcess() {
   // Release dnn handle
   ret_code = hbDNNRelease(packed_dnn_handle_);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
+  RCLCPP_WARN_STREAM(logger_, "=> release StereonetProcess");
 }
 
 int StereonetProcess::init(const std::string &model_path, const int &max_memory_count) {

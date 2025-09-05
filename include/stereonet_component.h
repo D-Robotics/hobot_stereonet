@@ -41,6 +41,7 @@
 #include "order_blockqueue.hpp"
 #include "performance_record.h"
 #include "speckle_filter.h"
+#include "stereo_rectify.h"
 
 namespace fs = std::filesystem;
 namespace stereonet {
@@ -228,6 +229,8 @@ private:
 
   // postprocess params
   bool speckle_filter_enable_ = false;
+  int max_speckle_size_ = 100;
+  float max_disp_diff_ = 1.0f;
 
   // offline infer
   bool use_local_image_flag_ = false;
@@ -245,10 +248,10 @@ private:
 
   // calib params
   std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
-  std::string calib_method_ = "gdc"; // gdc, none, custom
+  std::string calib_method_ = "none"; // none, custom
   std::string stereo_calib_file_path_ = "";
-  bool resize_before_rectify_ = false;
   std::atomic<bool> camera_info_updated_{false};
+  std::shared_ptr<StereoRectify> stereo_rectifier_ = nullptr;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
