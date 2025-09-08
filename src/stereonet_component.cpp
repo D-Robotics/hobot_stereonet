@@ -195,18 +195,19 @@ void StereoNetNode::set_node_params() {
                          << "render_perf: " << render_perf_ << std::endl
                          << "postprocess: " << postprocess_ << std::endl
                          << "uncertainty_th: " << uncertainty_th_ << std::endl
-                         << "camera [fx, fy, cx, cy, baseline]: [" << camera_intrinsic_->fx << ", "
+                         << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
                          << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy
-                         << ", " << camera_intrinsic_->baseline << "]" << std::endl
-                         << "pointcloud [height min, heght max, depth_max] m: [" << pointcloud_height_min_ << ", "
-                         << pointcloud_height_max_ << ", " << pointcloud_depth_max_ << "]" << std::endl
+                         << ", " << camera_intrinsic_->baseline << "(m)]" << std::endl
+                         << "[pointcloud_height_min, pointcloud_heght_max, pointcloud_depth_max] m: ["
+                         << pointcloud_height_min_ << ", " << pointcloud_height_max_ << ", " << pointcloud_depth_max_
+                         << "]" << std::endl
                          << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
                          << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
                          << "[save_result_flag, save_dir, save_freq, save_total]: [" << save_result_flag_ << ", "
                          << save_dir_ << ", " << save_freq_ << ", " << save_total_ << "]" << std::endl
                          << "[calib_method, stereo_calib_file_path]: [" << calib_method_ << ", "
                          << stereo_calib_file_path_ << "]" << std::endl
-                         << "speckle_filter [enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_
+                         << "[speckle_filter_enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_
                          << ", " << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
                          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_
                          << "]" << std::endl
@@ -291,7 +292,7 @@ void StereoNetNode::publish_static_tf() {
 void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
   auto now = this->get_clock()->now();
   auto latency = (now - msg->header.stamp).seconds() * 1000;
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+  RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                        "=> receive stereo image, format: %s, stamp: %u.%u, latency: %.2f ms", msg->encoding.c_str(),
                        msg->header.stamp.sec, msg->header.stamp.nanosec, latency);
 
@@ -324,7 +325,8 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
 
   if (camera_intrinsic_->baseline > 1) camera_intrinsic_->baseline *= 0.001f; // convert mm to m
 
-  RCLCPP_WARN(this->get_logger(), "\033[31m=> sub rectified fx: %f, fy: %f, cx: %f, cy: %f, base_line: :%f\033[0m",
+  RCLCPP_WARN(this->get_logger(),
+              "\033[31m=> sub rectified [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, %f, %f]\033[0m",
               camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
               camera_intrinsic_->baseline);
   sub_camera_info_flag_ = true;
@@ -400,6 +402,8 @@ void StereoNetNode::infer_function(const int &thread_id) {
         pub_data->fps = performance_writer::Get()->get_fps();
         pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
         pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "=> fps: %d, cpu_usage: %d, bpu_usage: %d",
+                             pub_data->fps, pub_data->cpu_usage, pub_data->bpu_usage);
       }
 
       pub_data->rectify_left_img_data = rectify_left_img_data;
@@ -552,7 +556,7 @@ void StereoNetNode::publish_function() {
 
       auto now = this->get_clock()->now();
       auto latency = (now - pub_data->header.stamp).seconds() * 1000;
-      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                            "=> publish result, stamp: %u.%u, latency: %.2f ms", pub_data->header.stamp.sec,
                            pub_data->header.stamp.nanosec, latency);
 

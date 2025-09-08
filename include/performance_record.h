@@ -100,8 +100,8 @@ private:
     char buffer[128] = {0};
     static std::string pid_str = std::to_string(pid);
     static std::string cmd = "top -b -n 1 -p " + pid_str +
-                             " | tail -n 1 "
-                             "| awk '{print $9}'";
+                             " | tail -n 2 "
+                             "| awk '/^ *PID/ {for (i=1; i<=NF; i++) {if ($i==\"%CPU\") cpu_col=i}} NR>1 {print $cpu_col}'";
     while (is_running_) {
       std::unique_lock<std::mutex> lock(mtx_);
       cd_.wait(lock);

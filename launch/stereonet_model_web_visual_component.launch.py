@@ -44,7 +44,7 @@ def generate_launch_description():
         description="The name of the target container to load the component into.",
     )
 
-    # 零拷贝环境配置
+    # zero-copy env setting
     shared_mem_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -58,7 +58,7 @@ def generate_launch_description():
         "lib/mipi_cam/config/")
     print("config_file_path is ", config_file_path)
 
-    # 创建组件容器（关键步骤）
+    # create container
     container = ComposableNodeContainer(
         name="stereonet_components_container",
         namespace="",
@@ -77,7 +77,7 @@ def generate_launch_description():
         ),
     )
 
-    # mipi相机节点
+    # mipi node
     mipi_cam_component = ComposableNode(
         package="mipi_cam",
         plugin="mipi_cam::MipiCamNode",
@@ -108,7 +108,7 @@ def generate_launch_description():
         ],
     )
 
-    # 双目节点
+    # stereonet node
     stereonet_model_component = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -122,7 +122,7 @@ def generate_launch_description():
         }.items(),
     )
 
-    # 编码节点
+    # codec node
     codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -133,7 +133,6 @@ def generate_launch_description():
         launch_arguments={
             "codec_in_mode": "ros",
             "codec_out_mode": "ros",
-            # 左图和深度拼接后的图
             "codec_sub_topic": "/StereoNetNode/stereonet_visual",
             "codec_in_format": "bgr8",
             "codec_pub_topic": "/image_jpeg",
@@ -143,7 +142,7 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("stereonet_pub_web")),
     )
 
-    # web展示节点
+    # web node
     web_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
