@@ -40,7 +40,7 @@ def generate_launch_description():
         description='use_mipi_cam'
     ))
 
-    # sterenet_model.launch.py
+    # stereonet node
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
                                                    'launch/stereonet_model.launch.py')),
@@ -50,7 +50,7 @@ def generate_launch_description():
     )
     node_list.append(stereonet_node)
 
-    # mipi_cam_dual_channel.launch.py
+    # mipi node
     dual_mipi_cam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -73,7 +73,7 @@ def generate_launch_description():
     )
     node_list.append(dual_mipi_cam)
 
-    # hobot_codec_encode.launch.py
+    # codec node
     codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -92,7 +92,7 @@ def generate_launch_description():
     )
     node_list.append(codec_node)
 
-    # websocket.launch.py
+    # web node
     web_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -101,7 +101,6 @@ def generate_launch_description():
         launch_arguments={
             'websocket_image_topic': '/image_jpeg',
             'websocket_only_show_image': 'true',
-            # 'websocket_smart_topic': '/detect_depth_result'
         }.items(),
         condition=IfCondition(LaunchConfiguration('stereonet_pub_web'))
     )

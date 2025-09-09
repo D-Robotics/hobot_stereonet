@@ -75,10 +75,10 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputCount failed");
   ret_code = hbDNNGetOutputCount(&output_count_, dnn_handle_);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputCount failed");
-  RCLCPP_INFO_ONCE(logger_, "=> ============ init model start ============");
-  RCLCPP_INFO_STREAM(logger_, "=> model name: " << model_name_list_[0]);
-  RCLCPP_INFO_STREAM(logger_, "=> input_count: " << input_count_);
-  RCLCPP_INFO_STREAM(logger_, "=> output_count: " << output_count_);
+  RCLCPP_WARN(logger_, "=> ============ init model start ============");
+  RCLCPP_WARN_STREAM(logger_, "=> model name: " << model_name_list_[0]);
+  RCLCPP_WARN_STREAM(logger_, "=> input_count: " << input_count_);
+  RCLCPP_WARN_STREAM(logger_, "=> output_count: " << output_count_);
 
   // get model input size from input tensor[0]
   hbDNNTensorProperties properties;
@@ -87,7 +87,7 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   properties.quantizeAxis = 3;
 #endif
   hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
-  RCLCPP_INFO_STREAM(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
+  RCLCPP_WARN_STREAM(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
 
   // prepare input tensor and output tensor
   max_memory_count_ = max_memory_count;
@@ -104,7 +104,7 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   for (int i = 0; i < max_memory_count_; ++i) {
     ret_code = prepare_output_tensor(batch_output_tensors_[i]);
   }
-  RCLCPP_INFO_ONCE(logger_, "=> ============ init model end ============");
+  RCLCPP_WARN_ONCE(logger_, "=> ============ init model end ============");
 
   return ret_code;
 }
@@ -431,7 +431,7 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
 int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensors) {
   int ret_code = 0;
-  RCLCPP_INFO_ONCE(logger_, "=> ----- prepare_input_tensor -----");
+  RCLCPP_WARN_ONCE(logger_, "=> ----- prepare_input_tensor -----");
 
   // allocate memory for input tensor
   input_tensors.resize(input_count_);
@@ -441,7 +441,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     hbDNNTensorProperties properties;
     ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputTensorProperties failed");
-    RCLCPP_INFO_STREAM_ONCE(logger_, "=> input tensor type is "
+    RCLCPP_WARN_STREAM_ONCE(logger_, "=> input tensor type is "
                                          << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
     input_tensor_type_ = properties.tensorType;
 
@@ -487,7 +487,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], (3 * model_input_h_ * model_input_w_) / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[0].memSize = (3 * model_input_h_ * model_input_w_) / 2;
-      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
+      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
     } else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], model_input_h_ * model_input_w_);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
@@ -496,8 +496,8 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[1], model_input_h_ * model_input_w_ / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[1].memSize = model_input_h_ * model_input_w_ / 2;
-      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
-      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
+      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
+      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
     } else {
       return -1;
     }
@@ -507,7 +507,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem, properties.alignedByteSize);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-      RCLCPP_INFO_STREAM_ONCE(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
+      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
     } else {
       return -1;
     }
@@ -518,12 +518,12 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
 
 int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_tensors) {
   int ret_code = 0;
-  RCLCPP_INFO_ONCE(logger_, "=> ----- prepare_output_tensor -----");
+  RCLCPP_WARN_ONCE(logger_, "=> ----- prepare_output_tensor -----");
   output_tensors.resize(output_count_);
   for (int i = 0; i < output_count_; ++i) {
     ret_code = hbDNNGetOutputTensorProperties(&output_tensors[i].properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputTensorProperties failed");
-    RCLCPP_INFO_STREAM_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
+    RCLCPP_WARN_STREAM_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
                                          static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
 #ifdef PLATFORM_X5
     ret_code = hbSysAllocCachedMem(&output_tensors[i].sysMem[0], output_tensors[i].properties.alignedByteSize);
@@ -532,7 +532,7 @@ int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_ten
     ret_code = hbSysAllocCachedMem(&output_tensors[i].sysMem, output_tensors[i].properties.alignedByteSize);
 #endif
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-    RCLCPP_INFO_STREAM_ONCE(logger_,
+    RCLCPP_WARN_STREAM_ONCE(logger_,
                             "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
   }
   return ret_code;

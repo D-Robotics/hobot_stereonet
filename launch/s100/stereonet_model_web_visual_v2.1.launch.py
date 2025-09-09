@@ -41,7 +41,7 @@ def generate_launch_description():
         ),
         launch_arguments = {
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "v2.1",
+            "postprocess": "convex_upsampling_with_uncert",
         }.items(),
     )
 

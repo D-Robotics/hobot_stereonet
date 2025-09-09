@@ -59,6 +59,10 @@ void StereoNetNode::set_node_params() {
   rectify_right_image_topic_ = this->get_parameter("rectify_right_image_topic").as_string();
   this->declare_parameter<bool>("publish_rectify_bgr", false);
   publish_rectify_bgr_ = this->get_parameter("publish_rectify_bgr").as_bool();
+  this->declare_parameter<std::string>("origin_left_image_topic", "~/origin_left_image");
+  origin_left_image_topic_ = this->get_parameter("origin_left_image_topic").as_string();
+  this->declare_parameter<std::string>("origin_right_image_topic", "~/origin_right_image");
+  origin_right_image_topic_ = this->get_parameter("origin_right_image_topic").as_string();
   depth_camera_info_topic_ = this->get_parameter("depth_camera_info_topic").as_string();
   this->declare_parameter<std::string>("pointcloud2_topic", "~/stereonet_pointcloud2");
   pointcloud2_topic_ = this->get_parameter("pointcloud2_topic").as_string();
@@ -190,6 +194,8 @@ void StereoNetNode::set_node_params() {
                          << "rectify_left_image_topic: " << rectify_left_image_topic_ << std::endl
                          << "rectify_right_image_topic: " << rectify_right_image_topic_ << std::endl
                          << "publish_rectify_bgr: " << publish_rectify_bgr_ << std::endl
+                         << "origin_left_image_topic: " << origin_left_image_topic_ << std::endl
+                         << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
                          << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
                          << "visual_image_topic: " << visual_image_topic_ << std::endl
                          << "render_perf: " << render_perf_ << std::endl
@@ -198,9 +204,9 @@ void StereoNetNode::set_node_params() {
                          << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
                          << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy
                          << ", " << camera_intrinsic_->baseline << "(m)]" << std::endl
-                         << "[pointcloud_height_min, pointcloud_heght_max, pointcloud_depth_max] m: ["
-                         << pointcloud_height_min_ << ", " << pointcloud_height_max_ << ", " << pointcloud_depth_max_
-                         << "]" << std::endl
+                         << "[pointcloud_height_min, pointcloud_height_max, pointcloud_depth_max]: ["
+                         << pointcloud_height_min_ << "(m), " << pointcloud_height_max_ << "(m), "
+                         << pointcloud_depth_max_ << "(m)]" << std::endl
                          << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
                          << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
                          << "[save_result_flag, save_dir, save_freq, save_total]: [" << save_result_flag_ << ", "
@@ -248,6 +254,8 @@ void StereoNetNode::set_subscription_publisher() {
   pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pointcloud2_topic_, 10);
   rectify_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(rectify_left_image_topic_, 10);
   rectify_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(rectify_right_image_topic_, 10);
+  origin_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_left_image_topic_, 10);
+  origin_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_right_image_topic_, 10);
 }
 
 void StereoNetNode::set_dnn_model() {
@@ -389,6 +397,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
       pub_data->timestamp = static_cast<uint64_t>(stereo_msg->header.stamp.sec) * 1'000'000'000 +
                             static_cast<uint64_t>(stereo_msg->header.stamp.nanosec);
       pub_data->header = stereo_msg->header;
+      pub_data->origin_stereo_msg = stereo_msg;
       pub_data->disp = disp;
       pub_data->uncert = uncert;
       pub_data->depth = depth;
@@ -402,8 +411,9 @@ void StereoNetNode::infer_function(const int &thread_id) {
         pub_data->fps = performance_writer::Get()->get_fps();
         pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
         pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "=> fps: %d, cpu_usage: %d, bpu_usage: %d",
-                             pub_data->fps, pub_data->cpu_usage, pub_data->bpu_usage);
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "=> fps: %d, cpu_usage: %d%%, bpu_usage: %d%%", pub_data->fps, pub_data->cpu_usage,
+                             pub_data->bpu_usage);
       }
 
       pub_data->rectify_left_img_data = rectify_left_img_data;
@@ -577,6 +587,12 @@ void StereoNetNode::publish_function() {
         ScopeProcessTime t(this->get_logger(), "publish_pointcloud2");
         publish_pointcloud2(pub_data);
       }
+      {
+        // publish origin images
+        ScopeProcessTime t(this->get_logger(), "publish_origin_image");
+        publish_origin_left_image(pub_data);
+        publish_origin_right_image(pub_data);
+      }
       // publish visual image
       {
         ScopeProcessTime t(this->get_logger(), "publish_visual_image");
@@ -695,7 +711,7 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
 }
 
 void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  // if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
@@ -758,6 +774,128 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   cloud_msg.is_dense = false;
   cloud_msg.is_bigendian = false;
   pointcloud2_pub_->publish(cloud_msg);
+}
+
+void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {
+  if (origin_left_image_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  if (pub_data->origin_stereo_msg->encoding == "nv12") {
+    auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
+    left_msg->header = pub_data->header;
+    left_msg->header.frame_id = "camera_left_frame";
+    int single_img_w = pub_data->origin_stereo_msg->width;
+    int single_img_h = pub_data->origin_stereo_msg->height / 2;
+    left_msg->height = single_img_h;
+    left_msg->width = single_img_w;
+    left_msg->encoding = "nv12";
+    left_msg->is_bigendian = false;
+    left_msg->step = single_img_w; // Y plane step
+    size_t size = single_img_w * single_img_h * 3 / 2;
+    left_msg->data.resize(size);
+    std::memcpy(left_msg->data.data(), pub_data->origin_stereo_msg->data.data(), single_img_w * single_img_h);
+    std::memcpy(left_msg->data.data() + single_img_w * single_img_h,
+                pub_data->origin_stereo_msg->data.data() +
+                    pub_data->origin_stereo_msg->width * pub_data->origin_stereo_msg->height,
+                single_img_w * single_img_h / 2);
+    origin_left_image_pub_->publish(*left_msg);
+    pub_data->origin_left_msg = left_msg;
+  } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
+    auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
+    left_msg->header = pub_data->header;
+    left_msg->header.frame_id = "camera_left_frame";
+    int single_img_w = pub_data->origin_stereo_msg->width;
+    int single_img_h = pub_data->origin_stereo_msg->height / 2;
+    left_msg->height = single_img_h;
+    left_msg->width = single_img_w;
+    left_msg->is_bigendian = false;
+
+    if (pub_data->origin_stereo_msg->encoding == "rgb8") {
+      left_msg->encoding = "rgb8";
+      left_msg->step = single_img_w * 3; // RGB step
+      size_t size = single_img_w * single_img_h * 3;
+      left_msg->data.resize(size);
+      cv::Mat stereo_rgb(pub_data->origin_stereo_msg->height, pub_data->origin_stereo_msg->width, CV_8UC3,
+                         const_cast<uint8_t *>(pub_data->origin_stereo_msg->data.data()),
+                         pub_data->origin_stereo_msg->step);
+      cv::Mat left_rgb = stereo_rgb.rowRange(0, single_img_h).clone();
+      std::memcpy(left_msg->data.data(), left_rgb.data, size);
+      origin_left_image_pub_->publish(*left_msg);
+      pub_data->origin_left_msg = left_msg;
+    } else {
+      left_msg->encoding = "bgr8";
+      left_msg->step = single_img_w * 3; // BGR step
+      size_t size = single_img_w * single_img_h * 3;
+      left_msg->data.resize(size);
+      cv::Mat stereo_bgr(pub_data->origin_stereo_msg->height, pub_data->origin_stereo_msg->width, CV_8UC3,
+                         const_cast<uint8_t *>(pub_data->origin_stereo_msg->data.data()),
+                         pub_data->origin_stereo_msg->step);
+      cv::Mat left_bgr = stereo_bgr.rowRange(0, single_img_h).clone();
+      std::memcpy(left_msg->data.data(), left_bgr.data, size);
+      origin_left_image_pub_->publish(*left_msg);
+      pub_data->origin_left_msg = left_msg;
+    }
+  }
+}
+
+void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &pub_data) {
+  if (origin_right_image_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  if (pub_data->origin_stereo_msg->encoding == "nv12") {
+    auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
+    right_msg->header = pub_data->header;
+    right_msg->header.frame_id = "camera_right_frame";
+    int single_img_w = pub_data->origin_stereo_msg->width;
+    int single_img_h = pub_data->origin_stereo_msg->height / 2;
+    right_msg->height = single_img_h;
+    right_msg->width = single_img_w;
+    right_msg->encoding = "nv12";
+    right_msg->is_bigendian = false;
+    right_msg->step = single_img_w; // Y plane step
+    size_t size = single_img_w * single_img_h * 3 / 2;
+    right_msg->data.resize(size);
+    std::memcpy(right_msg->data.data(), pub_data->origin_stereo_msg->data.data() + single_img_w * single_img_h,
+                single_img_w * single_img_h);
+    std::memcpy(right_msg->data.data() + single_img_w * single_img_h,
+                pub_data->origin_stereo_msg->data.data() +
+                    pub_data->origin_stereo_msg->width * pub_data->origin_stereo_msg->height +
+                    single_img_w * single_img_h / 2,
+                single_img_w * single_img_h / 2);
+    origin_right_image_pub_->publish(*right_msg);
+    pub_data->origin_right_msg = right_msg;
+  } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
+    auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
+    right_msg->header = pub_data->header;
+    right_msg->header.frame_id = "camera_right_frame";
+    int single_img_w = pub_data->origin_stereo_msg->width;
+    int single_img_h = pub_data->origin_stereo_msg->height / 2;
+    right_msg->height = single_img_h;
+    right_msg->width = single_img_w;
+    right_msg->is_bigendian = false;
+
+    if (pub_data->origin_stereo_msg->encoding == "rgb8") {
+      right_msg->encoding = "rgb8";
+      right_msg->step = single_img_w * 3; // RGB step
+      size_t size = single_img_w * single_img_h * 3;
+      right_msg->data.resize(size);
+      cv::Mat stereo_rgb(pub_data->origin_stereo_msg->height, pub_data->origin_stereo_msg->width, CV_8UC3,
+                         const_cast<uint8_t *>(pub_data->origin_stereo_msg->data.data()),
+                         pub_data->origin_stereo_msg->step);
+      cv::Mat right_rgb = stereo_rgb.rowRange(single_img_h, pub_data->origin_stereo_msg->height).clone();
+      std::memcpy(right_msg->data.data(), right_rgb.data, size);
+      origin_right_image_pub_->publish(*right_msg);
+      pub_data->origin_right_msg = right_msg;
+    } else {
+      right_msg->encoding = "bgr8";
+      right_msg->step = single_img_w * 3; // BGR step
+      size_t size = single_img_w * single_img_h * 3;
+      right_msg->data.resize(size);
+      cv::Mat stereo_bgr(pub_data->origin_stereo_msg->height, pub_data->origin_stereo_msg->width, CV_8UC3,
+                         const_cast<uint8_t *>(pub_data->origin_stereo_msg->data.data()),
+                         pub_data->origin_stereo_msg->step);
+      cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, pub_data->origin_stereo_msg->height).clone();
+      std::memcpy(right_msg->data.data(), right_bgr.data, size);
+      origin_right_image_pub_->publish(*right_msg);
+      pub_data->origin_right_msg = right_msg;
+    }
+  }
 }
 
 void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_data) {
@@ -877,6 +1015,8 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right.png");
   std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
   std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.png");
+  std::string origin_left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_L.png");
+  std::string origin_right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_R.png");
 
   cv::Mat left_bgr, right_bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, pub_data->disp.cols,
@@ -892,6 +1032,40 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   if (pub_data->pointcloud && !pub_data->pointcloud->points.empty())
     pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
   if (!pub_data->visual_img.empty()) cv::imwrite(visual_image_path, pub_data->visual_img);
+  if (pub_data->origin_left_msg && use_local_image_flag_ == false) {
+    cv::Mat origin_left;
+    if (pub_data->origin_left_msg->encoding == "nv12") {
+      ImgConvertUtils::nv12_to_bgr_mat(pub_data->origin_left_msg->data.data(), origin_left,
+                                       pub_data->origin_left_msg->width, pub_data->origin_left_msg->height);
+    } else if (pub_data->origin_left_msg->encoding == "rgb8") {
+      cv::Mat rgb(pub_data->origin_left_msg->height, pub_data->origin_left_msg->width, CV_8UC3,
+                  const_cast<uint8_t *>(pub_data->origin_left_msg->data.data()), pub_data->origin_left_msg->step);
+      cv::cvtColor(rgb, origin_left, cv::COLOR_RGB2BGR);
+    } else if (pub_data->origin_left_msg->encoding == "bgr8") {
+      origin_left =
+          cv::Mat(pub_data->origin_left_msg->height, pub_data->origin_left_msg->width, CV_8UC3,
+                  const_cast<uint8_t *>(pub_data->origin_left_msg->data.data()), pub_data->origin_left_msg->step)
+              .clone();
+    }
+    if (!origin_left.empty()) cv::imwrite(origin_left_image_path, origin_left);
+  }
+  if (pub_data->origin_right_msg && use_local_image_flag_ == false) {
+    cv::Mat origin_right;
+    if (pub_data->origin_right_msg->encoding == "nv12") {
+      ImgConvertUtils::nv12_to_bgr_mat(pub_data->origin_right_msg->data.data(), origin_right,
+                                       pub_data->origin_right_msg->width, pub_data->origin_right_msg->height);
+    } else if (pub_data->origin_right_msg->encoding == "rgb8") {
+      cv::Mat rgb(pub_data->origin_right_msg->height, pub_data->origin_right_msg->width, CV_8UC3,
+                  const_cast<uint8_t *>(pub_data->origin_right_msg->data.data()), pub_data->origin_right_msg->step);
+      cv::cvtColor(rgb, origin_right, cv::COLOR_RGB2BGR);
+    } else if (pub_data->origin_right_msg->encoding == "bgr8") {
+      origin_right =
+          cv::Mat(pub_data->origin_right_msg->height, pub_data->origin_right_msg->width, CV_8UC3,
+                  const_cast<uint8_t *>(pub_data->origin_right_msg->data.data()), pub_data->origin_right_msg->step)
+              .clone();
+    }
+    if (!origin_right.empty()) cv::imwrite(origin_right_image_path, origin_right);
+  }
 
   RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, save count: %d\033[0m", save_dir_.c_str(),
               current_count);

@@ -75,6 +75,9 @@ private:
   struct PubData {
     uint64_t timestamp;
     std_msgs::msg::Header header;
+    sensor_msgs::msg::Image::SharedPtr origin_stereo_msg = nullptr;
+    sensor_msgs::msg::Image::SharedPtr origin_left_msg = nullptr;
+    sensor_msgs::msg::Image::SharedPtr origin_right_msg = nullptr;
     cv::Mat disp;
     cv::Mat depth;
     cv::Mat uncert;
@@ -176,6 +179,18 @@ private:
   void publish_visual_image(const std::shared_ptr<PubData> &pub_data);
 
   /**
+   * @brief Publish the original left and right images
+   * @param pub_data The processed data containing the disparity map and metadata
+   */
+  void publish_origin_left_image(const std::shared_ptr<PubData> &pub_data);
+
+  /**
+   * @brief Publish the original left and right images
+   * @param pub_data The processed data containing the disparity map and metadata
+   */
+  void publish_origin_right_image(const std::shared_ptr<PubData> &pub_data);
+
+  /**
    * @brief Publish static TF for the stereo camera setup
    */
   void publish_static_tf();
@@ -214,6 +229,10 @@ private:
   std::string rectify_right_image_topic_ = "~/rectify_right_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rectify_right_image_pub_ = nullptr;
   bool publish_rectify_bgr_ = false;
+  std::string origin_left_image_topic_ = "~/origin_left_image";
+  std::string origin_right_image_topic_ = "~/origin_right_image";
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_left_image_pub_ = nullptr;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_right_image_pub_ = nullptr;
 
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_ = nullptr;
 

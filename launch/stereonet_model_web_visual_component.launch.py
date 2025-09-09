@@ -38,6 +38,12 @@ def generate_launch_description():
         description="stereonet_pub_web, if not, we will disable websocket and codec of stereonet depth",
     )
 
+    use_mipi_cam_arg = DeclareLaunchArgument(
+        "use_mipi_cam",
+        default_value="True",
+        description="use_mipi_cam",
+    )
+
     target_container_name_arg = DeclareLaunchArgument(
         "target_container_name",
         default_value="stereonet_components_container",
@@ -77,6 +83,20 @@ def generate_launch_description():
         ),
     )
 
+    # stereonet node
+    stereonet_model_component = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("hobot_stereonet"),
+                "launch/stereonet_model_component.launch.py",
+            )
+        ),
+        launch_arguments={
+            "log_level": "info",
+            "target_container": LaunchConfiguration("target_container_name"),
+        }.items(),
+    )
+
     # mipi node
     mipi_cam_component = ComposableNode(
         package="mipi_cam",
@@ -106,20 +126,6 @@ def generate_launch_description():
         extra_arguments=[
             {"use_intra_process_comms": True},
         ],
-    )
-
-    # stereonet node
-    stereonet_model_component = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("hobot_stereonet"),
-                "launch/stereonet_model_component.launch.py",
-            )
-        ),
-        launch_arguments={
-            "log_level": "info",
-            "target_container": LaunchConfiguration("target_container_name"),
-        }.items(),
     )
 
     # codec node
@@ -266,16 +272,24 @@ def generate_launch_description():
                 description="mipi camera gdc enable",
             ),
             stereonet_pub_web_arg,
+            use_mipi_cam_arg,
             target_container_name_arg,
             shared_mem_node,
             container,
+            stereonet_model_component,
             LoadComposableNodes(
                 target_container=LaunchConfiguration("target_container_name"),
                 composable_node_descriptions=[
                     mipi_cam_component,
                 ],
+                condition=IfCondition(
+                    PythonExpression([
+                        LaunchConfiguration('use_mipi_cam'),
+                        ' and ',
+                        'not ', LaunchConfiguration('use_local_image_flag')
+                    ])
+                )
             ),
-            stereonet_model_component,
             codec_node,
             web_node,
         ]
