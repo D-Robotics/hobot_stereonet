@@ -184,6 +184,15 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<double>("max_disp_diff", 1.0);
   max_disp_diff_ = this->get_parameter("max_disp_diff").as_double();
 
+  this->declare_parameter<bool>("pcl_filter_enable", false);
+  pcl_filter_enable_ = this->get_parameter("pcl_filter_enable").as_bool();
+  this->declare_parameter<float>("voxel_leaf_size", 0.05f);
+  voxel_leaf_size_ = this->get_parameter("voxel_leaf_size").as_double();
+  this->declare_parameter<int>("mean_k", 10);
+  mean_k_ = this->get_parameter("mean_k").as_int();
+  this->declare_parameter<double>("std_thresh", 1.0);
+  std_thresh_ = this->get_parameter("std_thresh").as_double();
+
   RCLCPP_WARN_STREAM(this->get_logger(),
                      std::endl
                          << "stereonet_model_file_path: " << stereonet_model_file_path_ << std::endl
@@ -215,6 +224,8 @@ void StereoNetNode::set_node_params() {
                          << stereo_calib_file_path_ << "]" << std::endl
                          << "[speckle_filter_enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_
                          << ", " << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
+                         << "[pcl_filter_enable, voxel_leaf_size, mean_k, std_thresh]: [" << pcl_filter_enable_ << ", "
+                         << voxel_leaf_size_ << ", " << mean_k_ << ", " << std_thresh_ << "]" << std::endl
                          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_
                          << "]" << std::endl
                          << "=> ==================================================================" << std::endl);
@@ -738,7 +749,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
     const uint16_t *depth_row = pub_data->depth.ptr<uint16_t>(v);
     const cv::Vec3b *bgr_row = bgr.ptr<cv::Vec3b>(v);
     for (int u = 0; u < cols; u += step) {
-      float z = depth_row[u] * 0.001f;
+      float z = depth_row[u] * 0.001f; // mm to m
       if (z <= 0 || z > pointcloud_depth_max_) continue;
       float x = (u - cx) * z / fx;
       float y = (v - cy) * z / fy;
@@ -767,13 +778,20 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
 
   if (save_result_flag_) pub_data->pointcloud = pcl_cloud;
 
-  sensor_msgs::msg::PointCloud2 cloud_msg;
-  pcl::toROSMsg(*pcl_cloud, cloud_msg);
-  cloud_msg.header = pub_data->header;
-  cloud_msg.header.frame_id = "camera_link";
-  cloud_msg.is_dense = false;
-  cloud_msg.is_bigendian = false;
-  pointcloud2_pub_->publish(cloud_msg);
+  sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  if (pcl_filter_enable_) {
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
+        PCLFilterUtils::statisticalOutlierRemoval(pcl_cloud, voxel_leaf_size_, mean_k_, std_thresh_);
+    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud = PCLFilterUtils::radiusOutlierRemoval(pcl_cloud);
+    pcl::toROSMsg(*filtered_cloud, *cloud_msg);
+  } else {
+    pcl::toROSMsg(*pcl_cloud, *cloud_msg);
+  }
+  cloud_msg->header = pub_data->header;
+  cloud_msg->header.frame_id = "camera_link";
+  cloud_msg->is_dense = false;
+  cloud_msg->is_bigendian = false;
+  pointcloud2_pub_->publish(*cloud_msg);
 }
 
 void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {

@@ -42,6 +42,7 @@
 #include "performance_record.h"
 #include "speckle_filter.h"
 #include "stereo_rectify.h"
+#include "pcl_filter.h"
 
 namespace fs = std::filesystem;
 namespace stereonet {
@@ -250,6 +251,11 @@ private:
   bool speckle_filter_enable_ = false;
   int max_speckle_size_ = 100;
   float max_disp_diff_ = 1.0f;
+
+  bool pcl_filter_enable_ = false;
+  float voxel_leaf_size_ = 0.05f; // m
+  int mean_k_ = 10;
+  double std_thresh_ = 1.0;
 
   // offline infer
   bool use_local_image_flag_ = false;

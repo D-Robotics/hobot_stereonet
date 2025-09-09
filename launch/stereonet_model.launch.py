@@ -55,6 +55,8 @@ def generate_launch_description():
         {'name':'rectify_left_image_topic', 'default_value':'/StereoNetNode/rectify_left_image', 'description': 'rectify_left_image_topic'},
         {'name':'rectify_right_image_topic', 'default_value':'/StereoNetNode/rectify_right_image', 'description': 'rectify_right_image_topic'},
         {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
+        {'name':'origin_left_image_topic', 'default_value':'/StereoNetNode/origin_left_image', 'description': 'origin_left_image_topic'},
+        {'name':'origin_right_image_topic', 'default_value':'/StereoNetNode/origin_right_image', 'description': 'origin_right_image_topic'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
         {'name':'render_type', 'default_value':'0', 'description': 'render_type: 0-render disp, 1-render disp auto'},
@@ -90,9 +92,9 @@ def generate_launch_description():
         {'name':'max_speckle_size', 'default_value':'100', 'description': 'max_speckle_size'},
         {'name':'max_disp_diff', 'default_value':'1.0', 'description': 'max_speckle_size'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
-        {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
-        {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
-        {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
+        {'name':'voxel_leaf_size', 'default_value':'0.05', 'description': 'voxel_leaf_size'},
+        {'name':'mean_k', 'default_value':'10', 'description': 'mean_k'},
+        {'name':'std_thresh', 'default_value':'1.0', 'description': 'std_dev_mul_thresh'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
