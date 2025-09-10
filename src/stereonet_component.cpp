@@ -193,6 +193,9 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<double>("std_thresh", 1.0);
   std_thresh_ = this->get_parameter("std_thresh").as_double();
 
+  this->declare_parameter<int>("render_type", 0);
+  render_type_ = this->get_parameter("render_type").as_int();
+
   RCLCPP_WARN_STREAM(this->get_logger(),
                      std::endl
                          << "stereonet_model_file_path: " << stereonet_model_file_path_ << std::endl
@@ -226,6 +229,7 @@ void StereoNetNode::set_node_params() {
                          << ", " << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
                          << "[pcl_filter_enable, voxel_leaf_size, mean_k, std_thresh]: [" << pcl_filter_enable_ << ", "
                          << voxel_leaf_size_ << ", " << mean_k_ << ", " << std_thresh_ << "]" << std::endl
+                         << "render_type: " << render_type_ << std::endl
                          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_
                          << "]" << std::endl
                          << "=> ==================================================================" << std::endl);
@@ -776,16 +780,16 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   pcl_cloud->height = 1;
   pcl_cloud->is_dense = false;
 
-  if (save_result_flag_) pub_data->pointcloud = pcl_cloud;
-
   sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
   if (pcl_filter_enable_) {
+    ScopeProcessTime t(this->get_logger(), "pcl filter");
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
         PCLFilterUtils::statisticalOutlierRemoval(pcl_cloud, voxel_leaf_size_, mean_k_, std_thresh_);
-    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud = PCLFilterUtils::radiusOutlierRemoval(pcl_cloud);
     pcl::toROSMsg(*filtered_cloud, *cloud_msg);
+    if (save_result_flag_) pub_data->pointcloud = filtered_cloud;
   } else {
     pcl::toROSMsg(*pcl_cloud, *cloud_msg);
+    if (save_result_flag_) pub_data->pointcloud = pcl_cloud;
   }
   cloud_msg->header = pub_data->header;
   cloud_msg->header.frame_id = "camera_link";
@@ -925,10 +929,170 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, width, height);
 
   cv::Mat visual_img;
-  double minVal, maxVal;
-  cv::minMaxLoc(pub_data->disp, &minVal, &maxVal);
-  pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (maxVal - minVal), -minVal * 255.0 / (maxVal - minVal));
-  cv::applyColorMap(visual_img, visual_img, cv::COLORMAP_JET);
+
+  if (render_type_ == 1) {
+    /*
+    std::vector<float> disp_vals;
+    disp_vals.reserve(pub_data->disp.rows * pub_data->disp.cols);
+
+    float min_val = std::numeric_limits<float>::max();
+    float max_val = std::numeric_limits<float>::lowest();
+    for (int r = 0; r < pub_data->disp.rows; ++r) {
+      const float *row_ptr = pub_data->disp.ptr<float>(r);
+      for (int c = 0; c < pub_data->disp.cols; ++c) {
+        float v = row_ptr[c];
+        if (v > 0) {
+          disp_vals.push_back(v);
+          if (v < min_val) min_val = v;
+          if (v > max_val) max_val = v;
+        }
+      }
+    }
+
+    auto getQuantile = [&](double q) {
+      size_t idx = static_cast<size_t>(q * (disp_vals.size() - 1));
+      std::nth_element(disp_vals.begin(), disp_vals.begin() + idx, disp_vals.end());
+      return disp_vals[idx];
+    };
+    float q10 = getQuantile(0.10);
+    float q50 = getQuantile(0.50);
+    float q90 = getQuantile(0.90);
+
+    double scale10 = 0.25 * 255.0 / (q10 - min_val + 1e-6);
+    double scale50 = 0.25 * 255.0 / (q50 - q10 + 1e-6);
+    double scale90 = 0.25 * 255.0 / (q90 - q50 + 1e-6);
+    double scaleMax = 0.25 * 255.0 / (max_val - q90 + 1e-6);
+
+    visual_img.create(pub_data->disp.size(), CV_8UC3);
+    for (int r = 0; r < pub_data->disp.rows; ++r) {
+      const float *row_ptr = pub_data->disp.ptr<float>(r);
+      cv::Vec3b *out_ptr = visual_img.ptr<cv::Vec3b>(r);
+      for (int c = 0; c < pub_data->disp.cols; ++c) {
+        float pixel = row_ptr[c];
+        uint8_t val = 0;
+        if (pixel > 0) {
+          if (pixel <= q10) {
+            val = static_cast<uint8_t>((pixel - min_val) * scale10);
+          } else if (pixel <= q50) {
+            val = static_cast<uint8_t>(0.25 * 255 + (pixel - q10) * scale50);
+          } else if (pixel <= q90) {
+            val = static_cast<uint8_t>(0.5 * 255 + (pixel - q50) * scale90);
+          } else {
+            val = static_cast<uint8_t>(0.75 * 255 + (pixel - q90) * scaleMax);
+          }
+        }
+        out_ptr[c] = cv::Vec3b(val, val, val);
+      }
+    }
+    */
+
+    // Using OpenMP to parallelize the extraction of valid disparity values and computation of min/max
+    std::vector<float> disp_vals;
+    disp_vals.reserve(pub_data->disp.rows * pub_data->disp.cols);
+    float min_val = std::numeric_limits<float>::max();
+    float max_val = std::numeric_limits<float>::lowest();
+#pragma omp parallel
+    {
+      std::vector<float> local_vals;
+      local_vals.reserve(pub_data->disp.rows * pub_data->disp.cols / 4);
+      float local_min = std::numeric_limits<float>::max();
+      float local_max = std::numeric_limits<float>::lowest();
+#pragma omp for nowait
+      for (int r = 0; r < pub_data->disp.rows; ++r) {
+        const float *row_ptr = pub_data->disp.ptr<float>(r);
+        for (int c = 0; c < pub_data->disp.cols; ++c) {
+          float v = row_ptr[c];
+          if (v > 0) {
+            local_vals.push_back(v);
+            if (v < local_min) local_min = v;
+            if (v > local_max) local_max = v;
+          }
+        }
+      }
+#pragma omp critical
+      {
+        disp_vals.insert(disp_vals.end(), local_vals.begin(), local_vals.end());
+        if (local_min < min_val) min_val = local_min;
+        if (local_max > max_val) max_val = local_max;
+      }
+    }
+
+    // calculate quantiles
+    auto getQuantile = [&](double q) {
+      size_t idx = static_cast<size_t>(q * (disp_vals.size() - 1));
+      std::nth_element(disp_vals.begin(), disp_vals.begin() + idx, disp_vals.end());
+      return disp_vals[idx];
+    };
+
+    float q10 = getQuantile(0.10);
+    float q50 = getQuantile(0.50);
+    float q90 = getQuantile(0.90);
+
+    // OpenMP + NEON to parallelize the mapping of disparity values to visual representation
+    double scale10 = 0.25 * 255.0 / (q10 - min_val + 1e-6);
+    double scale50 = 0.25 * 255.0 / (q50 - q10 + 1e-6);
+    double scale90 = 0.25 * 255.0 / (q90 - q50 + 1e-6);
+    double scaleMax = 0.25 * 255.0 / (max_val - q90 + 1e-6);
+
+    visual_img.create(pub_data->disp.size(), CV_8UC3);
+
+#pragma omp parallel for
+    for (int r = 0; r < pub_data->disp.rows; ++r) {
+      const float *row_ptr = pub_data->disp.ptr<float>(r);
+      cv::Vec3b *out_ptr = visual_img.ptr<cv::Vec3b>(r);
+
+      int c = 0;
+      for (; c + 4 <= pub_data->disp.cols; c += 4) {
+        float32x4_t pixels = vld1q_f32(row_ptr + c);
+        float px[4];
+        vst1q_f32(px, pixels);
+        uint8_t vals[4];
+        for (int i = 0; i < 4; ++i) {
+          float p = px[i];
+          if (p <= 0)
+            vals[i] = 0;
+          else if (p <= q10)
+            vals[i] = static_cast<uint8_t>((p - min_val) * scale10);
+          else if (p <= q50)
+            vals[i] = static_cast<uint8_t>(0.25 * 255 + (p - q10) * scale50);
+          else if (p <= q90)
+            vals[i] = static_cast<uint8_t>(0.5 * 255 + (p - q50) * scale90);
+          else
+            vals[i] = static_cast<uint8_t>(0.75 * 255 + (p - q90) * scaleMax);
+        }
+        for (int i = 0; i < 4; ++i) out_ptr[c + i] = cv::Vec3b(vals[i], vals[i], vals[i]);
+      }
+
+      for (; c < pub_data->disp.cols; ++c) {
+        float pixel = row_ptr[c];
+        uint8_t val = 0;
+        if (pixel > 0) {
+          if (pixel <= q10)
+            val = static_cast<uint8_t>((pixel - min_val) * scale10);
+          else if (pixel <= q50)
+            val = static_cast<uint8_t>(0.25 * 255 + (pixel - q10) * scale50);
+          else if (pixel <= q90)
+            val = static_cast<uint8_t>(0.5 * 255 + (pixel - q50) * scale90);
+          else
+            val = static_cast<uint8_t>(0.75 * 255 + (pixel - q90) * scaleMax);
+        }
+        out_ptr[c] = cv::Vec3b(val, val, val);
+      }
+    }
+  } else {
+    double minVal, maxVal;
+    cv::minMaxLoc(pub_data->disp, &minVal, &maxVal);
+    pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (maxVal - minVal), -minVal * 255.0 / (maxVal - minVal));
+    cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
+  }
+
+  static cv::Mat lut;
+  if (lut.empty()) {
+    cv::Mat tmp(1, 256, CV_8UC1);
+    for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = i;
+    cv::applyColorMap(tmp, lut, cv::COLORMAP_JET);
+  }
+  cv::LUT(visual_img, lut, visual_img);
   cv::Mat mask = (pub_data->disp == 0);
   visual_img.setTo(cv::Vec3b(0, 0, 0), mask);
 

@@ -278,6 +278,9 @@ private:
   std::atomic<bool> camera_info_updated_{false};
   std::shared_ptr<StereoRectify> stereo_rectifier_ = nullptr;
 
+  // render
+  int render_type_ = 0;
+
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
   std::vector<std::thread> infer_threads_;
