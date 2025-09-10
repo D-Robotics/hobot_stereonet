@@ -59,7 +59,7 @@ def generate_launch_description():
         {'name':'origin_right_image_topic', 'default_value':'/StereoNetNode/origin_right_image', 'description': 'origin_right_image_topic'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
-        {'name':'render_type', 'default_value':'0', 'description': 'render_type: 0-render disp, 1-render disp auto'},
+        {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse]'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
 
         {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},

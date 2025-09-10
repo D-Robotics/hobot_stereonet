@@ -279,7 +279,7 @@ private:
   std::shared_ptr<StereoRectify> stereo_rectifier_ = nullptr;
 
   // render
-  int render_type_ = 0;
+  std::string render_type_ = "indoor";
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;

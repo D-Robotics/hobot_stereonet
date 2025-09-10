@@ -193,8 +193,17 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<double>("std_thresh", 1.0);
   std_thresh_ = this->get_parameter("std_thresh").as_double();
 
-  this->declare_parameter<int>("render_type", 0);
-  render_type_ = this->get_parameter("render_type").as_int();
+  this->declare_parameter<std::string>("render_type", "indoor");
+  render_type_ = this->get_parameter("render_type").as_string();
+  auto is_valid_render_type = [](const std::string &render_type) {
+    return render_type == "indoor" || render_type == "outdoor" || render_type == "indoor-reverse" ||
+           render_type == "outdoor-reverse";
+  };
+  if (!is_valid_render_type(render_type_)) {
+    RCLCPP_ERROR(this->get_logger(), "\033[31m=> render_type parameter invalid, should be one of [indoor, outdoor, "
+                                     "indoor-reverse, outdoor-reverse]\033[0m");
+    rclcpp::shutdown();
+  }
 
   RCLCPP_WARN_STREAM(this->get_logger(),
                      std::endl
@@ -383,18 +392,21 @@ void StereoNetNode::infer_function(const int &thread_id) {
           StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
         } else {
           if (calib_method_ == "none") {
-            RCLCPP_ERROR(this->get_logger(),
-                         "\033[31m=> unable to receive topic %s to obtain camera intrinsic parameters, and the camera "
-                         "intrinsic parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] are not manually "
-                         "set, please confirm whether the topic is correct or manually set the camera intrinsic "
-                         "parameters. when calib_method is none\033[0m",
-                         camera_info_topic_.c_str());
+            RCLCPP_ERROR_ONCE(
+                this->get_logger(),
+                "\033[31m=> unable to receive topic %s to obtain camera intrinsic parameters, and the camera "
+                "intrinsic parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] are not manually "
+                "set, please confirm whether the topic is correct or manually set the camera intrinsic "
+                "parameters. when calib_method is none\033[0m",
+                camera_info_topic_.c_str());
+            rclcpp::shutdown();
           } else if (calib_method_ == "custom") {
-            RCLCPP_ERROR(
+            RCLCPP_ERROR_ONCE(
                 this->get_logger(),
                 "\033[31m=> calib_method is custom, camera intrinsic should be set from stereo_calib_file_path: "
                 "%s\033[0m",
                 stereo_calib_file_path_.c_str());
+            rclcpp::shutdown();
           }
           continue;
         }
@@ -930,7 +942,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
 
   cv::Mat visual_img;
 
-  if (render_type_ == 1) {
+  if (render_type_.rfind("outdoor", 0) == 0) {
     /*
     std::vector<float> disp_vals;
     disp_vals.reserve(pub_data->disp.rows * pub_data->disp.cols);
@@ -1089,7 +1101,11 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   static cv::Mat lut;
   if (lut.empty()) {
     cv::Mat tmp(1, 256, CV_8UC1);
-    for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = i;
+    if (render_type_.find("reverse") != std::string::npos) {
+      for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = 255 - i;
+    } else {
+      for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = i;
+    }
     cv::applyColorMap(tmp, lut, cv::COLORMAP_JET);
   }
   cv::LUT(visual_img, lut, visual_img);
