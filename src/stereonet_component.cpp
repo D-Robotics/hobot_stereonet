@@ -453,13 +453,12 @@ void StereoNetNode::infer_function(const int &thread_id) {
 void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_msg, const int &model_input_w,
                                const int &model_input_h, std::vector<uint8_t> &left_img_data,
                                std::vector<uint8_t> &right_img_data) {
+  size_t model_input_nv12_size = model_input_w * model_input_h * 3 / 2;
+  left_img_data.resize(model_input_nv12_size);
+  right_img_data.resize(model_input_nv12_size);
   if (stereo_msg->encoding == "nv12") {
     int single_img_w = stereo_msg->width;
     int single_img_h = stereo_msg->height / 2;
-    size_t single_nv12_size = single_img_w * single_img_h * 3 / 2;
-
-    left_img_data.resize(single_nv12_size);
-    right_img_data.resize(single_nv12_size);
 
     if (calib_method_ == "none") {
       if (single_img_w != model_input_w || single_img_h != model_input_h) {
@@ -481,11 +480,11 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
           camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / single_img_w;
           camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / single_img_h;
           RCLCPP_WARN(this->get_logger(),
-                      "\033[31m=> after resize, update camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f\033[0m",
-                      camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy);
+                      "\033[31m=> after resize, update camera intrinsic [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, "
+                      "%f, %f]\033[0m",
+                      camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+                      camera_intrinsic_->baseline);
         }
-        single_img_w = model_input_w;
-        single_img_h = model_input_h;
         ImgConvertUtils::bgr_mat_to_nv12(left_bgr, left_img_data.data());
         ImgConvertUtils::bgr_mat_to_nv12(right_bgr, right_img_data.data());
       } else {
@@ -548,16 +547,13 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
           camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / single_img_w;
           camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / single_img_h;
           RCLCPP_WARN(this->get_logger(),
-                      "\033[31m=> after resize, update camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f\033[0m",
-                      camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy);
+                      "\033[31m=> after resize, update camera intrinsic [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, "
+                      "%f, %f]\033[0m",
+                      camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+                      camera_intrinsic_->baseline);
         }
-        single_img_w = model_input_w;
-        single_img_h = model_input_h;
       }
 
-      size_t single_nv12_size = single_img_w * single_img_h * 3 / 2;
-      left_img_data.resize(single_nv12_size);
-      right_img_data.resize(single_nv12_size);
       ImgConvertUtils::bgr_mat_to_nv12(left_bgr, left_img_data.data());
       ImgConvertUtils::bgr_mat_to_nv12(right_bgr, right_img_data.data());
     } else if (calib_method_ == "custom") {
@@ -565,9 +561,6 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
       // rectify
       cv::Mat left_bgr_rectify, right_bgr_rectify;
       stereo_rectifier_->rectify(left_bgr, right_bgr, left_bgr_rectify, right_bgr_rectify);
-      size_t single_nv12_size = left_bgr_rectify.cols * left_bgr_rectify.rows * 3 / 2;
-      left_img_data.resize(single_nv12_size);
-      right_img_data.resize(single_nv12_size);
       ImgConvertUtils::bgr_mat_to_nv12(left_bgr_rectify, left_img_data.data());
       ImgConvertUtils::bgr_mat_to_nv12(right_bgr_rectify, right_img_data.data());
     }
