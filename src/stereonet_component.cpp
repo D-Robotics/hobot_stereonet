@@ -173,7 +173,6 @@ void StereoNetNode::set_node_params() {
     }
     if (image_sleep_ < 0) image_sleep_ = 0;
     infer_thread_num_ = 1;
-    calib_method_ = "none";
     render_perf_ = false;
   }
 
@@ -1176,7 +1175,7 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
     std::lock_guard<std::mutex> lock(save_mutex_);
     if (!save_result_flag_) return;
     if (save_total_ > 0 && save_count_ / save_freq_ >= save_total_) {
-      RCLCPP_WARN(this->get_logger(), "\033[31m=> save total %d images, stop saving\033[0m", save_total_);
+      RCLCPP_WARN(this->get_logger(), "\033[32m=> save total %d images, stop saving\033[0m", save_total_);
       save_result_flag_ = false;
       return;
     }
@@ -1271,40 +1270,42 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
 
 void StereoNetNode::infer_offline() {
   auto img_paths = FileUtils::find_pairs(local_image_dir_);
-  RCLCPP_INFO(this->get_logger(), "\033[32m=> found %zu image pairs in %s\033[0m", img_paths.size(),
+  RCLCPP_WARN(this->get_logger(), "\033[32m=> found %zu image pairs in %s\033[0m", img_paths.size(),
               local_image_dir_.c_str());
 
-  std::string camera_intrinsic_path = fs::path(local_image_dir_) / fs::path("camera_intrinsic.txt");
-  if (fs::exists(camera_intrinsic_path)) {
-    bool read_success =
-        FileUtils::read_camera_intrinsic(camera_intrinsic_path, camera_intrinsic_->fx, camera_intrinsic_->fy,
-                                         camera_intrinsic_->cx, camera_intrinsic_->cy, camera_intrinsic_->baseline);
-    if (read_success) {
-      RCLCPP_WARN_ONCE(
-          this->get_logger(),
-          "\033[31m=> read camera intrinsic from %s: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): %f\033[0m",
-          camera_intrinsic_path.c_str(), camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
-          camera_intrinsic_->cy, camera_intrinsic_->baseline);
+  // read camera intrinsic
+  if (calib_method_ == "none") {
+    std::string camera_intrinsic_path = fs::path(local_image_dir_) / fs::path("camera_intrinsic.txt");
+    if (fs::exists(camera_intrinsic_path)) {
+      bool read_success =
+          FileUtils::read_camera_intrinsic(camera_intrinsic_path, camera_intrinsic_->fx, camera_intrinsic_->fy,
+                                           camera_intrinsic_->cx, camera_intrinsic_->cy, camera_intrinsic_->baseline);
+      if (read_success) {
+        RCLCPP_WARN_ONCE(
+            this->get_logger(),
+            "\033[31m=> read camera intrinsic from %s, [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, %f, %f]\033[0m",
+            camera_intrinsic_path.c_str(), camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
+            camera_intrinsic_->cy, camera_intrinsic_->baseline);
+      } else {
+        RCLCPP_ERROR(this->get_logger(), "\033[31m=> read camera intrinsic from %s failed\033[0m",
+                     camera_intrinsic_path.c_str());
+        rclcpp::shutdown();
+      }
+    } else if (camera_intrinsic_->is_valid()) {
+      RCLCPP_WARN_ONCE(this->get_logger(),
+                       "\033[31m=> use camera intrinsic from launch params, [fx, fy, cx, cy, baseline(m)] : [%f, %f, "
+                       "%f, %f, %f]\033[0m",
+                       camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+                       camera_intrinsic_->baseline);
     } else {
-      RCLCPP_ERROR(this->get_logger(), "\033[31m=> read camera intrinsic from %s failed\033[0m",
-                   camera_intrinsic_path.c_str());
+      RCLCPP_ERROR(this->get_logger(),
+                   "\033[31m=> camera intrinsic is not set, please provide camera_intrinsic.txt in %s or set the "
+                   "camera parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] in the launch file\033[0m",
+                   local_image_dir_.c_str());
       rclcpp::shutdown();
     }
-  } else if (camera_intrinsic_->is_valid()) {
-    RCLCPP_WARN_ONCE(this->get_logger(),
-                     "\033[33m=> use camera intrinsic from parameter: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): "
-                     "%f\033[0m",
-                     camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                     camera_intrinsic_->baseline);
-  } else {
-    RCLCPP_ERROR(this->get_logger(),
-                 "\033[31m=> camera intrinsic is not set, please provide camera_intrinsic.txt in %s or set the "
-                 "camera parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] in the launch file\033[0m",
-                 local_image_dir_.c_str());
-    rclcpp::shutdown();
   }
 
-  bool intrinsic_updated = false;
   int cnt = 0;
   for (auto &img_pair : img_paths) {
     if (rclcpp::ok() == false) break;
@@ -1319,29 +1320,10 @@ void StereoNetNode::infer_offline() {
     }
     int model_input_w = 0, model_input_h = 0;
     stereonet_process_->get_model_input_size(model_input_w, model_input_h);
-
-    if (left_img_bgr.cols != model_input_w || left_img_bgr.rows != model_input_h) {
-      if (!intrinsic_updated) {
-        camera_intrinsic_->cx = camera_intrinsic_->cx * model_input_w / left_img_bgr.cols;
-        camera_intrinsic_->cy = camera_intrinsic_->cy * model_input_h / left_img_bgr.rows;
-        camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / left_img_bgr.cols;
-        camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / left_img_bgr.rows;
-        RCLCPP_WARN(this->get_logger(),
-                    "\033[33m=> update camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): %f\033[0m",
-                    camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                    camera_intrinsic_->baseline);
-        intrinsic_updated = true;
-      }
-
-      RCLCPP_WARN(this->get_logger(),
-                  "\033[33m=> resize input image to fit model input size, [%d x %d] -> [%d x %d]\033[0m",
-                  left_img_bgr.cols, left_img_bgr.rows, model_input_w, model_input_h);
-      RCLCPP_WARN(this->get_logger(),
-                  "\033[33m=> using camera intrinsic: fx: %f, fy: %f, cx: %f, cy: %f, baseline(m): %f\033[0m",
-                  camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                  camera_intrinsic_->baseline);
-      cv::resize(left_img_bgr, left_img_bgr, cv::Size(model_input_w, model_input_h));
-      cv::resize(right_img_bgr, right_img_bgr, cv::Size(model_input_w, model_input_h));
+    if (calib_method_ == "custom") {
+      stereo_rectifier_->build_undistmap(left_img_bgr.cols, left_img_bgr.rows, model_input_w, model_input_h);
+      stereo_rectifier_->get_intrinsic(camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
+                                       camera_intrinsic_->cy, camera_intrinsic_->baseline);
     }
 
     cv::Mat combine_img_bgr;
@@ -1365,7 +1347,7 @@ void StereoNetNode::infer_offline() {
     cnt++;
   }
 
-  RCLCPP_INFO(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
+  RCLCPP_WARN(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
               local_image_dir_.c_str());
 }
 
