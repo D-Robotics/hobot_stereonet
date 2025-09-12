@@ -16,19 +16,20 @@ import os
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
+
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python import get_package_share_directory
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.actions import LoadComposableNodes
+from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
-
-    stereonet_model_file_path =  os.path.join(
-        get_package_share_directory('hobot_stereonet'),
-        'config',
-        'DStereoV2.5.1_int8_544_448.bin'
+    stereonet_model_file_path = os.path.join(
+        get_package_share_directory("hobot_stereonet"),
+        "config",
+        "DStereoV2.5.1_int8_544_448.bin"
     )
 
     # 双目深度估计模型
@@ -36,17 +37,13 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory("hobot_stereonet"),
-                "launch/stereonet_model_web_visual.launch.py",
+                "launch/stereonet_model_web_visual_component.launch.py",
             )
         ),
-        launch_arguments = {
+        launch_arguments={
             "stereonet_model_file_path": stereonet_model_file_path,
             "postprocess": "convex_upsampling_with_interp",
         }.items(),
     )
 
-    return LaunchDescription(
-        [
-            stereonet_node
-        ]
-    )
+    return LaunchDescription([stereonet_node])
