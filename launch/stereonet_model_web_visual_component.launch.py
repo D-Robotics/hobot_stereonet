@@ -236,41 +236,11 @@ def generate_launch_description():
                 'mipi_gdc_enable',
                 default_value='True',
                 description='mipi camera gdc enable'),
-            # DeclareLaunchArgument(
-            #     'log_level',
-            #     default_value='warn',
-            #     description='log level'),
+            DeclareLaunchArgument(
+                'mipi_cal_rotation',
+                default_value='0.0',
+                description='mipi camera calibration rotation'),
 
-            DeclareLaunchArgument(
-                "mipi_image_width",
-                default_value="640",
-                description="mipi camera out image width",
-            ),
-            DeclareLaunchArgument(
-                "mipi_image_height",
-                default_value="352",
-                description="mipi camera out image height",
-            ),
-            DeclareLaunchArgument(
-                "mipi_image_framerate",
-                default_value="10.0",
-                description="mipi camera out image framerate",
-            ),
-            DeclareLaunchArgument(
-                "mipi_lpwm_enable",
-                default_value="False",
-                description="mipi dual camera lpwm enable",
-            ),
-            DeclareLaunchArgument(
-                "mipi_rotation",
-                default_value="0.0",
-                description="mipi camera out image rotation",
-            ),
-            DeclareLaunchArgument(
-                "mipi_gdc_enable",
-                default_value="True",
-                description="mipi camera gdc enable",
-            ),
             stereonet_pub_web_arg,
             use_mipi_cam_arg,
             target_container_name_arg,

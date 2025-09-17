@@ -75,7 +75,7 @@ def generate_launch_description():
         {'name':'camera_fy', 'default_value':'0.0', 'description': 'rectified_camera_fy'},
         {'name':'baseline', 'default_value':'0.0', 'description': 'baseline of stereo'},
 
-        {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
+        {'name':'uncertainty_th', 'default_value':'-0.10', 'description': 'uncertainty_th'},
 
         {'name':'save_result_flag', 'default_value':'False', 'description': 'save_result_flag'},
         {'name':'save_dir', 'default_value':'./stereonet_result', 'description': 'save_dir'},

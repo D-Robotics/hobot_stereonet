@@ -4,35 +4,30 @@
 
 ## 功能介绍
 
-hobot_sterenet是地瓜机器人自研的基于深度学习的双目深度算法，算法输入彩色双目图像，输出左视图的深度图，可进一步根据相机内参转为点云。算法兼顾精度和效率，具有较高的使用价值。
-
-算法可搭配多款MIPI和USB双目相机使用，例如230ai、132gs、zed双目相机。
+地瓜双目深度估计算法输入为双目图像数据，输出为左视图对应的视差图和深度图。算法借鉴IGEV网络，采用了GRU架构，具有较好的数据泛化性和较高的推理效率。
 
 ## 准备工作
 
-- RDK X5
-- 双目相机
+- 支持平台：RDK X5, RDK X5 Module / RDK S100, RDK S100P，以下文档`RDK`如果没有特殊说明，代表RDK X5和RDK S100都能执行
+- 双目相机，支持230AI双目相机、132GS双目相机、ZED相机
+- 如果没有双目相机，也支持离线图片回灌，需要准备好左右图和相机参数
 
-## 支持平台
-
-| 平台   | 运行方式              | 示例功能                                    |
-| ------ | --------------------- | ------------------------------------------- |
-| RDK X5 | Ubuntu 22.04 (Humble) | 启动双目相机、推理出深度结果，并在Web端显示 |
-
-## 构建hobot_stereonet
+## 功能安装
 
 ### 从TROS.b安装
 
-使用RDK X5的用户可以按照如下手册安装并体验hobot_stereonet的功能：[双目深度算法](https://developer.d-robotics.cc/rdk_doc/Robot_development/boxs/function/hobot_stereonet)
+- 使用RDK的用户，板端默认安装TROS.b，tros.b包含hobot_stereonet功能包，请按照对应的文档运行算法即可：[双目深度算法](https://developer.d-robotics.cc/rdk_doc/Robot_development/boxs/spatial/hobot_stereonet/)
 
 ### 从源码构建
 
 - 建议使用交叉编译环境对源码进行编译，交叉编译环境的搭建指南：[5.1.3 源码安装](https://developer.d-robotics.cc/rdk_doc/Robot_development/quick_start/cross_compile)
 
-- 搭建好环境后，执行如下指令编译源码：
+- 搭建好环境后，创建ROS2工作空间，执行如下指令编译源码：
 
 ```bash
+# git clone 工作空间的src目录
 git clone https://github.com/D-Robotics/hobot_stereonet.git
+# 在工作空间目录执行交叉编译指令
 bash ./robot_dev_config/build.sh -p X5 -s hobot_stereonet
 ```
 
@@ -40,12 +35,290 @@ bash ./robot_dev_config/build.sh -p X5 -s hobot_stereonet
 
 目前双目算法已有如下版本可供使用：
 
-| 算法版本 | 算法特性                                           | 对应模型                       |
-| -------- | -------------------------------------------------- | ------------------------------ |
-| V2.0     | 精度较高、帧率较低，输出15FPS分辨率640*352的深度图 | x5baseplus_alldata_woIsaac.bin |
-| V2.1     | 加入置信度，用于过滤视差                           | DStereoV2.1.bin                |
-| V2.2     | 精度较低、帧率较高，输出23FPS分辨率640*352的深度图 | DStereoV2.2.bin                |
-| V2.3     | 帧率进一步提升，输出27FPS分辨率640*352的深度图     | V22_disp96.bin                 |
+| 平台 | 算法版本 | 量化方式 | 输入尺寸    | 推理帧率(fps) | 算法特性                       |
+| ---- | -------- | -------- | ----------- | ------------- | ------------------------------ |
+| X5   | V2.0     | int16    | 640x352x3x2 | 15            | 精度较高、帧率较低             |
+| X5   | V2.1     | int16    | 640x352x3x2 | 15            | 有置信度输出                   |
+| X5   | V2.2     | int8     | 640x352x3x2 | 23            | 精度较低、帧率较高             |
+| X5   | V2.3     | int8     | 640x352x3x2 | 27            | 帧率进一步提升                 |
+| X5   | V2.4     | int16    | 640x352x3x2 | 15            | 加入更多数据训练               |
+| X5   | V2.4     | int8     | 640x352x3x2 | 23            | 加入更多数据训练               |
+| S100 | V2.1     | int16    | 640x352x3x2 | 53            | 有置信度输出                   |
+| S100 | V2.4     | int16    | 640x352x3x2 | 53            | 有置信度输出，加入更多数据训练 |
+
+
+## 功能包参数说明
+
+| 名称                      | 默认值                                     | 说明                                                                                                   |
+| ------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| stereo_image_topic        | /image_combine_raw                         | 订阅的双目组合图像话题，左图和右图需要上下拼接，支持nv12、bgr8、rgb8格式                               |
+| camera_info_topic         | /image_right_raw/camera_info               | 订阅的相机参数话题，需要矫正后的参数                                                                   |
+| depth_image_topic         | /StereoNetNode/stereonet_depth             | 发布的深度数据话题                                                                                     |
+| depth_camera_info_topic   | /StereoNetNode/stereonet_depth/camera_info | 发布的深度图对应的相机参数话题                                                                         |
+| pointcloud2_topic         | /StereoNetNode/stereonet_pointcloud2       | 发布的点云数据话题                                                                                     |
+| rectify_left_image_topic  | /StereoNetNode/rectify_left_image          | 发布的矫正左图话题                                                                                     |
+| rectify_right_image_topic | /StereoNetNode/rectify_right_image         | 发布的矫正右图话题                                                                                     |
+| publish_rectify_bgr       | False                                      | 发布矫正图像的数据格式是否采用bgr8，默认是nv12                                                         |
+| origin_left_image_topic   | /StereoNetNode/origin_left_image           | 发布的原始左图数据话题，从stereo_image_topic拆分出来的左图                                             |
+| origin_right_image_topic  | /StereoNetNode/origin_right_image          | 发布的原始右图数据话题，从stereo_image_topic拆分出来的右图                                             |
+| visual_image_topic        | /StereoNetNode/stereonet_visual            | 发布的左图和深度图上下拼接的渲染图像话题，用于可视化                                                   |
+| render_type               | indoor                                     | 渲染图像的模式，支持[indoor, outdoor]，可以在室内室外用不同的渲染模式                                  |
+| render_perf               | True                                       | 渲染图像是否显示CPU、BPU占用率、Latency、FPS等信息                                                     |
+| pointcloud_height_min     | -5.0                                       | 发布点云数据的最小高度，单位m                                                                          |
+| pointcloud_height_max     | 5.0                                        | 发布点云数据的最大高度，单位m                                                                          |
+| pointcloud_depth_max      | 5.0                                        | 发布点云数据的最大深度，单位m                                                                          |
+| calib_method              | none                                       | 图像矫正的方式，支持[none, custom]，none表示不对输入图像进行矫正，custom表示提供自定义标定参数矫正图像 |
+| stereo_calib_file_path    | ""                                         | 自定义相机标定参数路文件的路径，当calib_method:=custom时需要指定                                       |
+| camera_fx                 | 0.0                                        | 相机矫正后的fx                                                                                         |
+| camera_fy                 | 0.0                                        | 相机矫正后的fy                                                                                         |
+| camera_cx                 | 0.0                                        | 相机矫正后的cx                                                                                         |
+| camera_cy                 | 0.0                                        | 相机矫正后的cy                                                                                         |
+| baseline                  | 0.0                                        | 相机矫正后的基线距离，单位为m                                                                          |
+| uncertainty_th            | -0.10                                      | 置信度参数，当模型支持置信度输出，并且设置为正数时才生效，建议开启时设置为0.10                         |
+| save_result_flag          | False                                      | 保存结果的开关，设置为True将会保存左右图、视差图、深度图、点云等数据                                   |
+| save_dir                  | ./stereonet_result                         | 保存数据的目录                                                                                         |
+| save_freq                 | 1                                          | 保存数据的频率                                                                                         |
+| save_total                | -1                                         | 保存数据的总数，-1表示一直保存                                                                         |
+| use_local_image_flag      | False                                      | 使用离线数据开关，设置为True表示使用离线数据进行推理                                                   |
+| local_image_dir           | ""                                         | 回灌数据的目录                                                                                         |
+| image_sleep               | 0                                          | 防止回灌数据太快，可以加入一些延迟，单位ms                                                             |
+| speckle_filter_enable     | False                                      | speckle filter滤波开关，开启可滤除一些离群点                                                           |
+| max_speckle_size          | 100                                        | 小于该数量的speckle将会被滤除                                                                          |
+| max_disp_diff             | 1.0                                        | 视差差异小于该阈值的像素将会组成speckle                                                                |
+
+## 特别说明（一定要看）
+
+请采用`root`用户执行文档中的命令，一般RDK还有一个`sunrise`用户，请不要使用该用户执行文档中的指令，会存在权限不足的问题
+
+## 搭配双目相机在线运行双目算法
+
+### 搭配230AI MIPI双目相机
+
+(1) 230AI MIPI双目相机如图所示
+
+![](img/RDK_Stereo_Cam_230ai.png)
+
+**注意：请检查相机背面丝印印有CDPxxx-V3，确认相机是V3版本，V3版本的相机支持LPWM信号硬件同步，并且带有出厂自带参数，可以进行GDC矫正**
+
+(2) 安装方式如图所示，接线请勿接反，会导致左右图对调，双目算法运行错误：
+
+![](img/RDK_X5_230ai_joint.png)
+
+(3) 确认相机连接是否正常
+
+- 在RDK X5执行以下命令，如果输出如图所示结果，则代表相机i2c信号正常：
+
+ ```bash
+ i2cdetect -r -y 4
+ i2cdetect -r -y 6
+ ```
+
+ ![](img/i2cdetect_230ai_RDK_X5.png)
+
+- 在RDK S100执行以下命令，如果输出如图所示结果，则代表相机i2c信号正常：
+
+ ```bash
+i2cdetect -r -y 1
+i2cdetect -r -y 2
+ ```
+
+ ![]()
+
+**注意：以上指令只能确保相机i2c信号正常，并不能完全保证相机连接没有问题，也会存在i2c信号正常，但相机无法正常工作的情况。这种情况一般是mipi线没有连接稳定导致，比如mipi线松动、或者mipi线损坏，请检查一下是否有此类情况**
+
+(4) 启动MIPI双目相机
+
+- 启动相机之前，要确保RDK板端安装有[hobot_mipi_cam](https://github.com/D-Robotics/hobot_mipi_cam.git)功能包，然后在RDK板端执行如下命令：
+
+```bash
+source /opt/tros/humble/setup.bash
+
+ros2 launch mipi_cam mipi_cam_dual_channel_websocket.launch.py \
+mipi_image_width:=1920 mipi_image_height:=1080 mipi_image_framerate:=30.0 \
+mipi_gdc_enable:=True mipi_lpwm_enable:=True mipi_frame_ts_type:=realtime
+```
+
+- 相机启动成功会打印如下日志：
+
+![](img/230ai_run_log.png)
+
+- 并且在与RDK连接的PC端（能相互ping通）浏览器上输入网址[http://rdk_ip:8000](http://rdk_ip:8000)能够查看相机采集的图像，如下图RDK的ip地址为`192.168.128.10`
+
+![](img/230ai_run_web.png)
+
+- 启动参数解析：
+  - `mipi_image_width:=1920 mipi_image_height:=1080`表示相机输出分辨率是1920*1080，这是230ai相机最大的输出分辨率
+  - `mipi_image_framerate:=30.0`表示相机启动的帧率是30FPS
+  - `mipi_gdc_enable:=True`表示相机开启GDC矫正，所以输出的图是矫正后的左右图，并且会输出相机的矫正参数
+  - `mipi_lpwm_enable:=True`表示相机开启LPWM信号硬件同步，保证左右图是同一时刻曝光并且曝光时间一致，目前曝光策略是自动曝光，暂不支持调节曝光时间
+  - `mipi_frame_ts_type:=realtime`表示左右图像的时间戳是采用芯片的系统时间，如果设置为`sensor`则采用芯片的开机时间
+
+当`mipi_gdc_enable:=True`时，`hobot_mipi_cam`功能包启动会发布两个话题`/image_combine_raw`和`/image_right_raw/camera_info`，正是`hobot_stereonet`功能包需要订阅的双目图像和相机矫正后参数
+
+![](img/230ai_run_topic.png)
+
+
+当`mipi_gdc_enable:=False`时，`hobot_mipi_cam`功能包启动只会发布`/image_combine_raw`话题，该话题是是带畸变的双目图像，如果输入`hobot_stereonet`功能包，要额外提供矫正参数
+
+![](img/230ai_run_web_no_gdc.png)
+
+启动双目算法的之前，**一定要验证230AI双目相机发出来的图像上图是左相机采集的图像**，双目相机对于左右相机的定义如下图所示，可以用障碍物遮挡一下左相机判断，如果不满足要求，算法启动是错误的，建议通过交换MIPI线的接线方式解决，也可以通过加入参数解决：
+
+![](img/230ai_left_right_cam.png)
+
+如果左右图顺序不对，可以在以上启动命令上加入以下参数：
+
+RDK X5上增加:
+
+```bash
+mipi_channel:=0 mipi_channel2:=2
+```
+
+RDK S100上增加:
+
+```bash
+mipi_channel:=0 mipi_channel2:=1
+```
+
+(5) 启动双目深度算法
+
+通过以上步骤验证230AI双目相机能正常启动后，则可以启动双目深度算法，通过ssh连接RDK，在`/root`目录或其它目录创建`run_stereo.sh`脚本：
+
+```bash
+source /opt/tros/humble/setup.bash
+
+ros2 pkg prefix mipi_cam
+ros2 pkg prefix hobot_stereonet
+
+stereonet_version=v2.0
+calib_method=none
+stereo_calib_file_path=""
+uncertainty_th=-0.10
+render_type=indoor
+render_perf=True
+speckle_filter_enable=False
+max_speckle_size=100
+max_disp_diff=1.0
+save_result_flag=False
+save_dir=./stereonet_result
+save_freq=1
+save_total=-1
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --stereonet_version) stereonet_version=$2; shift 2 ;;
+    --calib_method) calib_method=$2; shift 2 ;;
+    --stereo_calib_file_path) stereo_calib_file_path=$2; shift 2 ;;
+    --uncertainty_th) uncertainty_th=$2; shift 2 ;;
+    --render_type) render_type=$2; shift 2 ;;
+    --render_perf) render_perf=$2; shift 2 ;;
+    --speckle_filter_enable) speckle_filter_enable=$2; shift 2 ;;
+    --max_speckle_size) max_speckle_size=$2; shift 2 ;;
+    --max_disp_diff) max_disp_diff=$2; shift 2 ;;
+    --save_result_flag) save_result_flag=$2; shift 2 ;;
+    --save_dir) save_dir=$2; shift 2 ;;
+    --save_freq) save_freq=$2; shift 2 ;;
+    --save_total) save_total=$2; shift 2 ;;
+    *) echo "unknown param: $1"; exit 1 ;;
+  esac
+done
+
+ros2 launch hobot_stereonet stereonet_model_web_visual_$stereonet_version.launch.py \
+mipi_image_width:=640 mipi_image_height:=352 mipi_image_framerate:=30.0 \
+mipi_gdc_enable:=True mipi_lpwm_enable:=True mipi_frame_ts_type:=realtime \
+calib_method:=$calib_method stereo_calib_file_path=$stereo_calib_file_path \
+uncertainty_th:=$uncertainty_th \
+render_type:=$render_type render_perf:=$render_perf \
+speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
+pointcloud_height_min:=-5.0 pointcloud_height_max:=5.0 pointcloud_depth_max:=5.0 \
+save_result_flag:=$save_result_flag save_dir:=$save_dir save_freq:=$save_freq save_total:=$save_total
+```
+
+然后在RDK执行以下命令启动双目深度算法
+
+```bash
+ros run_stereo.sh --<param> <value>
+```
+
+其中可设置参数包括如下参数：
+
+- stereonet_version控制启动不同版本的算法
+  - RDK X5可以设置为`v2.0`、`v2.1`、`v2.2`、`v2.3`、`v2.4_int16`、`v2.4_int8`
+  - RDK S100可以设置为`v2.1`、`v2.4`
+- calib_method控制矫正方式
+  - 当`mipi_gdc_enable:=True`时，代表`hobot_mipi_cam`功能包已经对图像经过矫正，`hobot_stereonet`功能包不需要再进行矫正，calib_method设置为`none`即可
+  - 当`mipi_gdc_enable:=False`时，或者相机无法对图像进行矫正时，需要将calib_method设置为`custom`，并且需要指定`stereo_calib_file_path`
+- stereo_calib_file_path控制自定义标定参数的路径
+- uncertainty_th控制置信度，只有带置信度的模型并且设置为正数时才会生效，如果需要开启，建议设置为`0.10`
+- render_type控制渲染方式，可以设置为`indoor`、`outdoor`，web可以显示渲染图像
+- render_perf控制渲染图像上是否展示CPU、BPU占用率、Latency、FPS信息，可以设置为`True`、`False`
+- speckle_filter_enable控制是否开启speckle filter滤波，可以设置为`True`、`False`
+- max_speckle_size控制speckle的大小，小于该大小的speckle将会被滤除，设置越大，滤波效果更强
+- max_disp_diff控制speckle中视差的差异阈值，邻域小于该阈值的像素点将划分为同一个speckle，设置越小，滤波效果更强
+- save_result_flag控制是否保存结果，如果开启保存则会保存**相机参数、原始左右图、矫正后左右图、视差图、深度图、点云**
+- save_dir控制保存的目录，目录不存在会自动创建，请确保该目录下有足够空间，否则会保存失败
+- save_freq控制保存的频率，例如设置为4代表每隔4帧保存一次
+- save_total控制保存的总数，设置为-1代表一直保存，设置为100代表保存100帧则不再保存
+
+例如，在RDK X5上启动v2.4_in16版本的算法，则可执行如下指令：
+
+```bash
+ros run_stereo.sh --stereonet_version v2.4_int16
+```
+
+如果需要保存结果，则可增加参数：
+
+```bash
+ros run_stereo.sh --stereonet_version v2.4_int16 --save_result_flag True
+```
+
+
+### 搭配132GS MIPI双目相机
+
+
+### 使用离线数据回灌算法
+
+
+算法启动有两种方式：
+
+1. 搭配双目相机启动，例如MIPI相机（230AI双目相机、132GS双目相机）、USB相机（ZED相机），能够实时显示算法结果
+2. 使用离线数据回灌算法，需要准备好左右图像和相机的标定参数
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## 运行启动文件
@@ -54,20 +327,13 @@ bash ./robot_dev_config/build.sh -p X5 -s hobot_stereonet
 
 - RDK X5官方MIPI双目相机如图所示：
 
-![RDK_Stereo_Cam_230ai](img/RDK_Stereo_Cam_230ai.png)
+
 
 - 安装方式如图所示，接线请勿接反，会导致左右图对调，双目算法运行错误：
 
-![RDK_X5_230ai](img/RDK_X5_230ai.png)
 
-- 确认相机连接是否正常，通过ssh连接RDK X5，执行以下命令，如果输出如图所示结果，则代表相机连接正常：
 
-```bash
-i2cdetect -r -y 4
-i2cdetect -r -y 6
-```
 
-![i2cdetect_230ai](img/i2cdetect_230ai.png)
 
 - 通过不同的launch文件，启动相应版本的双目算法，通过ssh连接RDK X5，执行以下命令：
 
