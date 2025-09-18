@@ -983,7 +983,7 @@ int StereonetProcess::stereonet_inference(
     postprocess_v2_1(output_tensors_[idle_tensor_id], points, max_disp_, uncertainty_th_);
   } else if (postprocess_ == "v2.2") {
     postprocess_v2_2(output_tensors_[idle_tensor_id], points, max_disp_);
-  } else if (postprocess_ == "v2.3") {
+  } else if (postprocess_ == "v2.3" || postprocess_ == "v2.4") {
     postprocess_v2_3(output_tensors_[idle_tensor_id], points, max_disp_);
   }
   return StereonetErrorCode::OK;

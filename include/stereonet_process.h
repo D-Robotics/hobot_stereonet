@@ -39,7 +39,9 @@ do {                                                             \
   }                                                              \
 } while (0);
 
+#if __has_include(<rclcpp/rclcpp.hpp>)
 #include <rclcpp/rclcpp.hpp>
+#endif
 
 struct ScopeProcessTime {
  public:
@@ -50,9 +52,11 @@ struct ScopeProcessTime {
   ~ScopeProcessTime() {
     auto end = std::chrono::system_clock::now();
     const std::chrono::duration<float, std::milli> d = end - begin_;
+#if __has_include(<rclcpp/rclcpp.hpp>)
     RCLCPP_DEBUG_STREAM(rclcpp::get_logger(""), name_ << ", consume: "
                                                       << std::fixed << std::setprecision(3)
                                                       << d.count() << "ms");
+#endif
   }
 
  private:
