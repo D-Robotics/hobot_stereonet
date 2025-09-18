@@ -2,7 +2,10 @@ SET(CMAKE_C_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-
 SET(CMAKE_CXX_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
 
 cmake_minimum_required(VERSION 3.10)
+
 project(StereoInfer)
+
+add_definitions(-DPLATFORM_X5)
 
 set(CMAKE_CXX_STANDARD 17)
 

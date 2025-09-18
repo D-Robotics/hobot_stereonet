@@ -344,10 +344,9 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
       result.noalias() += matrix_disp.cast<float>().cwiseProduct(matrix_spx.cast<float>());
     }
   } else {
-    RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
-                       "=> output tensor type unsupported! tensor[0]: "
-                           << tensor_type_to_str(tensors[0].properties.tensorType)
-                           << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
+    std::cerr << "=> output tensor type unsupported! tensor[0]: "
+          << tensor_type_to_str(tensors[0].properties.tensorType)
+          << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
     return -1;
   }
   // get scale info
@@ -457,10 +456,9 @@ int postprocess_v2_2(std::vector<hbDNNTensor> &tensors,
       }
     }
   } else {
-    RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
-                       "=> output tensor type unsupported! tensor[0]: "
-                           << tensor_type_to_str(tensors[0].properties.tensorType)
-                           << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
+    std::cerr << "=> output tensor type unsupported! tensor[0]: "
+     << tensor_type_to_str(tensors[0].properties.tensorType)
+     << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
     return -1;
   }
   return 0;
@@ -581,10 +579,9 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
       }
     }
   } else {
-    RCLCPP_INFO_STREAM(rclcpp::get_logger(""),
-                       "=> output tensor type unsupported! tensor[0]: "
-                           << tensor_type_to_str(tensors[0].properties.tensorType)
-                           << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType));
+    std::cerr << "=> output tensor type unsupported! tensor[0]: "
+              << tensor_type_to_str(tensors[0].properties.tensorType)
+              << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
     return -1;
   }
   return 0;
@@ -711,8 +708,7 @@ int32_t StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_t
 
     tensor.properties = properties;
     input_tensor_type_ = properties.tensorType;
-    RCLCPP_INFO_STREAM(rclcpp::get_logger(""), "=> input tensor type: " <<
-                                                                        tensor_type_to_str(tensor.properties.tensorType));
+    std::cout << "=> input tensor type: " << tensor_type_to_str(tensor.properties.tensorType) << std::endl;
 
 #ifdef PLATFORM_X5
     tensor.properties.alignedShape = tensor.properties.validShape;
