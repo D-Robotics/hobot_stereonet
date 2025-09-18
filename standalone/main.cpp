@@ -302,10 +302,7 @@ int main(int argc, char **argv) {
   camera_parameter.base_line = 0.0804746;
 
   signal(SIGINT, signal_handler);
-  system("mkdir -p "
-         "./result/pcd/ "
-         "./result/visual/ "
-         "./result/one_point_disparity/");
+  system("mkdir -p ./result/");
 
   ret = stereo_demo.init(stereonet_model_file_path, "v2.4", 192);
   if (ret != 0) {
