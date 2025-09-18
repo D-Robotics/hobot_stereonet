@@ -1,97 +1,80 @@
-# X5 双目开发交付
-
 # StereoInfer
 
-双目推理代码，输入双目左右图片和相机内参，输出视差图、深度图
+Stereo inference code. It takes stereo left-right images and camera
+intrinsics as input, and outputs disparity maps, depth maps,
+visualization images, point clouds, etc.
 
-## 编译
+## Build
 
-- 依赖opencv（图像处理）、eigen（矩阵运算）、dnn（X5 BPU接口）、neon（ARM指令加速），这些库都在3rdparty目录下
+-   Dependencies: OpenCV (image processing), Eigen (matrix operations),
+    DNN (X5 BPU interface), NEON (ARM instruction acceleration).
+    All of these libraries are located in the `3rdparty` directory.
 
-- 下载编译器
-  - 下载地址：https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
-  - 本例使用的是arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz，请下载对应版本并解压
-    ```bash
-    tar -xvf arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-    ```
+-   Download the compiler
 
-- 使用交叉编译进行编译，注意CMakeLists.txt的编译器目录设置为自己对应的目录
+    -   Download link:
+        https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
-```cmake
-set(CMAKE_C_COMPILER /root/dockershare/1_RosCode/work_humble_ws_x5/compiler/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
-set(CMAKE_CXX_COMPILER /root/dockershare/1_RosCode/work_humble_ws_x5/compiler/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
-```
+    -   This example uses arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz.
+        Please download the corresponding version and extract it.
 
-- 最后执行编译命令
+        ``` bash
+        tar -xvf arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+        ```
 
-```bash
-cd StereoInfer
-bash run_build.sh
-```
+-   Use cross-compilation for building. Make sure the compiler path in
+    `CMakeLists.txt` matches your own installation.
 
-- 编译将生成build目录
-
-## 执行
-
-- 需要将build目录、3rdparty目录、make_ln.sh文件复制到X5板端，例如将这些文件复制到X5目录/userdata/
-
-- 然后在/userdata/目录执行
-
-```
-bash make_ln.sh
-```
-
-- 最后运行程序
-
-```bash
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/lib_opencv4.5.4/lib/
-./stereo_infer
-```
-
-- 视差图、深度图打开方式：建议安装[cvkit](https://github.com/roboception/cvkit/releases/tag/v2.6.10)软件打开pfm和png格式图像
-
-
-# DepthToPointCloud
-
-深度转点云代码，输入深度图和相机内参，输出点云文件
-
-## 编译
-
-- 依赖opencv（图像处理），这些库都在3rdparty目录下
-
-- 配置交叉编译环境，参考上文
-
-- 使用交叉编译进行编译，注意CMakeLists.txt的编译器目录设置为自己对应的目录
-
-```cmake
+``` cmake
 set(CMAKE_C_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
 set(CMAKE_CXX_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
 ```
 
-- 执行编译命令
+-   Enter the `standalone` directory and run the build script:
 
-```bash
-cd DepthToPointCloud
+``` bash
+cd standalone
 bash run_build.sh
 ```
 
-- 编译将生成build目录
+-   After compilation, an algorithm test package `StereoInfer.tar` will
+    be generated in the `build` directory.\
+    Copy the test package to the `userdata` directory on the X5 board
+    and extract it:
 
-## 执行
-
-- 需要将build目录、3rdparty目录、make_ln.sh文件复制到X5板端，例如将这些文件复制到X5目录/userdata/
-
-- 然后在/userdata/目录执行
-
-```
-bash make_ln.sh
-```
-
-- 最后运行程序
-
-```bash
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/lib_opencv4.5.4/lib/
-./depth_to_pointcloud
+``` bash
+cd /userdata/
+mkdir StereoInfer
+tar -xvf StereoInfer.tar -C StereoInfer
 ```
 
-- 点云文件打开方式：建议安装[CloudCompare](https://www.danielgm.net/cc/)软件打开点云文件
+## Run
+
+-   After extracting the test package, go into the `StereoInfer`
+    directory and run the script to create symbolic links:
+``` bash
+    cd /userdata/StereoInfer
+    bash make_ln.sh
+```
+
+-   Finally, run the program:
+
+``` bash
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/StereoInfer/3rdparty/lib_opencv4.5.4/lib/
+./StereoInfer
+```
+
+After execution, the following files will be generated in the `result` directory:
+
+  |Name                   |          Image                     |                      Description |
+  |----------|------|------|
+  |{timestamp}_depth.png  |         ![depth](img/8777028645726_depth.png)    |       Depth map aligned with the left image (unit: mm) |
+  |{timestamp}_disparity.pfm |      ![disparity](img/8777028645726_disparity.png) |  Disparity map aligned with the left image (unit:pixels) |
+  |{timestamp}_visual.jpg    |      ![visual](img/8777028645726_visual.jpg) |        Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
+  |{timestamp}.pcd  |                 ![pcd](img/8777028645726_pcd.png)    |           3D point cloud generated from the left image |
+-   Disparity maps, depth maps, and visualization images: It is
+    recommended to use
+    [cvkit](https://github.com/roboception/cvkit/releases/tag/v2.6.10)
+    to open `.pfm` and `.png` files.\
+-   Point cloud files: It is recommended to use
+    [CloudCompare](https://www.cloudcompare.org/) to open `.pcd` files.

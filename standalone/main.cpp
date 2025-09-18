@@ -128,7 +128,7 @@ int StereoDemo::get_inference_result(
   float32x4_t zero_vec = vdupq_n_f32(0.f);
   //uint16x4_t zero_vec_u16 = vget_low_u16(vdupq_n_u16(0));
   float32x4_t factor_vector = vdupq_n_f32(factor);
-  for (uint32_t i = 0; i < num_pixels; i += 4) {
+  for (uint32_t i = 0; i < points.size(); i += 4) {
     float32x4_t points_vec = vld1q_f32(&points[i]);
     uint32x4_t mask = vcgtq_f32(points_vec, zero_vec);
     float32x4_t depth_vec = vdivq_f32(factor_vector, points_vec);
@@ -162,13 +162,27 @@ void signal_handler(int signo) {
   }
 }
 
+int dump_depth_in_mm(StereoResult &stereo_result) {
+  auto ts = stereo_result.ts;
+  cv::imwrite("./result/"+ std::to_string(ts) +"_depth.png", stereo_result.model_depth);
+  return 0;
+}
+
+int dump_disparity(StereoResult &stereo_result, cv::Mat& disparity) {
+  auto ts = stereo_result.ts;
+  cv::imwrite("./result/"+ std::to_string(ts) +"_disparity.pfm", disparity);
+  return 0;
+}
+
 void dump_one_point_disparity(
         InferenceData &infer_data,
         StereoResult &stereo_result,
         std::vector<float>&points,
         int x, int y) {
+  auto ts = stereo_result.ts;
   cv::Mat left_image = infer_data.left_image.clone();
   cv::Mat right_image = infer_data.right_image.clone();
+  cv::Mat combine;
   auto disparity = points[y * left_image.cols + x];
   cv::circle(left_image, cv::Point(x, y), 10,
              cv::Scalar(255, 0, 0), 3);
@@ -178,15 +192,15 @@ void dump_one_point_disparity(
               cv::Point2i(20,20),
               cv::FONT_HERSHEY_SIMPLEX, 0.5,
               cv::Scalar(255, 255, 255), 2);
-  cv::imwrite("./result/one_point_disparity/left.jpg", left_image);
-  cv::imwrite("./result/one_point_disparity/right.jpg", right_image);
+  cv::hconcat(left_image, right_image, combine);
+  cv::imwrite("./result/" +  std::to_string(ts)  + "_one_point_disparity.jpg", combine);
 }
 
-void dump_pcd_file(StereoResult &stereoResult) {
-  auto ts = stereoResult.ts;
-  const std::string& filename =  "./result/pcd/" + std::to_string(ts) + ".pcd";
+void dump_pcd_file(StereoResult &stereo_result) {
+  auto ts = stereo_result.ts;
+  const std::string& filename =  "./result/" + std::to_string(ts) + ".pcd";
   std::ofstream ofs(filename);
-  const std::vector<Point> & points = stereoResult.Points;
+  const std::vector<Point> & points = stereo_result.Points;
   if (!ofs.is_open()) {
     std::cerr << "Error opening file: " << filename << std::endl;
     return;
@@ -218,8 +232,9 @@ int dump_visual_image(InferenceData &infer_data,
   bgr_image.copyTo(visual_img(cv::Rect(0, 0, bgr_image.cols, bgr_image.rows)));
 
   cv::Mat feat_mat(bgr_image.rows, bgr_image.cols, CV_32F, const_cast<float *>(points.data()));
+  dump_disparity(stereo_result, feat_mat);
   cv::Mat feat_visual;
-  feat_mat.convertTo(feat_visual, CV_8U, 2, 0);
+  feat_mat.convertTo(feat_visual, CV_8U, 4, 0);
   //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
   cv::applyColorMap(feat_visual,
                     visual_img(cv::Rect(0, bgr_image.rows, bgr_image.cols, bgr_image.rows)),
@@ -263,13 +278,14 @@ int dump_visual_image(InferenceData &infer_data,
                   cv::Scalar(255, 255, 255), 2);
     }
   }
-  cv::imwrite("./result/visual/" + std::to_string(ts) +".jpg", visual_img);
+  cv::imwrite("./result/" + std::to_string(ts) +"_visual.jpg", visual_img);
   return 0;
 }
 
+
 int main(int argc, char **argv) {
   int ret;
-  std::string stereonet_model_file_path = "./DStereoV2.4_int16.bin";
+  std::string stereonet_model_file_path = "./config/DStereoV2.4_int16.bin";
   std::string left_file = "./left000000.png", right_file = "./right000000.png";
   StereoDemo stereo_demo;
   StereoResult stereo_result;
@@ -301,8 +317,8 @@ int main(int argc, char **argv) {
   ret = stereo_demo.get_inference_result(infer_data, stereo_result, disparity_points, camera_parameter);
   if (ret == 0) {
     dump_visual_image(infer_data, stereo_result, disparity_points);
-    dump_one_point_disparity(infer_data, stereo_result, disparity_points, 320, 160);
     dump_pcd_file(stereo_result);
+    dump_depth_in_mm(stereo_result);
   } else {
     std::cerr << "get_inference_result failed!" << std::endl;
   }

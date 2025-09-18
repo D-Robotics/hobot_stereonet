@@ -13,7 +13,7 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
 
 echo "=> ================="
-cp -rv ../../config/DStereoV2.4_int16.bin ./
-cp -rv ../*.png ./
+mkdir -p ./3rdparty/lib_opencv4.5.4/
+cp -rvf ../3rdparty/lib_opencv4.5.4/ ./3rdparty/
+tar -cvf StereoInfer.tar ./3rdparty ../../config/DStereoV2.4_int16.bin ./StereoInfer ../*.png  ../make_ln.sh
 echo "=> ================="
-
