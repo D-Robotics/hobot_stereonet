@@ -15,7 +15,7 @@ visualization images, point clouds, etc.
     -   Download link:
         https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
-    -   This example uses arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz.
+    -   This example uses `arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz `.
         Please download the corresponding version and extract it.
 
         ``` bash
@@ -75,6 +75,6 @@ After execution, the following files will be generated in the `result` directory
 -   Disparity maps, depth maps, and visualization images: It is
     recommended to use
     [cvkit](https://github.com/roboception/cvkit/releases/tag/v2.6.10)
-    to open `.pfm` and `.png` files.\
+    to open `.pfm` and `.png` files.
 -   Point cloud files: It is recommended to use
     [CloudCompare](https://www.cloudcompare.org/) to open `.pcd` files.
