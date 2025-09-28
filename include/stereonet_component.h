@@ -243,6 +243,7 @@ private:
   std::string postprocess_ = "convex_upsampling";
   double uncertainty_th_ = 0.0;
 
+  int pointcloud_downsample_step_ = 2;
   double pointcloud_height_min_ = -5.0;
   double pointcloud_height_max_ = 5.0;
   double pointcloud_depth_max_ = 5.0;
@@ -253,9 +254,11 @@ private:
   float max_disp_diff_ = 1.0f;
 
   bool pcl_filter_enable_ = false;
-  float voxel_leaf_size_ = 0.05f; // m
-  int mean_k_ = 10;
-  double std_thresh_ = 1.0;
+  // float voxel_leaf_size_ = 0.05f; // m
+  // int mean_k_ = 10;
+  // double std_thresh_ = 1.0;
+  float grid_size_ = 0.1f; // m
+  int grid_min_point_count_ = 5;
 
   // offline infer
   bool use_local_image_flag_ = false;

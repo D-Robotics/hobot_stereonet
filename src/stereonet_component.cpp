@@ -106,12 +106,15 @@ void StereoNetNode::set_node_params() {
   camera_intrinsic_->cy = this->get_parameter("camera_cy").as_double();
   camera_intrinsic_->baseline = this->get_parameter("baseline").as_double();
 
+  this->declare_parameter<int>("pointcloud_downsample_step", 2);
   this->declare_parameter<double>("pointcloud_height_min", -5.0);
   this->declare_parameter<double>("pointcloud_height_max", 5.0);
   this->declare_parameter<double>("pointcloud_depth_max", 5.0);
+  pointcloud_downsample_step_ = this->get_parameter("pointcloud_downsample_step").as_int();
   pointcloud_height_min_ = this->get_parameter("pointcloud_height_min").as_double();
   pointcloud_height_max_ = this->get_parameter("pointcloud_height_max").as_double();
   pointcloud_depth_max_ = this->get_parameter("pointcloud_depth_max").as_double();
+  if (pointcloud_downsample_step_ <= 0) pointcloud_downsample_step_ = 2;
 
   this->declare_parameter<bool>("save_result_flag", "false");
   save_result_flag_ = this->get_parameter("save_result_flag").as_bool();
@@ -190,12 +193,18 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<bool>("pcl_filter_enable", false);
   pcl_filter_enable_ = this->get_parameter("pcl_filter_enable").as_bool();
-  this->declare_parameter<float>("voxel_leaf_size", 0.05f);
-  voxel_leaf_size_ = this->get_parameter("voxel_leaf_size").as_double();
-  this->declare_parameter<int>("mean_k", 10);
-  mean_k_ = this->get_parameter("mean_k").as_int();
-  this->declare_parameter<double>("std_thresh", 1.0);
-  std_thresh_ = this->get_parameter("std_thresh").as_double();
+  // this->declare_parameter<float>("voxel_leaf_size", 0.05f);
+  // voxel_leaf_size_ = this->get_parameter("voxel_leaf_size").as_double();
+  // this->declare_parameter<int>("mean_k", 10);
+  // mean_k_ = this->get_parameter("mean_k").as_int();
+  // this->declare_parameter<double>("std_thresh", 1.0);
+  // std_thresh_ = this->get_parameter("std_thresh").as_double();
+  this->declare_parameter<float>("grid_size", 0.05f);
+  grid_size_ = this->get_parameter("grid_size").as_double();
+  this->declare_parameter<int>("grid_min_point_count", 5);
+  grid_min_point_count_ = this->get_parameter("grid_min_point_count").as_int();
+  if (grid_size_ <= 0.0f) grid_size_ = 0.05f;
+  if (grid_min_point_count_ <= 0) grid_min_point_count_ = 5;
 
   this->declare_parameter<std::string>("render_type", "indoor");
   render_type_ = this->get_parameter("render_type").as_string();
@@ -209,43 +218,44 @@ void StereoNetNode::set_node_params() {
     rclcpp::shutdown();
   }
 
-  RCLCPP_WARN_STREAM(this->get_logger(),
-                     std::endl
-                         << "stereonet_model_file_path: " << stereonet_model_file_path_ << std::endl
-                         << "stereo_image_topic: " << stereo_image_topic_ << std::endl
-                         << "camera_info_topic: " << camera_info_topic_ << std::endl
-                         << "depth_image_topic: " << depth_image_topic_ << std::endl
-                         << "depth_camera_info_topic: " << depth_camera_info_topic_ << std::endl
-                         << "rectify_left_image_topic: " << rectify_left_image_topic_ << std::endl
-                         << "rectify_right_image_topic: " << rectify_right_image_topic_ << std::endl
-                         << "publish_rectify_bgr: " << publish_rectify_bgr_ << std::endl
-                         << "origin_left_image_topic: " << origin_left_image_topic_ << std::endl
-                         << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
-                         << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
-                         << "visual_image_topic: " << visual_image_topic_ << std::endl
-                         << "render_perf: " << render_perf_ << std::endl
-                         << "postprocess: " << postprocess_ << std::endl
-                         << "uncertainty_th: " << uncertainty_th_ << std::endl
-                         << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
-                         << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy
-                         << ", " << camera_intrinsic_->baseline << "(m)]" << std::endl
-                         << "[pointcloud_height_min, pointcloud_height_max, pointcloud_depth_max]: ["
-                         << pointcloud_height_min_ << "(m), " << pointcloud_height_max_ << "(m), "
-                         << pointcloud_depth_max_ << "(m)]" << std::endl
-                         << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
-                         << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
-                         << "[save_result_flag, save_dir, save_freq, save_total]: [" << save_result_flag_ << ", "
-                         << save_dir_ << ", " << save_freq_ << ", " << save_total_ << "]" << std::endl
-                         << "[calib_method, stereo_calib_file_path]: [" << calib_method_ << ", "
-                         << stereo_calib_file_path_ << "]" << std::endl
-                         << "[speckle_filter_enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_
-                         << ", " << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
-                         << "[pcl_filter_enable, voxel_leaf_size, mean_k, std_thresh]: [" << pcl_filter_enable_ << ", "
-                         << voxel_leaf_size_ << ", " << mean_k_ << ", " << std_thresh_ << "]" << std::endl
-                         << "render_type: " << render_type_ << std::endl
-                         << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_
-                         << "]" << std::endl
-                         << "=> ==================================================================" << std::endl);
+  RCLCPP_WARN_STREAM(
+      this->get_logger(),
+      std::endl
+          << "stereonet_model_file_path: " << stereonet_model_file_path_ << std::endl
+          << "stereo_image_topic: " << stereo_image_topic_ << std::endl
+          << "camera_info_topic: " << camera_info_topic_ << std::endl
+          << "depth_image_topic: " << depth_image_topic_ << std::endl
+          << "depth_camera_info_topic: " << depth_camera_info_topic_ << std::endl
+          << "rectify_left_image_topic: " << rectify_left_image_topic_ << std::endl
+          << "rectify_right_image_topic: " << rectify_right_image_topic_ << std::endl
+          << "publish_rectify_bgr: " << publish_rectify_bgr_ << std::endl
+          << "origin_left_image_topic: " << origin_left_image_topic_ << std::endl
+          << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
+          << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
+          << "visual_image_topic: " << visual_image_topic_ << std::endl
+          << "render_perf: " << render_perf_ << std::endl
+          << "postprocess: " << postprocess_ << std::endl
+          << "uncertainty_th: " << uncertainty_th_ << std::endl
+          << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
+          << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy << ", "
+          << camera_intrinsic_->baseline << "(m)]" << std::endl
+          << "[pointcloud_downsample_step, pointcloud_height_min, pointcloud_height_max, pointcloud_depth_max]: ["
+          << pointcloud_downsample_step_ << ", " << pointcloud_height_min_ << "(m), " << pointcloud_height_max_
+          << "(m), " << pointcloud_depth_max_ << "(m)]" << std::endl
+          << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
+          << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
+          << "[save_result_flag, save_dir, save_freq, save_total]: [" << save_result_flag_ << ", " << save_dir_ << ", "
+          << save_freq_ << ", " << save_total_ << "]" << std::endl
+          << "[calib_method, stereo_calib_file_path]: [" << calib_method_ << ", " << stereo_calib_file_path_ << "]"
+          << std::endl
+          << "[speckle_filter_enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_ << ", "
+          << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
+          << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
+          << ", " << grid_min_point_count_ << "]" << std::endl
+          << "render_type: " << render_type_ << std::endl
+          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_ << "]"
+          << std::endl
+          << "=> ==================================================================" << std::endl);
 
   if (save_result_flag_) {
     if (!fs::exists(save_dir_)) {
@@ -450,6 +460,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
       pub_data->rectify_left_img_data = rectify_left_img_data;
       pub_data->rectify_right_img_data = rectify_right_img_data;
 
+      if (pub_data_queue_.size() > 5) pub_data_queue_.pop_front();
       pub_data_queue_.put(pub_data->timestamp, pub_data);
     }
   }
@@ -739,8 +750,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
-
-  const int step = 2; // downsample
+  const int step = pointcloud_downsample_step_; // downsample
   const int rows = pub_data->depth.rows;
   const int cols = pub_data->depth.cols;
   const float fx = camera_intrinsic_->fx;
@@ -792,8 +802,10 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
   if (pcl_filter_enable_) {
     ScopeProcessTime t(this->get_logger(), "pcl filter");
+    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
+    // PCLFilterUtils::statisticalOutlierRemoval(pcl_cloud, voxel_leaf_size_, mean_k_, std_thresh_);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
-        PCLFilterUtils::statisticalOutlierRemoval(pcl_cloud, voxel_leaf_size_, mean_k_, std_thresh_);
+        PCLFilterUtils::gridBasedOutlierRemoval(pcl_cloud, grid_size_, grid_min_point_count_);
     pcl::toROSMsg(*filtered_cloud, *cloud_msg);
     if (save_result_flag_) pub_data->pointcloud = filtered_cloud;
   } else {

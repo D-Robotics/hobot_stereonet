@@ -101,6 +101,7 @@ add_library(stereonet_model_component SHARED
   src/file_utils.cpp
   src/speckle_filter.cpp
   src/stereo_rectify.cpp
+  src/pcl_filter.cpp
 )
 target_compile_features(stereonet_model_component PUBLIC c_std_99 cxx_std_17) # Require C99 and C++17
 target_include_directories(stereonet_model_component PUBLIC

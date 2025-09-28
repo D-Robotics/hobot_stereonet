@@ -65,6 +65,7 @@ def generate_launch_description():
         {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse]'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
 
+        {'name':'pointcloud_downsample_step', 'default_value':'2', 'description': 'pointcloud_downsample_step'},
         {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},
         {'name':'pointcloud_height_max', 'default_value':'5.0', 'description': 'pointcloud_height_max'},
         {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
@@ -95,9 +96,11 @@ def generate_launch_description():
         {'name':'max_speckle_size', 'default_value':'100', 'description': 'max_speckle_size'},
         {'name':'max_disp_diff', 'default_value':'1.0', 'description': 'max_speckle_size'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
-        {'name':'voxel_leaf_size', 'default_value':'0.05', 'description': 'voxel_leaf_size'},
-        {'name':'mean_k', 'default_value':'10', 'description': 'mean_k'},
-        {'name':'std_thresh', 'default_value':'1.0', 'description': 'std_dev_mul_thresh'},
+        # {'name':'voxel_leaf_size', 'default_value':'0.05', 'description': 'voxel_leaf_size'},
+        # {'name':'mean_k', 'default_value':'10', 'description': 'mean_k'},
+        # {'name':'std_thresh', 'default_value':'1.0', 'description': 'std_dev_mul_thresh'},
+        {'name':'grid_size', 'default_value':'0.10', 'description': 'grid_size'},
+        {'name':'grid_min_point_count', 'default_value':'5', 'description': 'grid_min_point_count'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},

@@ -194,7 +194,7 @@ ros2 pkg prefix hobot_stereonet
 
 stereonet_version=v2.0
 calib_method=none
-stereo_calib_file_path="calib.yaml"
+stereo_calib_file_path=calib.yaml
 uncertainty_th=-0.10
 render_type=indoor
 render_perf=True
@@ -381,7 +381,7 @@ ros2 pkg prefix hobot_stereonet
 
 stereonet_version=v2.0
 calib_method=none
-stereo_calib_file_path="calib.yaml"
+stereo_calib_file_path=calib.yaml
 uncertainty_th=-0.10
 render_type=indoor
 render_perf=True
@@ -460,7 +460,6 @@ ros run_stereo.sh --stereonet_version v2.4_int16
 ```bash
 ros run_stereo.sh --stereonet_version v2.4_int16 --save_result_flag True
 ```
-
 
 ### 搭配ZED USB双目相机
 

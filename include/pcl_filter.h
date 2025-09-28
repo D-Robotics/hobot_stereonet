@@ -19,9 +19,40 @@
 #include "pcl/filters/voxel_grid.h"
 #include "pcl/filters/radius_outlier_removal.h"
 #include "pcl/filters/statistical_outlier_removal.h"
+#include <omp.h>
+#include <arm_neon.h>
+
+struct GridIndex {
+  int i, j, k;
+
+  GridIndex(int i = 0, int j = 0, int k = 0) : i(i), j(j), k(k) {
+  }
+
+  bool operator==(const GridIndex &other) const {
+    return i == other.i && j == other.j && k == other.k;
+  }
+};
+
+// struct GridIndexHash {
+//     size_t operator()(const std::tuple<int, int, int>& grid_idx) const
+//     {
+//         const auto& [i, j, k] = grid_idx;
+//         return std::hash<int>()(i) ^ (std::hash<int>()(j) << 16) ^ (std::hash<int>()(k) << 32);
+//     }
+// };
+
+struct GridIndexHash {
+  size_t operator()(const GridIndex &idx) const {
+    return ((static_cast<size_t>(idx.i) * 73856093u) ^ (static_cast<size_t>(idx.j) * 19349663u) ^
+            (static_cast<size_t>(idx.k) * 83492791u));
+  }
+};
 
 class PCLFilterUtils {
 public:
+  // delete the default constructor
+  PCLFilterUtils() = delete;
+
   /**
    * @brief 对输入点云进行VoxelGrid下采样 + 统计滤波，去除离群点
    * @param input_cloud 输入点云
@@ -32,32 +63,7 @@ public:
    */
   static pcl::PointCloud<pcl::PointXYZRGB>::Ptr
   statisticalOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud, float voxel_leaf_size = 0.02f,
-                            int mean_k = 50, double std_dev_mul_thresh = 1.0) {
-    if (!input_cloud || input_cloud->empty()) {
-      return nullptr;
-    }
-
-    // 1. VoxelGrid 下采样
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
-    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_filter;
-    voxel_filter.setInputCloud(input_cloud);
-    voxel_filter.setLeafSize(voxel_leaf_size, voxel_leaf_size, voxel_leaf_size);
-    voxel_filter.filter(*cloud_downsampled);
-
-    if (cloud_downsampled->empty()) {
-      return nullptr;
-    }
-
-    // 2. StatisticalOutlierRemoval 去离群点
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-    sor.setInputCloud(cloud_downsampled);
-    sor.setMeanK(mean_k);
-    sor.setStddevMulThresh(std_dev_mul_thresh);
-    sor.filter(*filtered_cloud);
-
-    return filtered_cloud;
-  }
+                            int mean_k = 50, double std_dev_mul_thresh = 1.0);
 
   /**
    * @brief 对输入点云进行VoxelGrid下采样 + 半径滤波，去除孤立点
@@ -69,32 +75,18 @@ public:
    */
   static pcl::PointCloud<pcl::PointXYZRGB>::Ptr
   radiusOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud, float voxel_leaf_size = 0.02f,
-                       double radius_search = 0.05, int min_neighbors = 5) {
-    if (!input_cloud || input_cloud->empty()) {
-      return nullptr;
-    }
+                       double radius_search = 0.05, int min_neighbors = 5);
 
-    // 1. VoxelGrid 下采样
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
-    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_filter;
-    voxel_filter.setInputCloud(input_cloud);
-    voxel_filter.setLeafSize(voxel_leaf_size, voxel_leaf_size, voxel_leaf_size);
-    voxel_filter.filter(*cloud_downsampled);
-
-    if (cloud_downsampled->empty()) {
-      return nullptr;
-    }
-
-    // 2. RadiusOutlierRemoval 去孤立点
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> ror;
-    ror.setInputCloud(cloud_downsampled);
-    ror.setRadiusSearch(radius_search);
-    ror.setMinNeighborsInRadius(min_neighbors);
-    ror.filter(*filtered_cloud);
-
-    return filtered_cloud;
-  }
+  /**
+   * @brief 对输入点云网格滤波，去除孤立点
+   * @param input_cloud 输入点云
+   * @param grid_size 网格大小
+   * @param grid_min_point_count 网格中点云的最小点数
+   * @return 滤波后的点云
+   */
+  static pcl::PointCloud<pcl::PointXYZRGB>::Ptr
+  gridBasedOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud, float grid_size = 0.1f,
+                          int grid_min_point_count = 5);
 };
 
 #endif // HOBOT_STEREONET_INCLUDE_PCL_FILTER_H_
