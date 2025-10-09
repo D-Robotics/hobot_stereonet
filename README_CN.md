@@ -89,6 +89,9 @@ bash ./robot_dev_config/build.sh -p X5 -s hobot_stereonet
 | speckle_filter_enable     | False                                      | speckle filter滤波开关，开启可滤除一些离群点                                                           |
 | max_speckle_size          | 100                                        | 小于该数量的speckle将会被滤除                                                                          |
 | max_disp_diff             | 1.0                                        | 视差差异小于该阈值的像素将会组成speckle                                                                |
+| pcl_filter_enable         | False                                      | 点云滤波开关，开启可滤除一些离群点                                                                     |
+| grid_size                 | 0.1                                        | 点云滤波时的网格大小，单位m                                                                            |
+| grid_min_point_count      | 5                                          | 点云滤波时的网格最小点数，小于该数量的点会被滤除                                                       |
 
 ## 搭配双目相机在线运行双目算法
 
@@ -187,6 +190,7 @@ mipi_channel:=0 mipi_channel2:=1
 通过以上步骤验证230AI双目相机能正常启动后，则可以启动双目深度算法，通过ssh连接RDK，在`/root`目录或其它目录创建`run_stereo.sh`脚本：
 
 ```bash
+#!/bin/bash
 source /opt/tros/humble/setup.bash
 
 ros2 pkg prefix mipi_cam
@@ -201,6 +205,9 @@ render_perf=True
 speckle_filter_enable=False
 max_speckle_size=100
 max_disp_diff=1.0
+pcl_filter_enable=False
+grid_size=0.1
+grid_min_point_count=5
 save_result_flag=False
 save_dir=./stereonet_result
 save_freq=1
@@ -217,6 +224,9 @@ while [[ $# -gt 0 ]]; do
     --speckle_filter_enable) speckle_filter_enable=$2; shift 2 ;;
     --max_speckle_size) max_speckle_size=$2; shift 2 ;;
     --max_disp_diff) max_disp_diff=$2; shift 2 ;;
+    --pcl_filter_enable) pcl_filter_enable=$2; shift 2 ;;
+    --grid_size) grid_size=$2; shift 2 ;;
+    --grid_min_point_count) grid_min_point_count=$2; shift 2 ;;
     --save_result_flag) save_result_flag=$2; shift 2 ;;
     --save_dir) save_dir=$2; shift 2 ;;
     --save_freq) save_freq=$2; shift 2 ;;
@@ -233,6 +243,7 @@ uncertainty_th:=$uncertainty_th \
 render_type:=$render_type render_perf:=$render_perf \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=-5.0 pointcloud_height_max:=5.0 pointcloud_depth_max:=5.0 \
+pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
 save_result_flag:=$save_result_flag save_dir:=$save_dir save_freq:=$save_freq save_total:=$save_total
 ```
 
@@ -257,6 +268,9 @@ ros run_stereo.sh --<param> <value>
 - speckle_filter_enable控制是否开启speckle filter滤波，可以设置为`True`、`False`
 - max_speckle_size控制speckle的大小，小于该大小的speckle将会被滤除，设置越大，滤波效果更强
 - max_disp_diff控制speckle中视差的差异阈值，邻域小于该阈值的像素点将划分为同一个speckle，设置越小，滤波效果更强
+- pcl_filter_enable控制是否开启点云滤波，可以设置为`True`、`False`
+- grid_size控制点云滤波时的网格大小，单位m
+- grid_min_point_count控制点云滤波时的网格最小点数，小于该数量的点会被滤除
 - save_result_flag控制是否保存结果，如果开启保存则会保存**相机参数、原始左右图、矫正后左右图、视差图、深度图、点云**
 - save_dir控制保存的目录，目录不存在会自动创建，请确保该目录下有足够空间，否则会保存失败
 - save_freq控制保存的频率，例如设置为4代表每隔4帧保存一次
@@ -279,15 +293,14 @@ ros run_stereo.sh --stereonet_version v2.4_int16 --save_result_flag True
 1. 通过web端查看
 
 
-
-
 2. 通过rqt/rviz2查看
+
 
 
 
 ### 搭配132GS MIPI双目相机
 
-(1) 132GS MIPI双目相机目前有两款，如图所示
+(1) 132GS MIPI双目相机如图所示
 
 (2) 安装方式如图所示，接线请勿接反，会导致左右图对调，双目算法运行错误：
 
@@ -331,7 +344,6 @@ mipi_gdc_enable:=True mipi_lpwm_enable:=True mipi_frame_ts_type:=realtime
 
 - 并且在与RDK连接的PC端（能相互ping通）浏览器上输入网址[http://rdk_ip:8000](http://rdk_ip:8000)能够查看相机采集的图像，如下图RDK的ip地址为`192.168.128.10`
 
-
 - 启动参数解析：
   - `mipi_image_width:=1280 mipi_image_height:=1088`表示相机输出分辨率是1280*1088，这是132gs相机最大的输出分辨率
   - `mipi_image_framerate:=30.0`表示相机启动的帧率是30FPS
@@ -374,6 +386,7 @@ mipi_channel:=0 mipi_channel2:=1
 通过以上步骤验证132GS双目相机能正常启动后，则可以启动双目深度算法，通过ssh连接RDK，在`/root`目录或其它目录创建`run_stereo.sh`脚本：
 
 ```bash
+#!/bin/bash
 source /opt/tros/humble/setup.bash
 
 ros2 pkg prefix mipi_cam
@@ -388,6 +401,9 @@ render_perf=True
 speckle_filter_enable=False
 max_speckle_size=100
 max_disp_diff=1.0
+pcl_filter_enable=False
+grid_size=0.1
+grid_min_point_count=5
 save_result_flag=False
 save_dir=./stereonet_result
 save_freq=1
@@ -404,6 +420,9 @@ while [[ $# -gt 0 ]]; do
     --speckle_filter_enable) speckle_filter_enable=$2; shift 2 ;;
     --max_speckle_size) max_speckle_size=$2; shift 2 ;;
     --max_disp_diff) max_disp_diff=$2; shift 2 ;;
+    --pcl_filter_enable) pcl_filter_enable=$2; shift 2 ;;
+    --grid_size) grid_size=$2; shift 2 ;;
+    --grid_min_point_count) grid_min_point_count=$2; shift 2 ;;
     --save_result_flag) save_result_flag=$2; shift 2 ;;
     --save_dir) save_dir=$2; shift 2 ;;
     --save_freq) save_freq=$2; shift 2 ;;
@@ -420,6 +439,7 @@ uncertainty_th:=$uncertainty_th \
 render_type:=$render_type render_perf:=$render_perf \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=-5.0 pointcloud_height_max:=5.0 pointcloud_depth_max:=5.0 \
+pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
 save_result_flag:=$save_result_flag save_dir:=$save_dir save_freq:=$save_freq save_total:=$save_total
 ```
 
@@ -444,6 +464,9 @@ ros run_stereo.sh --<param> <value>
 - speckle_filter_enable控制是否开启speckle filter滤波，可以设置为`True`、`False`
 - max_speckle_size控制speckle的大小，小于该大小的speckle将会被滤除，设置越大，滤波效果更强
 - max_disp_diff控制speckle中视差的差异阈值，邻域小于该阈值的像素点将划分为同一个speckle，设置越小，滤波效果更强
+- pcl_filter_enable控制是否开启点云滤波，可以设置为`True`、`False`
+- grid_size控制点云滤波时的网格大小，单位m
+- grid_min_point_count控制点云滤波时的网格最小点数，小于该数量的点会被滤除
 - save_result_flag控制是否保存结果，如果开启保存则会保存**相机参数、原始左右图、矫正后左右图、视差图、深度图、点云**
 - save_dir控制保存的目录，目录不存在会自动创建，请确保该目录下有足够空间，否则会保存失败
 - save_freq控制保存的频率，例如设置为4代表每隔4帧保存一次
@@ -462,6 +485,131 @@ ros run_stereo.sh --stereonet_version v2.4_int16 --save_result_flag True
 ```
 
 ### 搭配ZED USB双目相机
+
+(1) ZED双目摄像头如图所示：
+
+![](img/zed_cam.png)
+
+(2) 将ZED相机通过USB连接RDK，即可启动ZED相机
+
+- 启动相机之前，要确保RDK板端安装有[hobot_zed_cam](https://github.com/D-Robotics/hobot_zed_cam.git)功能包，然后在RDK板端执行如下命令：
+
+```bash
+source /opt/tros/humble/setup.bash
+
+ros2 launch hobot_zed_cam pub_stereo_imgs.launch.py \
+need_rectify:=True resolution:=720p dst_width:=1280 dst_height:=720
+```
+
+- 相机启动成功会打印如下日志：
+
+![](img/zed_run_log.png)
+
+**注意：need_rectify:=True的情况下，第一次启动ZED相机，ZED相机会去官方服务器下载每台相机对应的标定参数，所以要确保RDK联网，如果没有联网，则会报错。相机的标定参数会保存在`/root/zed/settings/`目录下的SNXXX.conf（XXX为相机的序列号）文件中。如果标定文件下载失败，需要手动下载标定文件后，上传到RDK的`/root/zed/settings/`目录下。如果启动日志报错提示`serial_num error`，说明相机的序列号读取失败，可以重新插拔一下USB接口再尝试执行上述命令。**
+
+- 手动下载标定文件
+
+如果RDK无法联网下载标定文件，也可以根据日志提示在PC上通过浏览器下载标定文件，然后上传到RDK的`/root/zed/settings/`目录下，具体操作如下：
+
+1. 找到日志中的`wget 'https://calib.stereolabs.com/?SN=38085162' -O /root/zed/settings/SN38085162.conf`这一行，其中`38085162`为相机序列号
+2. 在PC上打开浏览器，输入`https://calib.stereolabs.com/?SN=38085162`，即可下载标定文件，文件名称为`SN38085162.conf`，下载完成后，将文件上传到RDK的`/root/zed/settings/`目录下即可，如果目录不存在，手动创建一个即可
+3. 一定要确保读出正确的序列号，如果序列号为`-1`等特殊的情况，可以重新插拔USB接口再尝试执行上述命令
+
+- 启动参数解析：
+  - `need_rectify:=True`表示图像需要矫正，如果不需要矫正，可以设置为`need_rectify:=False`
+  - `resolution:=720p`表示ZED相机输出分辨率是720p，还可以设置为`resolution:=1080p`
+  - `dst_width:=1280 dst_height:=720`表示最终输出图像的宽高，如果不设置，则会使用ZED相机的输出分辨率，此参数的设置主要是为了适配双目算法模型，因为模型的输入图像分辨率是640x352，而ZED相机的输出分辨率是1280x720，所以需要设置成这个值
+
+
+(3) 启动双目深度算法
+
+通过以上步骤验证ZED相机能正常启动后，则可以启动双目深度算法，通过ssh连接RDK，在`/root`目录或其它目录创建`run_stereo.sh`脚本：
+
+```bash
+#!/bin/bash
+source /opt/tros/humble/setup.bash
+
+ros2 pkg prefix hobot_zed_cam
+ros2 pkg prefix hobot_stereonet
+
+stereonet_version=v2.0
+calib_method=none
+stereo_calib_file_path=calib.yaml
+uncertainty_th=-0.10
+render_type=indoor
+render_perf=True
+speckle_filter_enable=False
+max_speckle_size=100
+max_disp_diff=1.0
+pcl_filter_enable=False
+grid_size=0.1
+grid_min_point_count=5
+save_result_flag=False
+save_dir=./stereonet_result
+save_freq=1
+save_total=-1
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --stereonet_version) stereonet_version=$2; shift 2 ;;
+    --calib_method) calib_method=$2; shift 2 ;;
+    --stereo_calib_file_path) stereo_calib_file_path=$2; shift 2 ;;
+    --uncertainty_th) uncertainty_th=$2; shift 2 ;;
+    --render_type) render_type=$2; shift 2 ;;
+    --render_perf) render_perf=$2; shift 2 ;;
+    --speckle_filter_enable) speckle_filter_enable=$2; shift 2 ;;
+    --max_speckle_size) max_speckle_size=$2; shift 2 ;;
+    --max_disp_diff) max_disp_diff=$2; shift 2 ;;
+    --pcl_filter_enable) pcl_filter_enable=$2; shift 2 ;;
+    --grid_size) grid_size=$2; shift 2 ;;
+    --grid_min_point_count) grid_min_point_count=$2; shift 2 ;;
+    --save_result_flag) save_result_flag=$2; shift 2 ;;
+    --save_dir) save_dir=$2; shift 2 ;;
+    --save_freq) save_freq=$2; shift 2 ;;
+    --save_total) save_total=$2; shift 2 ;;
+    *) echo "unknown param: $1"; exit 1 ;;
+  esac
+done
+
+ros2 launch hobot_stereonet stereonet_model_web_visual_zed_$stereonet_version.launch.py \
+need_rectify:=True resolution:=720p dst_width:=640 dst_height:=352 \
+calib_method:=$calib_method stereo_calib_file_path:=$stereo_calib_file_path \
+uncertainty_th:=$uncertainty_th \
+render_type:=$render_type render_perf:=$render_perf \
+speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
+pointcloud_height_min:=-5.0 pointcloud_height_max:=5.0 pointcloud_depth_max:=5.0 \
+pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
+save_result_flag:=$save_result_flag save_dir:=$save_dir save_freq:=$save_freq save_total:=$save_total
+```
+
+然后在RDK执行以下命令启动双目深度算法
+
+```bash
+ros run_stereo.sh --<param> <value>
+```
+
+其中可设置参数包括如下参数：
+
+- stereonet_version控制启动不同版本的算法
+  - RDK X5可以设置为`v2.0`、`v2.2`
+  - RDK S100可以设置为`v2.1`、`v2.4`
+- calib_method控制矫正方式
+  - 当`mipi_gdc_enable:=True`时，代表`hobot_mipi_cam`功能包已经对图像经过矫正，`hobot_stereonet`功能包不需要再进行矫正，calib_method设置为`none`即可
+  - 当`mipi_gdc_enable:=False`时，或者相机无法对图像进行矫正时，需要将calib_method设置为`custom`，并且需要指定`stereo_calib_file_path`
+- stereo_calib_file_path控制自定义标定参数的路径
+- uncertainty_th控制置信度，只有带置信度的模型并且设置为正数时才会生效，如果需要开启，建议设置为`0.10`
+- render_type控制渲染方式，可以设置为`indoor`、`outdoor`，web可以显示渲染图像
+- render_perf控制渲染图像上是否展示CPU、BPU占用率、Latency、FPS信息，可以设置为`True`、`False`
+- speckle_filter_enable控制是否开启speckle filter滤波，可以设置为`True`、`False`
+- max_speckle_size控制speckle的大小，小于该大小的speckle将会被滤除，设置越大，滤波效果更强
+- max_disp_diff控制speckle中视差的差异阈值，邻域小于该阈值的像素点将划分为同一个speckle，设置越小，滤波效果更强
+- pcl_filter_enable控制是否开启点云滤波，可以设置为`True`、`False`
+- grid_size控制点云滤波时的网格大小，单位m
+- grid_min_point_count控制点云滤波时的网格最小点数，小于该数量的点会被滤除
+- save_result_flag控制是否保存结果，如果开启保存则会保存**相机参数、原始左右图、矫正后左右图、视差图、深度图、点云**
+- save_dir控制保存的目录，目录不存在会自动创建，请确保该目录下有足够空间，否则会保存失败
+- save_freq控制保存的频率，例如设置为4代表每隔4帧保存一次
+- save_total控制保存的总数，设置为-1代表一直保存，设置为100代表保存100帧则不再保存
 
 
 ### 使用离线数据回灌算法
@@ -510,70 +658,6 @@ ros run_stereo.sh --stereonet_version v2.4_int16 --save_result_flag True
 
 
 ## 运行启动文件
-
-#### (1) 搭配RDK X5官方MIPI双目相机启动
-
-- RDK X5官方MIPI双目相机如图所示：
-
-
-
-- 安装方式如图所示，接线请勿接反，会导致左右图对调，双目算法运行错误：
-
-
-
-
-
-- 通过不同的launch文件，启动相应版本的双目算法，通过ssh连接RDK X5，执行以下命令：
-
-- V2.0
-
-```bash
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，其包含了算法和双目相机节点的启动
-ros2 launch hobot_stereonet stereonet_model_web_visual_v2.0.launch.py \
-mipi_image_width:=640 mipi_image_height:=352 mipi_lpwm_enable:=True mipi_image_framerate:=15.0 \
-need_rectify:=False height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0
-```
-
-- V2.1
-
-```bash
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，其包含了算法和双目相机节点的启动
-ros2 launch hobot_stereonet stereonet_model_web_visual_v2.1.launch.py \
-mipi_image_width:=640 mipi_image_height:=352 mipi_lpwm_enable:=True mipi_image_framerate:=25.0 \
-need_rectify:=False height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 uncertainty_th:=0.09
-```
-
-- V2.2
-
-```bash
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，其包含了算法和双目相机节点的启动
-ros2 launch hobot_stereonet stereonet_model_web_visual_v2.2.launch.py \
-mipi_image_width:=640 mipi_image_height:=352 mipi_lpwm_enable:=True mipi_image_framerate:=25.0 \
-need_rectify:=False height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0
-```
-
-- V2.3
-
-```bash
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，其包含了算法和双目相机节点的启动
-ros2 launch hobot_stereonet stereonet_model_web_visual_v2.3.launch.py \
-mipi_image_width:=640 mipi_image_height:=352 mipi_lpwm_enable:=True mipi_image_framerate:=30.0 \
-need_rectify:=False height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0
-```
-
-参数含义如下：
 
 | 名称                 | 参数值      | 说明                                                                       |
 | -------------------- | ----------- | -------------------------------------------------------------------------- |

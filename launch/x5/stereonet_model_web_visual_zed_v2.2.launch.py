@@ -24,37 +24,39 @@ from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
 
+
 def generate_launch_description():
 
     node_list = []
 
     zed_cam = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_zed_cam'),
-                                                   'launch/pub_stereo_imgs_noweb.launch.py')),
-        launch_arguments={'need_rectify': 'True',
-                          'user_rectify': 'False',
-                          'resolution': '720p',
-                          'dst_width': '640',
-                          'dst_height': '352',
-                          'camera_info_topic': '/image_combine_raw/camera_info',
-                          }.items()
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("hobot_zed_cam"),
+                "launch/pub_stereo_imgs_noweb.launch.py",
+            )
+        )
     )
     node_list.append(zed_cam)
 
-    stereonet_model_file_path =  os.path.join(
-        get_package_share_directory('hobot_stereonet'),
-        'config',
-        'DStereoV2.2.bin'
+    stereonet_model_file_path = os.path.join(
+        get_package_share_directory("hobot_stereonet"), "config", "DStereoV2.2.bin"
     )
 
     # 双目深度估计模型
     stereonet_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('hobot_stereonet'),
-                                                   'launch/stereonet_model_web_visual.launch.py')),
-        launch_arguments = {"stereonet_model_file_path": stereonet_model_file_path,
-                            "postprocess": "convex_upsampling_with_interp",
-                            'need_rectify': 'False'
-                          }.items()
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("hobot_stereonet"),
+                "launch/stereonet_model_web_visual.launch.py",
+            )
+        ),
+        launch_arguments={
+            "stereonet_model_file_path": stereonet_model_file_path,
+            "postprocess": "convex_upsampling_with_interp",
+            "camera_info_topic": "/image_combine_raw/camera_info",
+            "use_mipi_cam": "False",
+        }.items(),
     )
     node_list.append(stereonet_node)
 

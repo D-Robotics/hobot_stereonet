@@ -460,7 +460,11 @@ void StereoNetNode::infer_function(const int &thread_id) {
       pub_data->rectify_left_img_data = rectify_left_img_data;
       pub_data->rectify_right_img_data = rectify_right_img_data;
 
-      if (pub_data_queue_.size() > 5) pub_data_queue_.pop_front();
+      if (pub_data_queue_.size() > 5 && use_local_image_flag_ == false) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "\033[31m=> drop one message to avoid publish too many messages\033[0m");
+        pub_data_queue_.pop_front();
+      }
       pub_data_queue_.put(pub_data->timestamp, pub_data);
     }
   }
