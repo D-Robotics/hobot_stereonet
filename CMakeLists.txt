@@ -234,7 +234,9 @@ install(
 
 install(
   TARGETS stereonet_model stereonet_model_intra_sub
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
