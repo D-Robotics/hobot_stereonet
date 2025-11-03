@@ -28,7 +28,11 @@
 #include <sensor_msgs/msg/point_field.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#ifdef CV_BRIDGE_CPP
+#include <cv_bridge/cv_bridge.hpp>
+#else
 #include <cv_bridge/cv_bridge.h>
+#endif
 #include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/time.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>

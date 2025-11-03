@@ -26,13 +26,36 @@ set(SYS_ROOT ${CMAKE_SYSROOT})
 message("PREFIX_PATH is " ${PREFIX_PATH})
 message("SYS_ROOT is " ${SYS_ROOT})
 
+if(DEFINED ENV{ROS_DISTRO})
+    set(PREFERRED_ROS_DISTRO $ENV{ROS_DISTRO})
+else()
+    # 设置默认优先级，jazzy优先于humble
+    if(EXISTS "/opt/ros/jazzy")
+        set(PREFERRED_ROS_DISTRO jazzy)
+    elseif(EXISTS "/opt/ros/humble")
+        set(PREFERRED_ROS_DISTRO humble)
+    else()
+        set(PREFERRED_ROS_DISTRO humble)
+    endif()
+endif()
+
+if(DEFINED PREFERRED_ROS_DISTRO)
+    message(STATUS "Preferred ROS distribution: ${PREFERRED_ROS_DISTRO}")
+endif()
+
+
+if("${PREFERRED_ROS_DISTRO}" STREQUAL "jazzy")
+    add_definitions(-DCV_BRIDGE_CPP)
+endif()
+
 set(PCL_INCLUDE_DIRS
   ${SYS_ROOT}/usr/include/pcl-1.12/
+  ${SYS_ROOT}/usr/include/pcl-1.14/
   ${SYS_ROOT}/usr/include/eigen3/
-  /opt/ros/humble/include/
-  /opt/ros/humble/include/pcl_conversions/
-  /opt/ros/humble/include/message_filters/
-  /opt/ros/humble/include/pcl_msgs/
+  /opt/ros/${PREFERRED_ROS_DISTRO}/include/
+  /opt/ros/${PREFERRED_ROS_DISTRO}/include/pcl_conversions/
+  /opt/ros/${PREFERRED_ROS_DISTRO}/include/message_filters/
+  /opt/ros/${PREFERRED_ROS_DISTRO}/include/pcl_msgs/
 )
 
 set(PCL_LIBRARIES
@@ -79,6 +102,11 @@ if(PLATFORM_S100)
   message("hobot_stereonet build platform S100")
   add_definitions(-DPLATFORM_S100)
   set(LAUNCH_DIR "s100")
+  list(APPEND DNN_LIBS dnn hbucp)
+elseif(PLATFORM_S600)
+  message("hobot_stereonet build platform S600")
+  add_definitions(-DPLATFORM_S600)
+  set(LAUNCH_DIR "s600")
   list(APPEND DNN_LIBS dnn hbucp)
 else()
   message("hobot_stereonet build platform X5")
