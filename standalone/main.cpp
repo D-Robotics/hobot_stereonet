@@ -102,8 +102,10 @@ int StereoDemo::init(const std::string &stereonet_model_file_path,
                      int max_disp) {
   int ret = 0;
   stereonet_process_ = std::make_shared<StereonetProcess>();
+  //  The `uncertainty_th` ranges from 0.0 to 1.0
+  //  — the closer it is to 0.0, the more aggressive the filtering.
   ret = stereonet_process_->stereonet_init(
-      stereonet_model_file_path, max_disp, post_version, -0.7);
+      stereonet_model_file_path, max_disp, post_version, 0.1);
   if (ret != 0) {
     std::cerr << "stereonet init failed!" << std::endl;
     return -1;
@@ -350,7 +352,7 @@ int main_V2_4(int argc, char **argv) {
 }
 
 
-int main_V2_1(int argc, char **argv) {
+int main_V2_4_uncertainty(int argc, char **argv) {
   int ret;
   float blind_area;
   int print_count = 0;
@@ -432,5 +434,5 @@ int main_V2_1(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  return main_V2_1(argc, argv);
+  return main_V2_4_uncertainty(argc, argv);
 }

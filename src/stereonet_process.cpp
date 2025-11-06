@@ -345,8 +345,8 @@ int postprocess_v2(std::vector<hbDNNTensor> &tensors,
     }
   } else {
     std::cerr << "=> output tensor type unsupported! tensor[0]: "
-          << tensor_type_to_str(tensors[0].properties.tensorType)
-          << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
+              << tensor_type_to_str(tensors[0].properties.tensorType)
+              << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
     return -1;
   }
   // get scale info
@@ -372,7 +372,7 @@ int postprocess_v2_1(std::vector<hbDNNTensor> &tensors,
                      int max_disp,
                      float uncertainty_th) {
   cv::Mat mask, uncert, infer_disp, init_disp;
-  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t *disp_shape = tensors[1].properties.validShape.dimensionSize;
   int32_t c_dim = disp_shape[1];
   int32_t h_dim = disp_shape[2];
   int32_t w_dim = disp_shape[3];
@@ -457,8 +457,8 @@ int postprocess_v2_2(std::vector<hbDNNTensor> &tensors,
     }
   } else {
     std::cerr << "=> output tensor type unsupported! tensor[0]: "
-     << tensor_type_to_str(tensors[0].properties.tensorType)
-     << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
+              << tensor_type_to_str(tensors[0].properties.tensorType)
+              << ", tensor[1]: " << tensor_type_to_str(tensors[1].properties.tensorType) << std::endl;
     return -1;
   }
   return 0;
@@ -537,7 +537,7 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
       }
     }
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32
-    && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
+      && tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
     float *disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
     float *spx = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
@@ -585,7 +585,7 @@ int postprocess_v2_3_uncertainty(std::vector<hbDNNTensor> &tensors,
                                  int max_disp,
                                  float uncertainty_th) {
   cv::Mat mask, uncert, infer_disp, init_disp;
-  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t *disp_shape = tensors[1].properties.validShape.dimensionSize;
   int32_t c_dim = disp_shape[1];
   int32_t h_dim = disp_shape[2];
   int32_t w_dim = disp_shape[3];
@@ -594,7 +594,9 @@ int postprocess_v2_3_uncertainty(std::vector<hbDNNTensor> &tensors,
   if (postprocess_v2_3(infer_disp_tensor, infer_points, max_disp) != 0) {
     return -1;
   }
-  if (uncertainty_th > 0.0f && tensors.size() == 4) {
+  if (uncertainty_th > 0.0f && tensors.size() == 4
+      && tensors[2].properties.validShape.dimensionSize[1] == 9
+      && tensors[3].properties.validShape.dimensionSize[1] == 9) {
     std::vector<hbDNNTensor> init_disp_tensor(tensors.begin() + 2, tensors.begin() + 4);
     if (postprocess_v2_3(init_disp_tensor, init_points, max_disp) != 0) {
       return -1;
@@ -604,6 +606,7 @@ int postprocess_v2_3_uncertainty(std::vector<hbDNNTensor> &tensors,
     uncert = cv::abs(init_disp - infer_disp) / init_disp;
     cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
     infer_disp = infer_disp.mul(mask);
+
   }
   points = std::move(infer_points);
   return 0;
@@ -806,6 +809,8 @@ static int32_t release_tensor(std::vector<hbDNNTensor> &output_tensor, int mem_l
   return 0;
 }
 
+//  The `uncertainty_th` ranges from 0.0 to 1.0
+//  — the closer it is to 0.0, the more aggressive the filtering.
 int StereonetProcess::stereonet_init(const std::string &model_file_name,
                                      int max_disp, const std::string &postprocess, float uncertainty_th) {
   postprocess_ = postprocess;
@@ -860,9 +865,8 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
   max_disp_ = max_disp;
   HB_CHECK_SUCCESS(hbDNNGetOutputCount(&output_count_, dnn_handle_),
                    "hbDNNGetOutputCount failed");
-
   uncertainty_th_ = uncertainty_th;
-
+  std::cout << "uncertainty_th: " << uncertainty_th_ << std::endl;
   return 0;
 }
 

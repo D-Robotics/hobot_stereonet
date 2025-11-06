@@ -65,8 +65,9 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/StereoInfer/3rdparty/lib_ope
 ```
 
 After execution, you can check the console log output for the program's `fps`, `latency`, `cpu_usage`, `bpu_usage`.
-
 This information is also recorded in `performance_xx.txt` in the current directory.  
+
+![console_log_performance](img/console_log_performance.png)
 
 We have two types of models currently: one includes uncertainty information, while the other does not. 
 Comparing the results below, we can see that the noise can be filtered out using the uncertainty.
@@ -75,10 +76,10 @@ The following files will be generated in the `result` directory:
 
   |Name                   |          without uncertainty Result    |          with uncertainty Result                 |                      Description |
   |----------|------|------|------|
-  |{timestamp}_depth.png  |         ![depth](img/8777028645726_depth.png)    |   |     Depth map aligned with the left image (unit: mm) |
-  |{timestamp}_disparity.pfm |      ![disparity](img/8777028645726_disparity.png) | |  Disparity map aligned with the left image (unit:pixels) |
-  |{timestamp}_visual.jpg    |      ![visual](img/8777028645726_visual.jpg) |        | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
-  |{timestamp}.pcd  |               ![pcd](img/8777028645726_pcd.png)    |        |    3D point cloud generated from the left image |
+  |{timestamp}_depth.png  |         ![depth](img/8777028645726_depth.png)    |  None |     Depth map aligned with the left image (unit: mm) |
+  |{timestamp}_disparity.pfm |      ![disparity](img/8777028645726_disparity.png) |None |  Disparity map aligned with the left image (unit:pixels) |
+  |{timestamp}_visual.jpg    |      ![visual](img/8777028645726_visual.jpg) |    ![visual](img/23859795172752_visual.jpg)    | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
+  |{timestamp}.pcd  |               ![pcd](img/8777028645726_pcd.png)    |   ![pcd](img/23859795172752_pcd.png)     |    3D point cloud generated from the left image |
 -   Disparity maps, depth maps, and visualization images: It is
     recommended to use
     [cvkit](https://github.com/roboception/cvkit/releases/tag/v2.6.10)
