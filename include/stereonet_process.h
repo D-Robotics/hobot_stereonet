@@ -95,6 +95,16 @@ struct StereonetProcess {
     height = model_input_h_;
   }
 
+  int set_uncertainty_th(float uncertainty_th) {
+    if (uncertainty_th > 1) return StereonetErrorCode::INPUT_ERROR;
+    uncertainty_th_ = uncertainty_th;
+    return StereonetErrorCode::OK;
+  }
+
+  void get_blind_area(float fx, float base_line, float& blind_area) {
+    blind_area = base_line * fx / max_disp_;
+  }
+
  private:
   int get_idle_tensor();
   int set_tensor_idle(int tensor_id);

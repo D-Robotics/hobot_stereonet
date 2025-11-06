@@ -12,46 +12,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+#ifndef HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H_
+#define HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H_
+
+#include <fstream>
 #include <unistd.h>
 #include <memory>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
 
-#ifndef STEREONET_MODEL_PERFORMANCE_RECORD_H
-#define STEREONET_MODEL_PERFORMANCE_RECORD_H
-
 struct performance_writer {
   performance_writer() {
     time_t t = time(nullptr);
     struct tm *now = localtime(&t);
     std::stringstream timestream;
-    timestream << "performance_" << std::setw(2) << std::setfill('0')
-               << now->tm_hour << '_' << std::setw(2) << std::setfill('0')
-               << now->tm_min << '_' << std::setw(2) << std::setfill('0')
-               << now->tm_sec << ".txt";
+    timestream << "performance_" << std::setw(2) << std::setfill('0') << now->tm_hour << '_' << std::setw(2)
+               << std::setfill('0') << now->tm_min << '_' << std::setw(2) << std::setfill('0') << now->tm_sec << ".txt";
     writer = std::ofstream(timestream.str(), std::ios::out);
     writer << "#timestamp[s], fps, cpu_usage[%], bpu_usage[%], latency[ms]\n";
-    record_thread_ = std::make_shared<std::thread>(
-        std::bind(&performance_writer::record, this));
+    record_thread_ = std::make_shared<std::thread>(std::bind(&performance_writer::record, this));
   }
+
   ~performance_writer() {
     is_running_ = false;
     cd_.notify_all();
     record_thread_->join();
     writer.close();
   }
-  int write(uint ts, uint fps, uint cpu_usage,
-            uint bpu_ratio, uint latency) {
+
+  int write(uint ts, uint fps, uint cpu_usage, uint bpu_ratio, uint latency) {
     if (!writer.good()) {
       std::cerr << "performance.txt is not good" << std::endl;
       return -1;
     }
-    writer << ts
-           << ", " << fps
-           << ", " << cpu_usage << "%"
-           << ", " << bpu_ratio << "%"
-           << ", " << latency << std::endl;
+    writer << ts << ", " << fps << ", " << cpu_usage << "%" << ", " << bpu_ratio << "%" << ", " << latency << std::endl;
     writer.flush();
     return 0;
   }
@@ -59,8 +55,7 @@ struct performance_writer {
   void record_performance(int latency) {
     static auto last_calculation = std::chrono::system_clock::now();
     auto current = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<
-        std::chrono::milliseconds>(current - last_calculation).count();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(current - last_calculation).count();
     ++fps_;
     latency_ = latency;
     if (duration >= 1000) {
@@ -82,6 +77,7 @@ struct performance_writer {
   int get_bpu_usage() {
     return bpu_ratio_;
   }
+
   static std::shared_ptr<performance_writer> Get() {
     static std::shared_ptr<performance_writer> instance = nullptr;
     if (instance == nullptr) {
@@ -103,10 +99,9 @@ struct performance_writer {
     static pid_t pid = getpid();
     char buffer[128] = {0};
     static std::string pid_str = std::to_string(pid);
-    static std::string cmd =
-        "top -b -n 1 -p " + pid_str +
-            " | tail -n 1 "
-            "| awk '{print $9}'";
+    static std::string cmd = "top -b -n 1 -p " + pid_str +
+        " | tail -n 2 "
+        "| awk '/^ *PID/ {for (i=1; i<=NF; i++) {if ($i==\"%CPU\") cpu_col=i}} NR>1 {print $cpu_col}'";
     while (is_running_) {
       std::unique_lock<std::mutex> lock(mtx_);
       cd_.wait(lock);
@@ -122,12 +117,10 @@ struct performance_writer {
       }
       buffer[ret - 1] = '0';
       pclose(fp);
-      uint ts = std::chrono::system_clock::now()
-          .time_since_epoch().count() / 1e9;
+      uint ts = std::chrono::system_clock::now().time_since_epoch().count() / 1e9;
       std::string cpu_usage(buffer);
       std::stringstream temp;
-      std::ifstream bpu_ratio(
-          "/sys/devices/system/bpu/bpu0/ratio", std::ios::in);
+      std::ifstream bpu_ratio("/sys/devices/system/bpu/bpu0/ratio", std::ios::in);
       if (bpu_ratio.is_open()) {
         temp << bpu_ratio.rdbuf();
       } else {
@@ -135,10 +128,9 @@ struct performance_writer {
       }
       cpu_usage_ = std::atoi(cpu_usage.c_str());
       bpu_ratio_ = std::atoi(temp.str().c_str());
-      write(ts, true_fps_, cpu_usage_,
-            bpu_ratio_, latency_);
+      write(ts, true_fps_, cpu_usage_, bpu_ratio_, latency_);
     }
   }
 };
 
-#endif  //  STEREONET_MODEL_PERFORMANCE_RECORD_H
+#endif // HOBOT_STEREONET_INCLUDE_PERFORMANCE_RECORD_H_
