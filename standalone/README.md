@@ -78,7 +78,7 @@ The following files will be generated in the `result` directory:
   |----------|------|------|------|
   |{timestamp}_depth.png  |         ![depth](img/8777028645726_depth.png)    |  None |     Depth map aligned with the left image (unit: mm) |
   |{timestamp}_disparity.pfm |      ![disparity](img/8777028645726_disparity.png) |None |  Disparity map aligned with the left image (unit:pixels) |
-  |{timestamp}_visual.jpg    |      ![visual](img/8777028645726_visual.jpg) |    ![visual](img/23859795172752_visual.jpg)    | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
+  |{timestamp}_visual.jpg    |      ![visual](img/8777028645726_visual.jpg) |    ![visual](img/23859795172752_visual.jpg)   the blue empty hole is filtered by uncertainty | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
   |{timestamp}.pcd  |               ![pcd](img/8777028645726_pcd.png)    |   ![pcd](img/23859795172752_pcd.png)     |    3D point cloud generated from the left image |
 -   Disparity maps, depth maps, and visualization images: It is
     recommended to use
