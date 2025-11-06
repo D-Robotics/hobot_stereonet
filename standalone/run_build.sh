@@ -15,5 +15,5 @@ make -j$(nproc)
 echo "=> ================="
 mkdir -p ./3rdparty/lib_opencv4.5.4/
 cp -rvf ../3rdparty/lib_opencv4.5.4/ ./3rdparty/
-tar -cvf StereoInfer.tar ./3rdparty ../../config/DStereoV2.4_int16.bin ./StereoInfer ../*.png  ../make_ln.sh
+tar -cvf StereoInfer.tar ./3rdparty ../../config/DStereoV2.4_int16.bin  ../../config/DStereoV2.1.bin ./StereoInfer ../*.png  ../make_ln.sh
 echo "=> ================="

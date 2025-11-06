@@ -22,6 +22,10 @@
 
 #include "stereonet_process.h"
 #include "image_conversion.h"
+#include "performance_record.h"
+#include "blockqueue.h"
+
+std::atomic_bool stop_flag{false};
 
 struct CameraParameter {
   float camera_cx, camera_cy, camera_fx, camera_fy, base_line;
@@ -51,6 +55,21 @@ struct InferenceData {
       return;
     }
   }
+  InferenceData() {}
+};
+
+struct DataWrapper {
+  DataWrapper() {}
+  DataWrapper(InferenceData &infer_data,
+      std::vector<float> &disp_points,
+      StereoResult &stereo_res) {
+    inference_data = infer_data;
+    disparity_points = std::move(disp_points);
+    stereo_result = stereo_res;
+  }
+  std::vector<float> disparity_points;
+  StereoResult stereo_result;
+  InferenceData inference_data;
 };
 
 struct StereoDemo {
@@ -64,6 +83,10 @@ struct StereoDemo {
           StereoResult &stereo_result,
           std::vector<float> &points,
           CameraParameter &camera_parameter);
+
+  void get_blind_area(float fx, float base_line, float& blind_area) {
+    stereonet_process_->get_blind_area(fx, base_line, blind_area);
+  }
 
 private:
   std::shared_ptr<StereonetProcess> stereonet_process_;
@@ -158,6 +181,7 @@ int StereoDemo::get_inference_result(
 
 void signal_handler(int signo) {
   if (signo == SIGINT) {
+    stop_flag = true;
     std::cout << "\nrecv SIGINT, exit!" << std::endl;
   }
 }
@@ -282,8 +306,7 @@ int dump_visual_image(InferenceData &infer_data,
   return 0;
 }
 
-
-int main(int argc, char **argv) {
+int main_V2_4(int argc, char **argv) {
   int ret;
   std::string stereonet_model_file_path = "./config/DStereoV2.4_int16.bin";
   std::string left_file = "./left000000.png", right_file = "./right000000.png";
@@ -311,7 +334,8 @@ int main(int argc, char **argv) {
   }
   std::cout << "model init succeed!" << std::endl;
 
-  ret = stereo_demo.get_inference_result(infer_data, stereo_result, disparity_points, camera_parameter);
+  ret = stereo_demo.get_inference_result(infer_data,
+      stereo_result, disparity_points, camera_parameter);
   if (ret == 0) {
     dump_visual_image(infer_data, stereo_result, disparity_points);
     dump_pcd_file(stereo_result);
@@ -322,4 +346,89 @@ int main(int argc, char **argv) {
 
   stereo_demo.deinit();
   return 0;
+}
+
+
+int main_V2_1(int argc, char **argv) {
+  int ret;
+  float blind_area;
+  int print_count = 0;
+  std::shared_ptr<std::thread> save_thread;
+  blockqueue<DataWrapper> data_que;
+  std::string stereonet_model_file_path = "./config/DStereoV2.1.bin";
+  std::string left_file = "./left000000.png", right_file = "./right000000.png";
+  StereoDemo stereo_demo;
+  DataWrapper data_wrapper;
+  CameraParameter camera_parameter;
+
+  InferenceData infer_data(std::chrono::high_resolution_clock::now().time_since_epoch().count(),
+                           left_file, right_file);
+  performance_writer::Get();
+
+  camera_parameter.camera_fx = 208.503;
+  camera_parameter.camera_fy = 208.503;
+  camera_parameter.camera_cx = 316.668;
+  camera_parameter.camera_cy = 175.107;
+  camera_parameter.base_line = 0.0804746;
+
+  signal(SIGINT, signal_handler);
+  system("mkdir -p ./result/");
+
+  ret = stereo_demo.init(stereonet_model_file_path, "v2.1", 192);
+  if (ret != 0) {
+    std::cerr << "model init failed!" << std::endl;
+    return -1;
+  }
+  std::cout << "model init succeed!" << std::endl;
+
+  stereo_demo.get_blind_area(camera_parameter.camera_fx, camera_parameter.base_line, blind_area);
+  std::cout << "blind area is " << blind_area << "m" << std::endl;
+
+  save_thread = std::make_shared<std::thread>(
+      [&]() {
+        while (!stop_flag) {
+          DataWrapper data_wrapper;
+          if (data_que.get(data_wrapper)) {
+            dump_visual_image(data_wrapper.inference_data,
+                data_wrapper.stereo_result, data_wrapper.disparity_points);
+            dump_pcd_file(data_wrapper.stereo_result);
+            dump_depth_in_mm(data_wrapper.stereo_result);
+          }
+        }
+      });
+
+  while (!stop_flag) {
+    data_wrapper.inference_data = infer_data;
+    auto start = std::chrono::high_resolution_clock::now();
+    ret = stereo_demo.get_inference_result(infer_data, data_wrapper.stereo_result,
+                                           data_wrapper.disparity_points, camera_parameter);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto latency = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    if (ret == 0) {
+      if (data_que.size() > 5) {
+        data_que.pop_front();
+      }
+      data_que.put(data_wrapper);
+      performance_writer::Get()->record_performance(latency);
+      if (++print_count > 10) {
+        std::cout << "fps: " << performance_writer::Get()->get_fps()
+                  << ", latency: " << latency
+                  <<"ms, cpu_usage: " << performance_writer::Get()->get_cpu_usage()
+                  <<"%, bpu_usage: " << performance_writer::Get()->get_bpu_usage() << "%." << std::endl;
+        print_count = 0;
+      }
+    } else {
+      std::cerr << "get_inference_result failed!" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  }
+
+  save_thread->join();
+  data_que.clear();
+  stereo_demo.deinit();
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  return main_V2_1(argc, argv);
 }
