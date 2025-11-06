@@ -512,19 +512,15 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
         for (int32_t x = 0; x < spx_w_dim; x += 4) {
           int32_t idx_x = x / scale_w;
 
-          // 1. 加载 int16 spx 权重并扩展为 int32
           int16x4_t spx_s16 = vld1_s16(&spx[y * spx_w_dim + x]);
           int32x4_t spx_s32 = vmovl_s16(spx_s16);
 
-          // 2. 加载 disp 值并复制成 int32x4_t
           int32_t disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
           int32x4_t disp_s32 = vdupq_n_s32(disp_val_scalar);
 
-          // 3. 转换为 float32
           float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
           float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
 
-          // 4. 执行 float 乘法并加到 result_ptr 中
           float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
           float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
           float32x4_t updated_output = vaddq_f32(current_output, mul_result);
@@ -552,14 +548,11 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
         for (int32_t x = 0; x < spx_w_dim; x += 4) {
           int32_t idx_x = x / scale_w;
 
-          // 1. 加载 spx float32 权重
           float32x4_t spx_f32 = vld1q_f32(&spx[y * spx_w_dim + x]);
 
-          // 2. 加载 disp float32 标量并广播
           float disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
           float32x4_t disp_f32 = vdupq_n_f32(disp_val_scalar);
 
-          // 3. 执行乘法并累加到 result 中
           float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
           float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
           float32x4_t updated_output = vaddq_f32(current_output, mul_result);
@@ -587,6 +580,34 @@ int postprocess_v2_3(std::vector<hbDNNTensor> &tensors,
   return 0;
 }
 
+int postprocess_v2_3_uncertainty(std::vector<hbDNNTensor> &tensors,
+                                 std::vector<float> &points,
+                                 int max_disp,
+                                 float uncertainty_th) {
+  cv::Mat mask, uncert, infer_disp, init_disp;
+  int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
+  int32_t c_dim = disp_shape[1];
+  int32_t h_dim = disp_shape[2];
+  int32_t w_dim = disp_shape[3];
+  std::vector<float> infer_points, init_points;
+  std::vector<hbDNNTensor> infer_disp_tensor(tensors.begin(), tensors.begin() + 2);
+  if (postprocess_v2_3(infer_disp_tensor, infer_points, max_disp) != 0) {
+    return -1;
+  }
+  if (uncertainty_th > 0.0f && tensors.size() == 4) {
+    std::vector<hbDNNTensor> init_disp_tensor(tensors.begin() + 2, tensors.begin() + 4);
+    if (postprocess_v2_3(init_disp_tensor, init_points, max_disp) != 0) {
+      return -1;
+    }
+    infer_disp = cv::Mat(h_dim, w_dim, CV_32FC1, infer_points.data());
+    init_disp = cv::Mat(h_dim, w_dim, CV_32FC1, init_points.data());
+    uncert = cv::abs(init_disp - infer_disp) / init_disp;
+    cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+    infer_disp = infer_disp.mul(mask);
+  }
+  points = std::move(infer_points);
+  return 0;
+}
 
 static int32_t print_model_info(hbPackedDNNHandle_t *packed_dnn_handle) {
   int32_t i = 0, j = 0;
@@ -795,12 +816,13 @@ int StereonetProcess::stereonet_init(const std::string &model_file_name,
   const char **model_name_list;
   const char *model_file = model_file_name.c_str();
 //  hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **)&model_file, 1);
-  // 加载模型
+
+  std::cout << "Load model: " << model_file_name << std::endl;
+
   HB_CHECK_SUCCESS(
       hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **) &model_file, 1),
-      "hbDNNInitializeFromFiles failed"); // 从本地文件加载模型
+      "hbDNNInitializeFromFiles failed");
 
-  // 打印模型信息
   print_model_info(&packed_dnn_handle);
 
   HB_CHECK_SUCCESS(hbDNNGetModelNameList(
@@ -970,6 +992,7 @@ int StereonetProcess::stereonet_inference(
     return StereonetErrorCode::DNN_ERROR;
   }
 
+  points.clear();
   ScopeProcessTime t("postprocess");
   if (postprocess_ == "v1") {
     postprocess_v1(output_tensors_[idle_tensor_id], points, max_disp_);
@@ -980,7 +1003,10 @@ int StereonetProcess::stereonet_inference(
   } else if (postprocess_ == "v2.2") {
     postprocess_v2_2(output_tensors_[idle_tensor_id], points, max_disp_);
   } else if (postprocess_ == "v2.3" || postprocess_ == "v2.4") {
-    postprocess_v2_3(output_tensors_[idle_tensor_id], points, max_disp_);
+    postprocess_v2_3_uncertainty(output_tensors_[idle_tensor_id], points, max_disp_, uncertainty_th_);
+  } else {
+    std::cout << "unknown postprocess version: " << postprocess_ << std::endl;
+    return StereonetErrorCode::INPUT_ERROR;
   }
   return StereonetErrorCode::OK;
 }
