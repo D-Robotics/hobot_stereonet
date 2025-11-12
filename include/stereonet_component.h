@@ -279,6 +279,7 @@ private:
   std::string calib_method_ = "none"; // none, custom
   std::string stereo_calib_file_path_ = "";
   std::atomic<bool> camera_info_updated_{false};
+  std::atomic<bool> calc_fov_flag_{false};
   std::shared_ptr<StereoRectify> stereo_rectifier_ = nullptr;
 
   // render

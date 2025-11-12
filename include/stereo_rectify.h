@@ -39,6 +39,7 @@ private:
   std::vector<std::vector<int>> cam_resolutions_;
   std::vector<std::string> distortion_models_;
   std::vector<float> fov_scales_;
+  std::vector<float> alphas_;
 
   std::vector<cv::Mat> Qs_;
   std::vector<cv::Mat> undistmap1ls_, undistmap2ls_, undistmap1rs_, undistmap2rs_;

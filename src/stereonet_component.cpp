@@ -395,6 +395,14 @@ void StereoNetNode::infer_function(const int &thread_id) {
         preprocess(stereo_msg, model_input_w, model_input_h, rectify_left_img_data, rectify_right_img_data);
       }
 
+      // ================================== Calc FOV ====================================
+      if (!calc_fov_flag_) {
+        float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
+        float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
+        RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+        calc_fov_flag_ = true;
+      }
+
       // ================================== Inference ==================================
       cv::Mat disp, uncert;
       stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_, disp,
@@ -460,7 +468,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
       pub_data->rectify_left_img_data = rectify_left_img_data;
       pub_data->rectify_right_img_data = rectify_right_img_data;
 
-      if (pub_data_queue_.size() > 5 && use_local_image_flag_ == false) {
+      if (pub_data_queue_.size() >= infer_thread_num_ && use_local_image_flag_ == false) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                              "\033[31m=> drop one message to avoid publish too many messages\033[0m");
         pub_data_queue_.pop_front();

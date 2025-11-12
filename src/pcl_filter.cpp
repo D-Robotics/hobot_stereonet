@@ -83,7 +83,6 @@ PCLFilterUtils::gridBasedOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>:
 
   std::unordered_map<GridIndex, int, GridIndexHash> grid_point_count;
   grid_point_count.reserve(input_cloud->size());
-  // 单遍统计：同时记录每个点的网格索引
   std::vector<GridIndex> point_grid_indices;
   point_grid_indices.reserve(input_cloud->size());
 

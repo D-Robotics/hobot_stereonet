@@ -58,6 +58,11 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
         stereo_node["cam1"]["fov_scale"] >> fov_scale;
       }
 
+      float alpha = 0.0f;
+      if (!stereo_node["cam1"]["alpha"].empty()) {
+        stereo_node["cam1"]["alpha"] >> alpha;
+      }
+
       // cv::Mat
       cv::Mat Kl = cv::Mat::zeros(3, 3, CV_64F);
       Kl.at<double>(0, 0) = cam0_intrinsics[0];
@@ -94,6 +99,7 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
       cam_resolutions_.push_back(cam0_resolution);
       distortion_models_.push_back(cam0_distortion_model);
       fov_scales_.push_back(fov_scale);
+      alphas_.push_back(alpha);
 
       // print
       RCLCPP_WARN_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
@@ -107,6 +113,8 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
                          "=> cam0_resolution: " << "[" << cam0_resolution[0] << ", " << cam0_resolution[1] << "]");
       RCLCPP_WARN_STREAM(logger_, "=> cam0_distortion_model: " << cam0_distortion_model);
       if (cam0_distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
+      if (cam0_distortion_model == "radtan" || cam0_distortion_model == "rational_polynomial")
+        RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha);
       RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
 
       i++;
@@ -131,6 +139,7 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     std::vector<int> cam_resolution = cam_resolutions_[i];
     std::string distortion_model = distortion_models_[i];
     float fov_scale = fov_scales_[i];
+    float alpha = alphas_[i];
 
     int tmp_input_width = -1;
     int tmp_input_height = -1;
@@ -167,8 +176,9 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     cv::Mat Rl, Rr, Pl, Pr, Q;
     cv::Mat undistmap1l, undistmap2l, undistmap1r, undistmap2r;
     if (distortion_model == "radtan" || distortion_model == "rational_polynomial") {
+      if (alpha > 1.0f) alpha = 1.0f;
       cv::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(tmp_input_width, tmp_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                        cv::CALIB_ZERO_DISPARITY, 0, cv::Size(tmp_output_width, tmp_output_height));
+                        cv::CALIB_ZERO_DISPARITY, alpha, cv::Size(tmp_output_width, tmp_output_height));
       cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(tmp_output_width, tmp_output_height), CV_32FC1, undistmap1l,
                                   undistmap2l);
       cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(tmp_output_width, tmp_output_height), CV_32FC1, undistmap1r,
@@ -206,6 +216,8 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
     RCLCPP_WARN_STREAM(logger_, "=> distortion_model: " << distortion_model);
     if (distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
+    if (distortion_model == "radtan" || distortion_model == "rational_polynomial")
+      RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha);
     double fx = Q.at<double>(2, 3);
     double fy = Q.at<double>(2, 3);
     double cx = -Q.at<double>(0, 3);
@@ -214,6 +226,12 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     RCLCPP_WARN_STREAM(logger_, "=> rectify fx: " << fx << ", fy: " << fy << ", cx: " << cx << ", cy: " << cy
                                                   << ", baseline: " << baseline);
     RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
+    if (i == Kls_.size() - 1) {
+      float HFOV = 2 * atan(tmp_output_width / (2 * fx)) * 180 / M_PI;
+      float VFOV = 2 * atan(tmp_output_height / (2 * fy)) * 180 / M_PI;
+      RCLCPP_WARN_STREAM(logger_, "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+      RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
+    }
   }
 
   undistmap_built_ = true;

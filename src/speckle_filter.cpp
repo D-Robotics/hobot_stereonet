@@ -21,12 +21,12 @@ void SpeckleFilter::filter(cv::Mat &img, float newVal, int maxSpeckleSize, float
   const int cols = img.cols;
   const int imgSize = rows * cols;
 
-  // -1: 未访问; 0: 无效; >0: 区域 label
+  // -1: not visited; 0: invalid; >0: region label
   std::vector<int> labels(imgSize, -1);
 
   int curLabel = 0;
 
-  // 4 邻域偏移
+  // 4 directions of the neighborhood
   const int dx[4] = {-1, 1, 0, 0};
   const int dy[4] = {0, 0, -1, 1};
 
@@ -36,16 +36,16 @@ void SpeckleFilter::filter(cv::Mat &img, float newVal, int maxSpeckleSize, float
       int idx = y * cols + x;
       float val = img.at<float>(y, x);
 
-      if (val == newVal || labels[idx] >= 0) continue; // 已标记或无效
+      if (val == newVal || labels[idx] >= 0) continue; // already labeled or invalid
 
-      // 新区域
+      // new region
       curLabel++;
       std::vector<int> region;
       region.reserve(1024);
       region.push_back(idx);
       labels[idx] = curLabel;
 
-      // 区域生长 BFS
+      // region growing with BFS
       for (size_t ri = 0; ri < region.size(); ri++) {
         int pidx = region[ri];
         int py = pidx / cols;
@@ -70,7 +70,7 @@ void SpeckleFilter::filter(cv::Mat &img, float newVal, int maxSpeckleSize, float
         }
       }
 
-      // 如果区域太小 -> 清零
+      // if region is too small, clear it
       if ((int)region.size() <= maxSpeckleSize) {
         for (int ridx : region) {
           int ry = ridx / cols;

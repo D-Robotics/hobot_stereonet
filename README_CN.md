@@ -378,7 +378,7 @@ mipi_channel:=0 mipi_channel2:=2
 RDK S100上增加:
 
 ```bash
-mipi_channel:=0 mipi_channel2:=1
+mipi_channel:=1 mipi_channel2:=0
 ```
 
 (6) 启动双目深度算法
@@ -391,6 +391,8 @@ source /opt/tros/humble/setup.bash
 
 ros2 pkg prefix mipi_cam
 ros2 pkg prefix hobot_stereonet
+
+rm -rf performance_*.txt
 
 stereonet_version=v2.0
 calib_method=none
@@ -532,6 +534,8 @@ source /opt/tros/humble/setup.bash
 ros2 pkg prefix hobot_zed_cam
 ros2 pkg prefix hobot_stereonet
 
+rm -rf performance_*.txt
+
 stereonet_version=v2.0
 calib_method=none
 stereo_calib_file_path=calib.yaml
@@ -612,15 +616,72 @@ ros run_stereo.sh --<param> <value>
 - save_total控制保存的总数，设置为-1代表一直保存，设置为100代表保存100帧则不再保存
 
 
-### 使用离线数据回灌算法
+### 使用离线图像回灌算法
 
+如果想利用离线图片评估算法效果，需要准备如下文件：
+- 如果双目图像已经经过畸变矫正，实现极线对齐，那么需要准备好左右图像和相机矫正后的参数，左右图像保存在同一个文件夹下，格式为png或者jpg，左图名称需要包含`left`字样，右图名称需要包含`right`字样，名称其它部分保持一致，例如left000000.png、right000000.png则代表一对图像。矫正后相机参数可以以文件形式保存在图像文件夹下，也可以手动传入参数，如果以文件形式保存，命名为`camera_intrinsic.txt`，文件格式如下，注意baseline单位为m：
 
-算法启动有两种方式：
+  ```bash
+  # fx fy cx cy baseline(m)
+  259.251129 259.251129 326.866028 176.007141 0.119893
+  ```
 
-1. 搭配双目相机启动，例如MIPI相机（230AI双目相机、132GS双目相机）、USB相机（ZED相机），能够实时显示算法结果
-2. 使用离线数据回灌算法，需要准备好左右图像和相机的标定参数
+- 如果双目图像未经过畸变矫正，那么需要准备好左右图像和相机的标定文件，左右图像的要求同上。目前功能包支持opencv的pinhole和fisheye模型进行矫正，需要将标定参数保存为yaml文件，例如文件名为`stereo.yaml`，内容如下：
 
+  - opencv pinhole模型
+  ```bash
+  %YAML:1.0
+  stereo0:
+    cam0:
+      cam_overlaps: [1]
+      camera_model: pinhole
+      distortion_coeffs: [13.629939992216803, 8.262704454746693, 0.00013591208815828305, 5.855947395629785e-05, 0.4037751346185162, 13.977836003424704, 13.013009617644387, 2.071424233931501]
+      distortion_model: rational_polynomial
+      intrinsics: [658.2324304920313, 658.372667603159, 645.7728450571832, 548.0568683145651]
+      resolution: [1280, 1088]
+      rostopic: /cam0/image_raw
+    cam1:
+      T_cn_cnm1:
+        - [0.9999948259397319, 0.0030710970579646184, 0.000957317411288589, -0.07994701973026999]
+        - [-0.003065052737874916, 0.9999757549474934, -0.0062525969728369196, 8.62919426379695e-05]
+        - [-0.000976496533245612, 0.006249630393170863, 0.9999799940871164, -3.827807106513583e-05]
+        - [0.0, 0.0, 0.0, 1.0]
+      cam_overlaps: [0]
+      camera_model: pinhole
+      distortion_coeffs: [1.271973336215351, 0.5033929275481956, 3.869896485509561e-05, -5.4665668099983295e-05, 0.026396763086218075, 1.624708798309856, 0.8619327950330554, 0.12733144355384968]
+      distortion_model: rational_polynomial
+      intrinsics: [659.1838534998161, 659.1731444444313, 641.4400240177297, 546.151522982614]
+      resolution: [1280, 1088]
+      rostopic: /cam1/image_raw
+  ```
 
+  - opencv fisheye模型
+  ```bash
+  %YAML:1.0
+  stereo0:
+    cam0:
+      cam_overlaps: [1]
+      camera_model: pinhole
+      distortion_coeffs: [-0.019945602743413032, -0.006407219074809645, 0.010377644042076124, -0.007458612934618145]
+      distortion_model: equidistant
+      intrinsics: [658.1741247046973, 658.3060171249508, 646.0535363898956, 548.5366637704661]
+      resolution: [1280, 1088]
+      rostopic: /cam0/image_raw
+    cam1:
+      T_cn_cnm1:
+        - [0.9999944641310871, 0.0030224403875748498, 0.001391603852978104, -0.0796251330890793]
+        - [-0.003014189986257964, 0.9999780927190145, -0.005893109600935581, 0.00018203189483717266]
+        - [-0.0014093849391877738, 0.00588888241905485, 0.9999816671809277, 7.477455846886338e-05]
+        - [0.0, 0.0, 0.0, 1.0]
+      cam_overlaps: [0]
+      camera_model: pinhole
+      distortion_coeffs: [-0.019364498751516145, -0.003005220334441206, 0.003170178343620349, -0.003583574629938659]
+      distortion_model: equidistant
+      intrinsics: [659.0941516375445, 659.1203053601091, 641.1785231268192, 546.3196124732525]
+      resolution: [1280, 1088]
+      rostopic: /cam1/image_raw
+      fov_scale: 0.73
+  ```
 
 
 
@@ -655,245 +716,6 @@ ros run_stereo.sh --<param> <value>
 
 
 
-
-
-## 运行启动文件
-
-| 名称                 | 参数值      | 说明                                                                       |
-| -------------------- | ----------- | -------------------------------------------------------------------------- |
-| mipi_image_width     | 设置为640   | MIPI相机的输出分辨率是640*352                                              |
-| mipi_image_height    | 设置为352   | MIPI相机的输出分辨率是640*352                                              |
-| mipi_lpwm_enable     | 设置为True  | MIPI相机开启硬件同步                                                       |
-| mipi_image_framerate | 设置为30.0  | MIPI相机输出帧率为30.0FPS                                                  |
-| need_rectify         | 设置为False | 因为官方相机出厂自带标定参数，会自动矫正，不需要加载自定义标定文件进行矫正 |
-| height_min           | 设置为-10.0 | 点云最小高度为-10.0m                                                       |
-| height_max           | 设置为10.0  | 点云最大高度为10.0m                                                        |
-| pc_max_depth         | 设置为5.0   | 是点云最大距离为5.0m                                                       |
-| uncertainty_th       | 设置为0.09  | 置信度阈值，仅V2.1版本模型可用                                             |
-
-- 出现如下日志表示双目算法启动成功，`fx/fy/cx/cy/base_line`是相机内参，如果深度图正常，但估计出来的距离有偏差，可能是相机内参存在问题：
-
-![stereonet_run_success_log](img/stereonet_run_success_log.png)
-
-- 通过网页端查看深度图，在浏览器输入 http://ip:8000 (图中RDK X5 ip是192.168.1.100)：
-
-![web_depth_visual](img/web_depth_visual.png)
-
-- 通过rviz2查看点云，需要用户具备一定的ROS2基础，将PC和RDK X5配置到同一个网段，能够相互ping通，订阅双目模型节点发布的相关话题，才可以在rviz2中显示点云，注意rviz2中需要做如下配置：
-
-![stereonet_rviz](img/stereonet_rviz.png)
-
-- 如果用户想保存深度估计结果，可以添加如下参数实现，`save_image_all`打开保存开关，`save_freq`控制保存频率，`save_dir`控制保存的目录（如果目录不存在会自动创建），`save_total`控制保存的总数。程序运行将会保存**相机内参、左右图、视差图、深度图、可视化图**：
-
-```bash
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 这里以V2.0版本的算法为例，其它版本的算法类似加入对应参数即可
-ros2 launch hobot_stereonet stereonet_model_web_visual_v2.0.launch.py \
-mipi_image_width:=640 mipi_image_height:=352 mipi_lpwm_enable:=True mipi_image_framerate:=15.0 \
-need_rectify:=False height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 \
-save_image_all:=True save_freq:=4 save_dir:=./online_result save_total:=10
-```
-
-参数含义如下：
-
-| 名称           | 参数值               | 说明                                       |
-| -------------- | -------------------- | ------------------------------------------ |
-| save_image_all | 设置为True           | 保存图像开关                               |
-| save_freq      | 设置为4              | 每隔4帧保存一次，可修改为任意正数          |
-| save_dir       | 设置为保存图像的目录 | 可根据需要设置保存位置                     |
-| save_total     | 设置为10             | 总共保存10张图像，设置为-1则代表为一直保存 |
-
-![stereonet_save_log](img/stereonet_save_log.png)
-
-![stereonet_save_files](img/stereonet_save_files.png)
-
-#### (2) 本地图片离线回灌
-
-- 如果想利用本地图片评估算法效果，可以使用下列命令指定算法运行模式、图像数据地址以及相机内参，同时要保证图像数据经过去畸变、极线对齐。图片的格式如下图所示，第一张左目图像的命名为left000000.png，第二张左目图像的命名为left000001.png，以此类推。对应的第一张右目图像的命名为right000000.png，第二张右目图像的命名为right000001.png，以此类推。算法按序号遍历图像，直至图像全部计算完毕：
-
-![stereonet_rdk](img/image_format.png)
-
-- 算法离线运行方式如下，通过ssh连接RDK X5，执行以下命令：
-
-- V2.0
-
-```shell
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，注意相机参数的设置，需要手动输入矫正后参数
-ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/x5baseplus_alldata_woIsaac.bin postprocess:=v2 \
-use_local_image:=True local_image_path:=./online_result \
-need_rectify:=False camera_fx:=216.696533 camera_fy:=216.696533 camera_cx:=335.313477 camera_cy:=182.961578 base_line:=0.070943 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 \
-save_image_all:=True save_dir:=./offline_result image_sleep:=500
-```
-
-- V2.1
-
-```shell
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，注意相机参数的设置，需要手动输入矫正后参数
-ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/DStereoV2.1.bin postprocess:=v2.1 \
-use_local_image:=True local_image_path:=./online_result \
-need_rectify:=False camera_fx:=216.696533 camera_fy:=216.696533 camera_cx:=335.313477 camera_cy:=182.961578 base_line:=0.070943 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 uncertainty_th:=0.09 \
-save_image_all:=True save_dir:=./offline_result image_sleep:=500
-```
-
-- V2.2
-
-```shell
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，注意相机参数的设置，需要手动输入矫正后参数
-ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/DStereoV2.2.bin postprocess:=v2.2 \
-use_local_image:=True local_image_path:=./online_result \
-need_rectify:=False camera_fx:=216.696533 camera_fy:=216.696533 camera_cx:=335.313477 camera_cy:=182.961578 base_line:=0.070943 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 \
-save_image_all:=True save_dir:=./offline_result image_sleep:=500
-```
-
-- V2.3
-
-```shell
-# 配置tros.b humble环境
-source /opt/tros/humble/setup.bash
-
-# 启动双目模型launch文件，注意相机参数的设置，需要手动输入矫正后参数
-ros2 launch hobot_stereonet stereonet_model_web_visual.launch.py \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/V22_disp96.bin postprocess:=v2.3 \
-use_local_image:=True local_image_path:=./online_result \
-need_rectify:=False camera_fx:=216.696533 camera_fy:=216.696533 camera_cx:=335.313477 camera_cy:=182.961578 base_line:=0.070943 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 \
-save_image_all:=True save_dir:=./offline_result image_sleep:=500
-```
-
-**注意：回灌的图像需要经过极线矫正，并且一定要设置正确的相机参数，否则回灌保存的结果可能是错误的**
-
-![stereonet_offline_log](img/stereonet_offline_log.png)
-
-参数含义如下：
-
-| 名称                      | 参数值                                 | 说明                                                               |
-| ------------------------- | -------------------------------------- | ------------------------------------------------------------------ |
-| stereonet_model_file_path | 不同版本的双目算法模型文件             | 根据模型版本设置                                                   |
-| postprocess               | 不同版本的双目算法模型对应的后处理方法 | 根据模型版本设置                                                   |
-| use_local_image           | 设置为True                             | 图片回灌模式开关                                                   |
-| local_image_path          | 设置为离线数据目录                     | 回灌图像的地址目录                                                 |
-| need_rectify              | 设置为False                            | 回灌图像要求经过极线矫正，不需要开启此开关，但要手动传入矫正后参数 |
-| camera_fx                 | 设置为相机矫正后内参fx                 | 相机内参                                                           |
-| camera_fy                 | 设置为相机矫正后内参fy                 | 相机内参                                                           |
-| camera_cx                 | 设置为相机矫正后内参cx                 | 相机内参                                                           |
-| camera_cy                 | 设置为相机矫正后内参cy                 | 相机内参                                                           |
-| base_line                 | 设置为相机矫正后基线                   | 基线距离，单位为m                                                  |
-| height_min                | 设置为-10.0                            | 点云最小高度为-10.0m                                               |
-| height_max                | 设置为10.0                             | 点云最大高度为10.0m                                                |
-| pc_max_depth              | 设置为5.0                              | 是点云最大距离为5.0m                                               |
-| save_image_all            | 设置为True                             | 保存回灌结果                                                       |
-| save_dir                  | 设置为保存图像的目录                   | 可根据需要设置保存位置                                             |
-| uncertainty_th            | 设置为0.09                             | 置信度阈值，仅V2.1版本模型可用                                     |
-
-- 算法运行成功后，同样可以通过网页端和rviz显示实时渲染数据，参考上文，离线运行的结果将会保存在`离线数据目录下的result子目录中`，同样会保存**相机内参、左右图、视差图、深度图、可视化图**
-
-#### (3) 搭配ZED双目摄像头启动
-
-- ZED双目摄像头如图所示：
-
-![zed_cam](img/zed_cam.png)
-
-- 将ZED相机通过USB连接RDK X5，然后启动双目算法，通过ssh连接RDK X5，执行以下命令：
-
-- **注意：运行ZED相机RDK X5一定要联网，因为ZED需要联网下载标定文件，可以ping一下任意网站确认板子是否联网**
-
-```shell
-ping www.baidu.com
-```
-
-- V2.0
-
-```shell
-ros2 launch hobot_zed_cam test_stereo_zed_rectify.launch.py \
-resolution:=720p dst_width:=640 dst_height:=352 \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/x5baseplus_alldata_woIsaac.bin postprocess:=v2 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0
-```
-
-- V2.1
-
-```shell
-ros2 launch hobot_zed_cam test_stereo_zed_rectify.launch.py \
-resolution:=720p dst_width:=640 dst_height:=352 \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/DStereoV2.1.bin postprocess:=v2.1 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0 uncertainty_th:=0.09
-```
-
-- V2.2
-
-```shell
-ros2 launch hobot_zed_cam test_stereo_zed_rectify.launch.py \
-resolution:=720p dst_width:=640 dst_height:=352 \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/DStereoV2.2.bin postprocess:=v2.2 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0
-```
-
-- V2.3
-
-```shell
-ros2 launch hobot_zed_cam test_stereo_zed_rectify.launch.py \
-resolution:=720p dst_width:=640 dst_height:=352 \
-stereonet_model_file_path:=/opt/tros/humble/share/hobot_stereonet/config/V22_disp96.bin postprocess:=v2.3 \
-height_min:=-10.0 height_max:=10.0 pc_max_depth:=5.0
-```
-
-![stereonet_zed_run_success_log](img/stereonet_zed_run_success_log.png)
-
-联网的情况下程序会自动下载标定文件，如果RDK X5没有联网，可以手动下载标定文件然后上传到RDK X5的`/root/zed/settings/`目录下
-
-- 通过网页端查看深度图，在浏览器输入 http://ip:8000 ，更多**点云可视化**和**保存图像**相关的内容请参考上文设置对应参数
-
-## hobot_stereonet功能包说明
-
-### 订阅话题
-
-| 名称               | 消息类型                     | 说明                                                   |
-| ------------------ | ---------------------------- | ------------------------------------------------------ |
-| /image_combine_raw | sensor_msgs::msg::Image      | 双目相机节点发布的左右目拼接图像话题，用于模型推理深度 |
-| /camera_info_topic | sensor_msgs::msg::CameraInfo | 双目相机节点发布的左右目拼接图像话题，用于模型推理深度 |
-
-### 发布话题
-
-| 名称                                 | 消息类型                      | 说明                                     |
-| ------------------------------------ | ----------------------------- | ---------------------------------------- |
-| /StereoNetNode/stereonet_depth       | sensor_msgs::msg::Image       | 发布的深度图像，像素值为深度，单位为毫米 |
-| /StereoNetNode/stereonet_visual      | sensor_msgs::msg::Image       | 发布的比较直观的可视化渲染图像           |
-| /StereoNetNode/stereonet_pointcloud2 | sensor_msgs::msg::PointCloud2 | 发布的点云深度话题                       |
-
-### 其它重要参数
-
-| 名称                   | 参数值                            | 说明                                                                                       |
-| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------ |
-| stereo_image_topic     | 默认 /image_combine_raw           | 订阅双目图像消息的话题名                                                                   |
-| camera_info_topic      | 默认 /image_right_raw/camera_info | 订阅相机矫正参数消息的话题名                                                               |
-| need_rectify           | 默认 True                         | 是否指定自定义标定文件对图像进行矫正开关                                                   |
-| stereo_calib_file_path | 默认 stereo.yaml                  | need_rectify=True的情况下，加载该路径下的标定文件进行标定                                  |
-| stereo_combine_mode    | 默认 1                            | 左右目图像往往拼接在一张图上再发布出去，1为上下拼接，0为左右拼接，指示双目算法如何拆分图像 |
-| KMean                  | 默认 10                           | 过滤稀疏离群点时每个点的临近点的数目，统计每个点与周围最近10个点的距离                     |
-| stdv                   | 默认 0.01                         | 过滤稀疏离群点时判断是否为离群点的阈值，将标准差的倍数设置为0.01                           |
-| leaf_size              | 默认 0.05                         | 设置点云的单位密度，表示半径0.05米的三维球内只有一个点                                     |
-
-### 注意事项
-
-1. 模型的输入尺寸为宽：640，高352，相机发布的图像分辨率应为640x352
-2. 如果双目相机发布图像的格式为NV12，那么双目图像的拼接方式必须为上下拼接
 
 ## 离线工具
 
