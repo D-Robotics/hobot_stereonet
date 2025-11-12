@@ -18,6 +18,7 @@ find_package(OpenCV REQUIRED)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/eigen3
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libdnn
 )

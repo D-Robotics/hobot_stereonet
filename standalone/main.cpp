@@ -24,6 +24,9 @@
 #include "image_conversion.h"
 #include "performance_record.h"
 #include "blockqueue.h"
+#include "metrics_process.h"
+
+#include "data_loader.h"
 
 std::atomic_bool stop_flag{false};
 
@@ -55,6 +58,11 @@ struct InferenceData {
       return;
     }
   }
+
+  bool is_valid() {
+    return !left_image.empty() && !right_image.empty();
+  }
+
   InferenceData() {}
 };
 
@@ -431,6 +439,85 @@ int main_V2_4_uncertainty(int argc, char **argv) {
   data_que.clear();
   stereo_demo.deinit();
   return 0;
+}
+
+
+void calculate_metrics(std::string &json_file, const std::string &data_path) {
+  StereoDemo stereo_demo;
+  std::vector<StereoImageSet> stereo_image_sets;
+  std::string stereonet_model_file_path = "./config/DStereoV2.4_int16_uncertainty.bin";
+
+  std::vector<double> epes, ffprs, fnprs, infinity_metrics;
+  std::vector<std::pair<double, double>> bad_pixels;
+  std::vector<std::vector<double>> a99s;
+
+  stereo_demo.init(stereonet_model_file_path, "v2.4", 192);
+  stereo_image_sets = StereoDataLoader::load(json_file);
+  for (auto &stereo_image : stereo_image_sets) {
+    std::string left_image_file = data_path + "/" + stereo_image.left_image_file;
+    std::string right_image_file = data_path + "/" + stereo_image.right_image_file;
+    std::string disparity_image_file = data_path + "/" + stereo_image.disparity_image_file;
+    InferenceData infer_data(std::chrono::high_resolution_clock::now().time_since_epoch().count(),
+                             left_image_file, right_image_file);
+    cv::Mat gt_disparity = cv::imread(disparity_image_file);
+    if (stereo_image.is_valid() && infer_data.is_valid() && !gt_disparity.empty()) {
+      CameraParameter camera_parameter;
+      StereoResult stereo_result;
+      std::vector<float> infer_disparity_points;
+      cv::Mat infer_disparity;
+      stereo_image.get_camera_parameter(
+          camera_parameter.camera_fx, camera_parameter.camera_fy,
+          camera_parameter.camera_cx, camera_parameter.camera_cy,
+          camera_parameter.base_line);
+      if (stereo_demo.get_inference_result(infer_data, stereo_result,
+          infer_disparity_points, camera_parameter) == 0) {
+        infer_disparity = cv::Mat(
+            stereo_result.model_depth.rows, stereo_result.model_depth.cols,
+            CV_32FC1, infer_disparity_points.data());
+
+        double epe = MetricsProcess::calculateEPE(gt_disparity, infer_disparity);
+
+        std::pair<double, double> bad_pixel = MetricsProcess::calculateBadPixels(
+            gt_disparity, infer_disparity);
+
+        double ffpr = MetricsProcess::calculateFFPR(gt_disparity, infer_disparity,
+            camera_parameter.camera_fx, camera_parameter.base_line);
+
+        double fnpr = MetricsProcess::calculateFNPR(gt_disparity, infer_disparity,
+            camera_parameter.camera_fx, camera_parameter.base_line);
+
+        std::vector<std::pair<double, double>> ranges;
+        ranges.push_back(std::make_pair(0.15, 0.999));
+        ranges.push_back(std::make_pair(1, 1.999));
+        ranges.push_back(std::make_pair(2, 3));
+        std::vector<double> a99 = MetricsProcess::calculateA99DepthRelativeError(
+            gt_disparity, infer_disparity, ranges,
+            camera_parameter.camera_fx, camera_parameter.base_line);
+
+        double infinity_metric = MetricsProcess::calculateInfinityMetric(
+            gt_disparity, infer_disparity,
+            camera_parameter.camera_fx, camera_parameter.base_line);
+
+        std::cout << "file: " << left_image_file
+                  << ", epe: " << epe << ", bad_pixel2|4: " << bad_pixel.first << " | " << bad_pixel.second
+                  << ", ffpr: " << ffpr << ", fnpr: " << fnpr << ", infinity_metric: " << infinity_metric << std::endl;
+        std::cout << "A99 range [0.15, 1]: " << a99[0] << std::endl;
+        std::cout << "A99 range [1, 2]: "    << a99[1] << std::endl;
+        std::cout << "A99 range [2, 3]: "    << a99[2] << std::endl;
+
+        epes.push_back(epe);
+        bad_pixels.push_back(bad_pixel);
+        fnprs.push_back(fnpr);
+        ffprs.push_back(ffpr);
+        a99s.push_back(a99);
+        infinity_metrics.push_back(infinity_metric);
+      } else {
+        std::cerr << "inference failed" << std::endl;
+      }
+    } else {
+      std::cerr << "stereo_image is invalid" << std::endl;
+    }
+  }
 }
 
 int main(int argc, char **argv) {
