@@ -218,6 +218,17 @@ void StereoNetNode::set_node_params() {
     rclcpp::shutdown();
   }
 
+  this->declare_parameter<bool>("left_img_mask_enable", false);
+  left_img_mask_enable_ = this->get_parameter("left_img_mask_enable").as_bool();
+
+  this->declare_parameter<bool>("measure_mode", false);
+  measure_mode_ = this->get_parameter("measure_mode").as_bool();
+  this->declare_parameter<int>("roi_size", 10);
+  roi_size_ = this->get_parameter("roi_size").as_int();
+  if (roi_size_ <= 0) roi_size_ = 10;
+  this->declare_parameter<double>("gt_depth", 0.0);
+  gt_depth_ = this->get_parameter("gt_depth").as_double();
+
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -253,7 +264,9 @@ void StereoNetNode::set_node_params() {
           << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
           << ", " << grid_min_point_count_ << "]" << std::endl
           << "render_type: " << render_type_ << std::endl
-          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_ << "]"
+          << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
+          << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
+          << "(mm)]" << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_ << "]"
           << std::endl
           << "=> ==================================================================" << std::endl);
 
@@ -439,6 +452,17 @@ void StereoNetNode::infer_function(const int &thread_id) {
         SpeckleFilter::filter(disp, 0.0f, 100, 1.0f);
         cv::Mat mask = (disp > 0);
         depth.setTo(0, ~mask);
+      }
+
+      if (left_img_mask_enable_) {
+        ScopeProcessTime t(this->get_logger(), "left_img_mask");
+        cv::Mat left_bgr;
+        int width = disp.cols;
+        int height = disp.rows;
+        ImgConvertUtils::nv12_to_bgr_mat(rectify_left_img_data.data(), left_bgr, width, height);
+        cv::Mat mask;
+        cv::inRange(left_bgr, cv::Scalar(0, 0, 0), cv::Scalar(2, 2, 2), mask);
+        disp.setTo(0, mask);
       }
 
       // ================================== Publish ====================================
@@ -1160,6 +1184,61 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                   CV_RGB(255, 255, 255), 2);
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, left_bgr.rows + y - 5), cv::FONT_HERSHEY_SIMPLEX,
                   font_scale, CV_RGB(255, 255, 255), 2);
+      if (measure_mode_) {
+        if (i == set_num / 2 && j == set_num / 2) {
+          RoiVec roi = extract_center_roi(pub_data->depth, x, y);
+          roi_buffer.push_back(roi);
+          if (roi_buffer.size() > 10) roi_buffer.pop_front();
+          std::vector<uint16_t> merged = merge_and_filter_valid(roi_buffer);
+          if (!merged.empty()) {
+            auto temp = merged;
+            double mean = 0.0, neg_range = 0.0, pos_range = 0.0, err_percent = 0.0;
+            size_t cnt;
+            double trim_ratio = 0.05;
+            std::tie(mean, neg_range, pos_range, cnt) = compute_trimmed_stats(temp, trim_ratio);
+            mean = std::round(mean);
+            neg_range = std::round(neg_range);
+            pos_range = std::round(pos_range);
+            // double max_dev = std::max(neg_range, pos_range);
+            // if (mean > 0.0) err_percent = 100.0 * max_dev / mean;
+            if (gt_depth_ > 0.0) err_percent = 100.0 * std::abs(mean - gt_depth_) / gt_depth_;
+
+            char buf[256];
+            std::vector<std::string> lines;
+            // GT (m)
+            snprintf(buf, sizeof(buf), "GT: %.3f m", gt_depth_ / 1000.0);
+            lines.push_back(std::string(buf));
+            // mean (m)
+            snprintf(buf, sizeof(buf), "Mean: %.3f m", mean / 1000.0);
+            lines.push_back(std::string(buf));
+            // +/- ranges (m)
+            snprintf(buf, sizeof(buf), "Range: +%.3f / -%.3f m", pos_range / 1000.0, neg_range / 1000.0);
+            lines.push_back(std::string(buf));
+            // percent error
+            snprintf(buf, sizeof(buf), "Err[ (Mean-GT)/GT ]: %.3f %%", err_percent);
+            lines.push_back(std::string(buf));
+
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                                 "=> GT: %.3f m, mean: %.3f m, range: "
+                                 "+%.3f / -%.3f m, "
+                                 "err[ (Mean-GT)/GT ]: "
+                                 "%.3f %%",
+                                 gt_depth_ / 1000.0, mean / 1000.0, pos_range / 1000.0, neg_range / 1000.0,
+                                 err_percent);
+
+            for (size_t i = 0; i < lines.size(); ++i)
+              cv::putText(visual_img, lines[i],
+                          cv::Point(x - roi_size_ * 2, y - (lines.size() - i) * roi_size_ * 3 + pub_data->depth.rows),
+                          cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 0, 255), 2);
+
+            cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2),
+                          cv::Point(x + roi_size_ / 2, y + roi_size_ / 2), cv::Scalar(0, 0, 255), 2);
+            cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2 + pub_data->depth.rows),
+                          cv::Point(x + roi_size_ / 2, y + roi_size_ / 2 + pub_data->depth.rows), cv::Scalar(0, 0, 255),
+                          2);
+          }
+        }
+      }
     }
   }
   // ===================================== render performance metrics =======================================
@@ -1371,6 +1450,82 @@ void StereoNetNode::infer_offline() {
 
   RCLCPP_WARN(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
               local_image_dir_.c_str());
+}
+
+RoiVec StereoNetNode::extract_center_roi(const cv::Mat &depth, int cx, int cy) {
+  RoiVec out;
+  if (depth.empty() || depth.type() != CV_16UC1) return out;
+
+  int x0 = cx - roi_size_ / 2;
+  int y0 = cy - roi_size_ / 2;
+
+  // clamp
+  x0 = std::max(0, std::min(x0, depth.cols - roi_size_));
+  y0 = std::max(0, std::min(y0, depth.rows - roi_size_));
+
+  out.reserve(roi_size_ * roi_size_);
+  for (int r = 0; r < roi_size_; ++r) {
+    const uint16_t *rowPtr = depth.ptr<uint16_t>(y0 + r);
+    for (int c = 0; c < roi_size_; ++c) {
+      out.push_back(rowPtr[x0 + c]);
+    }
+  }
+  return out;
+}
+
+std::vector<uint16_t> StereoNetNode::merge_and_filter_valid(const std::deque<RoiVec> &buf) {
+  size_t total = 0;
+  for (const auto &rv : buf) total += rv.size();
+  std::vector<uint16_t> merged;
+  merged.reserve(total);
+
+  for (const auto &rv : buf) {
+    for (uint16_t v : rv) {
+      if (v != 0) merged.push_back(v); // drop 0 as invalid
+    }
+  }
+  return merged;
+}
+
+std::tuple<double, double, double, size_t> StereoNetNode::compute_trimmed_stats(std::vector<uint16_t> &vals,
+                                                                                double trim_ratio) {
+  // Remove invalid early
+  if (vals.empty()) return {0.0, 0.0, 0.0, 0};
+
+  std::sort(vals.begin(), vals.end());
+  size_t N = vals.size();
+  size_t k = static_cast<size_t>(floor(N * trim_ratio));
+
+  // ensure we keep at least 1 element
+  if (N <= 2 * k) {
+    // reduce k so at least 1 element remains
+    if (N > 1)
+      k = (N - 1) / 2;
+    else
+      k = 0;
+  }
+
+  size_t start = k;
+  size_t end = N - k; // exclusive
+  if (start >= end) {
+    // fallback: use entire range
+    start = 0;
+    end = N;
+  }
+
+  // accumulate mean
+  double sum = 0.0;
+  for (size_t i = start; i < end; ++i) sum += static_cast<double>(vals[i]);
+  size_t count = end - start;
+  double mean = (count > 0) ? (sum / static_cast<double>(count)) : 0.0;
+
+  double min_trim = (count > 0) ? static_cast<double>(vals[start]) : 0.0;
+  double max_trim = (count > 0) ? static_cast<double>(vals[end - 1]) : 0.0;
+
+  double neg_range = mean - min_trim; // >=0
+  double pos_range = max_trim - mean; // >=0
+
+  return {mean, neg_range, pos_range, count};
 }
 
 } // namespace stereonet

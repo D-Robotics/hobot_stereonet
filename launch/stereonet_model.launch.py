@@ -99,6 +99,11 @@ def generate_launch_description():
         {'name':'grid_size', 'default_value':'0.10', 'description': 'grid_size'},
         {'name':'grid_min_point_count', 'default_value':'5', 'description': 'grid_min_point_count'},
 
+        {'name':'left_img_mask_enable', 'default_value':'False', 'description': 'left_img_mask_enable'},
+        {'name':'measure_mode', 'default_value':'False', 'description': 'measure_mode'},
+        {'name':'roi_size', 'default_value':'10', 'description': 'roi_size'},
+        {'name':'gt_depth', 'default_value':'0.0', 'description': 'gt_depth'},
+
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
     ]

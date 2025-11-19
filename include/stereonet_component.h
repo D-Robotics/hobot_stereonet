@@ -45,6 +45,9 @@
 #include "pcl_filter.h"
 
 namespace fs = std::filesystem;
+
+using RoiVec = std::vector<uint16_t>;
+
 namespace stereonet {
 /**
  * @struct CameraIntrinsic
@@ -207,6 +210,31 @@ private:
    */
   void save_result(const std::shared_ptr<PubData> &pub_data);
 
+  /**
+   * @brief Extract center ROI from depth image
+   * @param depth The depth image
+   * @param cx The center x coordinate
+   * @param cy The center y coordinate
+   * @return The extracted ROI
+   */
+  RoiVec extract_center_roi(const cv::Mat &depth, int cx, int cy);
+
+  /**
+   * @brief Merge buffer frames into a single vector and filter out invalid (zero) depths
+   * @param buf The buffer frames
+   * @return The merged and filtered vector
+   */
+  std::vector<uint16_t> merge_and_filter_valid(const std::deque<RoiVec> &buf);
+
+  /**
+   * @brief Compute trimmed mean and ranges after removing lowest k and highest k elements
+   * Returns tuple(mean_mm, neg_range_mm, pos_range_mm, trimmed_count)
+   * @param vals The vector of depth values
+   * @param trim_ratio The ratio of trimming
+   * @return The trimmed mean, negative range, positive range, and trimmed count
+   */
+  std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vector<uint16_t> &vals, double trim_ratio);
+
   // ============================================ member variables ============================================
   // sub
   std::string stereo_image_topic_ = "/image_combine_raw";
@@ -252,6 +280,7 @@ private:
   bool speckle_filter_enable_ = false;
   int max_speckle_size_ = 100;
   float max_disp_diff_ = 1.0f;
+  bool left_img_mask_enable_ = false;
 
   bool pcl_filter_enable_ = false;
   // float voxel_leaf_size_ = 0.05f; // m
@@ -284,6 +313,12 @@ private:
 
   // render
   std::string render_type_ = "indoor";
+
+  // measure mode
+  bool measure_mode_ = false;
+  int roi_size_ = 10;
+  std::deque<RoiVec> roi_buffer;
+  double gt_depth_ = 0.0;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
