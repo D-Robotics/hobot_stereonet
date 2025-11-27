@@ -61,6 +61,8 @@ def generate_launch_description():
 
         {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse]'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
+        {'name':'depth_decimal_num', 'default_value':'2', 'description': 'depth_decimal_num'},
+        {'name':'render_max_disp', 'default_value':'80', 'description': 'render_max_disp'},
 
         {'name':'pointcloud_downsample_step', 'default_value':'2', 'description': 'pointcloud_downsample_step'},
         {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},

@@ -229,6 +229,15 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<double>("gt_depth", 0.0);
   gt_depth_ = this->get_parameter("gt_depth").as_double();
 
+  this->declare_parameter<int>("depth_decimal_num", 2);
+  depth_decimal_num_ = this->get_parameter("depth_decimal_num").as_int();
+  if (depth_decimal_num_ < 2) depth_decimal_num_ = 2;
+  if (depth_decimal_num_ > 4) depth_decimal_num_ = 4;
+
+  this->declare_parameter<int>("render_max_disp", 192);
+  render_max_disp_ = this->get_parameter("render_max_disp").as_int();
+  if (render_max_disp_ < 0) render_max_disp_ = 192;
+
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -244,7 +253,6 @@ void StereoNetNode::set_node_params() {
           << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
           << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
           << "visual_image_topic: " << visual_image_topic_ << std::endl
-          << "render_perf: " << render_perf_ << std::endl
           << "postprocess: " << postprocess_ << std::endl
           << "uncertainty_th: " << uncertainty_th_ << std::endl
           << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
@@ -263,10 +271,12 @@ void StereoNetNode::set_node_params() {
           << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
           << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
           << ", " << grid_min_point_count_ << "]" << std::endl
-          << "render_type: " << render_type_ << std::endl
+          << "[render_type, render_perf, depth_decimal_num, render_max_disp]: [" << render_type_ << ", " << render_perf_
+          << ", " << depth_decimal_num_ << ", " << render_max_disp_ << "]" << std::endl
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
-          << "(mm)]" << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_ << "]"
+          << "(mm)]" << std::endl
+          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_ << "]"
           << std::endl
           << "=> ==================================================================" << std::endl);
 
@@ -1137,9 +1147,8 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
       }
     }
   } else {
-    double minVal, maxVal;
-    cv::minMaxLoc(pub_data->disp, &minVal, &maxVal);
-    pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (maxVal - minVal), -minVal * 255.0 / (maxVal - minVal));
+    // Convert to 8-bit scaled image
+    pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / render_max_disp_);
     cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
   }
 
@@ -1179,7 +1188,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
       int y = j * y_step;
       float depth_value = pub_data->depth.at<uint16_t>(y, x) * 0.001f; // convert mm to m
       std::stringstream depth_text;
-      depth_text << std::fixed << std::setprecision(2) << depth_value << "m";
+      depth_text << std::fixed << std::setprecision(depth_decimal_num_) << depth_value << "m";
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, y - 5), cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   CV_RGB(255, 255, 255), 2);
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, left_bgr.rows + y - 5), cv::FONT_HERSHEY_SIMPLEX,
@@ -1246,8 +1255,14 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     std::stringstream perf_text;
     perf_text << "FPS: " << pub_data->fps << " Latency: " << pub_data->latency << "ms CPU: " << pub_data->cpu_usage
               << "% BPU: " << pub_data->bpu_usage << "%";
-    cv::putText(visual_img, perf_text.str(), cv::Point(10, 15), cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 0, 255),
-                2);
+    static int text_height = 0;
+    if (text_height == 0) {
+      int baseline = 0;
+      cv::Size textSize = cv::getTextSize(perf_text.str(), cv::FONT_HERSHEY_SIMPLEX, font_scale, 2, &baseline);
+      text_height = textSize.height + baseline;
+    }
+    cv::putText(visual_img, perf_text.str(), cv::Point(10, text_height), cv::FONT_HERSHEY_SIMPLEX, font_scale,
+                CV_RGB(0, 0, 255), 2);
   }
 
   // ===================================== publish visual image ============================================

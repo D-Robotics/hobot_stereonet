@@ -245,7 +245,6 @@ private:
   // pub
   std::string visual_image_topic_ = "~/stereonet_visual";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr visual_image_pub_ = nullptr;
-  bool render_perf_ = true;
   std::string depth_image_topic_ = "~/stereonet_depth";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_ = nullptr;
   std::string depth_camera_info_topic_ = "~/stereonet_depth/camera_info";
@@ -313,6 +312,9 @@ private:
 
   // render
   std::string render_type_ = "indoor";
+  bool render_perf_ = true;
+  int depth_decimal_num_ = 2;
+  int render_max_disp_ = 80;
 
   // measure mode
   bool measure_mode_ = false;
