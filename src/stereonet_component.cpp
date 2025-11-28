@@ -303,7 +303,7 @@ void StereoNetNode::set_subscription_publisher() {
     });
   } else {
     stereo_image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-        stereo_image_topic_, 10, std::bind(&StereoNetNode::stereo_image_callback, this, std::placeholders::_1));
+        stereo_image_topic_, 1, std::bind(&StereoNetNode::stereo_image_callback, this, std::placeholders::_1));
     camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
         camera_info_topic_, 10, std::bind(&StereoNetNode::camera_info_callback, this, std::placeholders::_1));
   }
@@ -329,8 +329,10 @@ void StereoNetNode::set_dnn_model() {
 }
 
 void StereoNetNode::set_worker_threads() {
-  for (int i = 0; i < infer_thread_num_; ++i) {
-    infer_threads_.emplace_back(&StereoNetNode::infer_function, this, i);
+  if (infer_thread_num_ > 1) {
+    for (int i = 0; i < infer_thread_num_; ++i) {
+      infer_threads_.emplace_back(&StereoNetNode::infer_function, this, i);
+    }
   }
   publish_thread_ = std::thread(&StereoNetNode::publish_function, this);
 }
@@ -376,11 +378,41 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     camera_info_updated_ = true;
   }
 
-  while (input_image_queue_.size_approx() >= 1) {
-    sensor_msgs::msg::Image::SharedPtr drop;
-    input_image_queue_.try_dequeue(drop);
+  if (infer_thread_num_ > 1) {
+    while (input_image_queue_.size_approx() >= 1) {
+      sensor_msgs::msg::Image::SharedPtr drop;
+      input_image_queue_.try_dequeue(drop);
+    }
+    input_image_queue_.enqueue(msg);
+  } else {
+    // ================================== Preprocess ==================================
+    int model_input_w = 0, model_input_h = 0;
+    stereonet_process_->get_model_input_size(model_input_w, model_input_h);
+    if (msg->encoding != "nv12" || msg->width != model_input_w || msg->height != model_input_h * 2) {
+      RCLCPP_ERROR(this->get_logger(),
+                   "\033[31m=> only support nv12 image with [width, height] = [%d, %d], but got [%d, %d]\033[0m",
+                   model_input_w, model_input_h, msg->width, msg->height);
+      rclcpp::shutdown();
+    }
+
+    std::vector<uint8_t> rectify_left_img_data, rectify_right_img_data;
+    {
+      ScopeProcessTime t(this->get_logger(), "preprocess");
+      preprocess(msg, model_input_w, model_input_h, rectify_left_img_data, rectify_right_img_data);
+    }
+
+    // ================================== Calc FOV ====================================
+    if (!calc_fov_flag_) {
+      float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
+      float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
+      RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+      calc_fov_flag_ = true;
+    }
+
+    // ================================== Inference ==================================
+    stereonet_process_->forward_async(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_,
+                                      camera_intrinsic_, msg, pub_data_queue_);
   }
-  input_image_queue_.enqueue(msg);
 }
 
 void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {

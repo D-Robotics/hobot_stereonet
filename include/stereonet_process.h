@@ -20,10 +20,14 @@
 #include <string>
 #include <rclcpp/rclcpp.hpp>
 #include <opencv2/opencv.hpp>
+#include "order_blockqueue.hpp"
+#include "camera_intrinsic.h"
+#include "pub_data.h"
 #include "Eigen/Dense"
 #include "magic_enum/magic_enum.hpp"
 #include "dnn_platform.h"
 #include "timer_utils.h"
+#include "BS_thread_pool.hpp"
 
 namespace stereonet {
 // =================================================================================================================================
@@ -66,6 +70,12 @@ public:
    */
   int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, const double &uncertainty_th,
               const std::string &postprocess, cv::Mat &disp, cv::Mat &uncert);
+
+  int forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
+                    const double &uncertainty_th, const std::string &postprocess,
+                    std::shared_ptr<CameraIntrinsic> camera_intrinsic,
+                    const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
+                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue);
 
   /**
    * @brief Get the input size required by the model
@@ -164,6 +174,8 @@ private:
 
   int max_disp_ = 192;
   float uncertainty_th_ = 0.10;
+
+  std::unique_ptr<BS::thread_pool<>> postprocess_thread_pool_ptr_ = nullptr;
 };
 } // namespace stereonet
 

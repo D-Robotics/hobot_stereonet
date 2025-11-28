@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "stereonet_process.h"
-#include <string>
 
 namespace stereonet {
 StereonetProcess::StereonetProcess(const rclcpp::Logger &logger) : logger_(logger) {
@@ -178,6 +177,101 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
   }
 
   set_tensor_idle(idle_tensor_id);
+
+  return ret_code;
+}
+
+int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
+                                    const double &uncertainty_th, const std::string &postprocess,
+                                    std::shared_ptr<CameraIntrinsic> camera_intrinsic,
+                                    const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
+                                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue) {
+  int ret_code = 0;
+
+  if (postprocess_thread_pool_ptr_ == nullptr) postprocess_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
+
+  int idle_tensor_id = get_idle_tensor();
+  {
+    ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
+    if (idle_tensor_id == -1) {
+      RCLCPP_ERROR_STREAM(logger_, "=> no idle tensor");
+      return -1;
+    }
+    ret_code =
+        fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data.data(), right_img_data.data());
+  }
+
+  {
+    ScopeProcessTime t(logger_, "infer_async");
+    hbDNNTensor *output = batch_output_tensors_[idle_tensor_id].data();
+    hbDNNInferCtrlParam infer_ctrl_param;
+    HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
+    hbDNNTaskHandle_t task_handle = nullptr;
+    ret_code =
+        hbDNNInfer(&task_handle, &output, batch_input_tensors_[idle_tensor_id].data(), dnn_handle_, &infer_ctrl_param);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
+    // wait task done
+    ret_code = hbDNNWaitTaskDone(task_handle, 0);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNWaitTaskDone failed");
+    ret_code = hbDNNReleaseTask(task_handle);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
+    // make sure CPU read data from DDR before using output tensor data
+    for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
+#ifdef PLATFORM_X5
+      ret_code = hbSysFlushMem(&(batch_output_tensors_[idle_tensor_id][i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
+#endif
+#ifdef PLATFORM_S100
+      ret_code = hbSysFlushMem(&(batch_output_tensors_[idle_tensor_id][i].sysMem), HB_SYS_MEM_CACHE_INVALIDATE);
+#endif
+      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
+    }
+  }
+
+  postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, postprocess, left_img_data,
+                                             right_img_data, camera_intrinsic, stereo_msg, &pub_data_queue]() {
+    cv::Mat disp, uncert;
+    if (postprocess == "convex_upsampling") {
+      postprocess_convex_upsampling(batch_output_tensors_[idle_tensor_id], disp);
+    } else if (postprocess == "convex_upsampling_with_uncert") {
+      std::vector<hbDNNTensor> infer_disp_tensor(batch_output_tensors_[idle_tensor_id].begin(),
+                                                 batch_output_tensors_[idle_tensor_id].begin() + 2);
+      postprocess_convex_upsampling(infer_disp_tensor, disp);
+      if (uncertainty_th > 0) {
+        std::vector<hbDNNTensor> init_disp_tensor(batch_output_tensors_[idle_tensor_id].begin() + 2,
+                                                  batch_output_tensors_[idle_tensor_id].begin() + 4);
+        cv::Mat init_disp, mask;
+        postprocess_convex_upsampling(init_disp_tensor, init_disp);
+        // filter disp with uncert
+        uncert = cv::abs(init_disp - disp) / init_disp;
+        cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+        disp = disp.mul(mask);
+      }
+    } else if (postprocess == "convex_upsampling_with_interp") {
+      postprocess_convex_upsampling_with_interp(batch_output_tensors_[idle_tensor_id], disp);
+    } else {
+      RCLCPP_ERROR_STREAM(logger_, "=> not support postprocess: " << postprocess);
+    }
+
+    set_tensor_idle(idle_tensor_id);
+
+    cv::Mat depth;
+    disp_to_depth(disp, depth, camera_intrinsic->fx, camera_intrinsic->baseline);
+
+    auto pub_data = std::make_shared<PubData>();
+    pub_data->timestamp = static_cast<uint64_t>(stereo_msg->header.stamp.sec) * 1'000'000'000 +
+                          static_cast<uint64_t>(stereo_msg->header.stamp.nanosec);
+    pub_data->header = stereo_msg->header;
+    pub_data->origin_stereo_msg = stereo_msg;
+    pub_data->disp = disp;
+    pub_data->uncert = uncert;
+    pub_data->depth = depth;
+    pub_data->rectify_left_img_data = left_img_data;
+    pub_data->rectify_right_img_data = right_img_data;
+    if (pub_data_queue.size() >= 1) {
+      pub_data_queue.pop_front();
+    }
+    pub_data_queue.put(pub_data->timestamp, pub_data);
+  });
 
   return ret_code;
 }

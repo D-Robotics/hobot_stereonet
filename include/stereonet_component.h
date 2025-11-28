@@ -43,27 +43,14 @@
 #include "speckle_filter.h"
 #include "stereo_rectify.h"
 #include "pcl_filter.h"
+#include "camera_intrinsic.h"
+#include "pub_data.h"
 
 namespace fs = std::filesystem;
 
 using RoiVec = std::vector<uint16_t>;
 
 namespace stereonet {
-/**
- * @struct CameraIntrinsic
- * @brief Structure to hold camera intrinsic parameters.
- */
-struct CameraIntrinsic {
-  double cx = 0.0;
-  double cy = 0.0;
-  double fx = 0.0;
-  double fy = 0.0;
-  double baseline = 0.0; // in meters
-
-  bool is_valid() const {
-    return (fx > 0.0 && fy > 0.0 && cx >= 0.0 && cy >= 0.0 && baseline > 0.0);
-  }
-};
 
 /**
  * @class StereoNetNode
@@ -76,24 +63,6 @@ public:
   ~StereoNetNode();
 
 private:
-  struct PubData {
-    uint64_t timestamp;
-    std_msgs::msg::Header header;
-    sensor_msgs::msg::Image::SharedPtr origin_stereo_msg = nullptr;
-    sensor_msgs::msg::Image::SharedPtr origin_left_msg = nullptr;
-    sensor_msgs::msg::Image::SharedPtr origin_right_msg = nullptr;
-    cv::Mat disp;
-    cv::Mat depth;
-    cv::Mat uncert;
-    std::vector<uint8_t> rectify_left_img_data;  // nv12
-    std::vector<uint8_t> rectify_right_img_data; // nv12
-    int fps, latency;
-    int cpu_usage, bpu_usage;
-
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointcloud = nullptr;
-    cv::Mat visual_img;
-  };
-
   // ============================================ member functions ============================================
   /**
    * @brief Set parameters for the node
