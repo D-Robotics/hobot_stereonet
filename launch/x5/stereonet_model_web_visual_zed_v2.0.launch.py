@@ -43,7 +43,7 @@ def generate_launch_description():
         get_package_share_directory("hobot_stereonet"), "config", "DStereoV2.0.bin"
     )
 
-    # 双目深度估计模型
+    # stereonet node
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(

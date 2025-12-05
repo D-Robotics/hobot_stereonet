@@ -21,7 +21,7 @@ PCLFilterUtils::statisticalOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB
     return nullptr;
   }
 
-  // 1. VoxelGrid 下采样
+  // 1. VoxelGrid downsampling
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
   pcl::VoxelGrid<pcl::PointXYZRGB> voxel_filter;
   voxel_filter.setInputCloud(input_cloud);
@@ -32,7 +32,7 @@ PCLFilterUtils::statisticalOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB
     return nullptr;
   }
 
-  // 2. StatisticalOutlierRemoval 去离群点
+  // 2. StatisticalOutlierRemoval
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
   pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
   sor.setInputCloud(cloud_downsampled);
@@ -50,7 +50,7 @@ PCLFilterUtils::radiusOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Pt
     return nullptr;
   }
 
-  // 1. VoxelGrid 下采样
+  // 1. VoxelGrid downsampling
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
   pcl::VoxelGrid<pcl::PointXYZRGB> voxel_filter;
   voxel_filter.setInputCloud(input_cloud);
@@ -61,7 +61,7 @@ PCLFilterUtils::radiusOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Pt
     return nullptr;
   }
 
-  // 2. RadiusOutlierRemoval 去孤立点
+  // 2. RadiusOutlierRemoval
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
   pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> ror;
   ror.setInputCloud(cloud_downsampled);
@@ -79,6 +79,7 @@ PCLFilterUtils::gridBasedOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>:
     return nullptr;
   }
 
+  // 1. make grid
   const float invGridSize = 1.0f / grid_size;
 
   std::unordered_map<GridIndex, int, GridIndexHash> grid_point_count;
@@ -95,6 +96,7 @@ PCLFilterUtils::gridBasedOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>:
     grid_point_count[idx]++;
   }
 
+  // 2. filter
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
   size_t valid_count = 0;
   for (const auto &[idx, count] : grid_point_count) {

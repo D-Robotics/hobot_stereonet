@@ -390,30 +390,42 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
     for (int32_t i = 0; i < spx_c_dim; ++i) {
       for (int32_t y = 0; y < spx_h_dim; ++y) {
+        // compute y-index for low-res disparity (nearest-neighbor sampling)
         int32_t idx_y = y / scale_h;
+        // offset of this output row in result_ptr
         int32_t output_offset = spx_w_dim * y;
         for (int32_t x = 0; x < spx_w_dim; x += 4) {
+          // compute x-index for low-res disparity (nearest-neighbor sampling)
           int32_t idx_x = x / scale_w;
 
+          // load spx
           int16x4_t spx_s16 = vld1_s16(&spx[y * spx_w_dim + x]);
           int32x4_t spx_s32 = vmovl_s16(spx_s16);
 
+          // load disp
           int32_t disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
           int32x4_t disp_s32 = vdupq_n_s32(disp_val_scalar);
 
+          // convert to float
           float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
           float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
 
+          // disp * spx
           float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
+
+          // accumulate into output buffer
           float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
           float32x4_t updated_output = vaddq_f32(current_output, mul_result);
           vst1q_f32(&result_ptr[output_offset + x], updated_output);
         }
       }
+      // move to next disparity row
       disp += total_disp_size;
+      // move to next spx row
       spx += total_size;
     }
 
+    // result * scale_factor
     if (scale_factor != 1.0f) {
       for (int32_t j = 0; j < total_size; j += 4) {
         vst1q_f32(result_ptr + j, vmulq_n_f32(vld1q_f32(result_ptr + j), scale_factor));
@@ -426,27 +438,37 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
     for (int32_t i = 0; i < spx_c_dim; ++i) {
       for (int32_t y = 0; y < spx_h_dim; ++y) {
+        // compute y-index for low-res disparity (nearest-neighbor sampling)
         int32_t idx_y = y / scale_h;
+        // offset of this output row in result_ptr
         int32_t output_offset = spx_w_dim * y;
         for (int32_t x = 0; x < spx_w_dim; x += 4) {
+          // compute x-index for low-res disparity (nearest-neighbor sampling)
           int32_t idx_x = x / scale_w;
 
+          // load spx
           float32x4_t spx_f32 = vld1q_f32(&spx[y * spx_w_dim + x]);
 
+          // load disp
           float disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
           float32x4_t disp_f32 = vdupq_n_f32(disp_val_scalar);
 
+          // disp * spx
           float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
+
+          // accumulate into output buffer
           float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
           float32x4_t updated_output = vaddq_f32(current_output, mul_result);
           vst1q_f32(&result_ptr[output_offset + x], updated_output);
         }
       }
-
+      // move to next disparity row
       disp += total_disp_size;
+      // move to next spx row
       spx += total_size;
     }
 
+    // result * scale_factor
     if (scale_factor != 1.0f) {
       for (int32_t j = 0; j < total_size; j += 4) {
         float32x4_t cur = vld1q_f32(result_ptr + j);

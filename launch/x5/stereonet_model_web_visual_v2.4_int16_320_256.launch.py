@@ -31,7 +31,7 @@ def generate_launch_description():
         'DStereoV2.4_int16_320_256.bin'
     )
 
-    # 双目深度估计模型
+    # stereonet node
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(

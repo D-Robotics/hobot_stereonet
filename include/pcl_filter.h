@@ -54,35 +54,36 @@ public:
   PCLFilterUtils() = delete;
 
   /**
-   * @brief 对输入点云进行VoxelGrid下采样 + 统计滤波，去除离群点
-   * @param input_cloud 输入点云
-   * @param voxel_leaf_size 体素下采样大小（单位与点云坐标一致）
-   * @param mean_k 邻域点数，默认50
-   * @param std_mul 标准差倍数阈值，默认1.0
-   * @return 滤波后的点云
+   * @brief Filter the point cloud using voxel grid
+   * @param input_cloud The input point cloud
+   * @param voxel_leaf_size The voxel leaf size
+   * @param mean_k The mean k
+   * @param std_dev_mul_thresh The standard deviation multiple threshold
+   * @return The filtered point cloud
    */
   static pcl::PointCloud<pcl::PointXYZRGB>::Ptr
   statisticalOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud, float voxel_leaf_size = 0.02f,
                             int mean_k = 50, double std_dev_mul_thresh = 1.0);
 
   /**
-   * @brief 对输入点云进行VoxelGrid下采样 + 半径滤波，去除孤立点
-   * @param input_cloud 输入点云
-   * @param voxel_leaf_size 体素下采样大小（单位与点云一致）
-   * @param radius_search 邻域搜索半径
-   * @param min_neighbors 邻域内最少点数，小于该值会被去掉
-   * @return 滤波后的点云
+   * @brief Filter the point cloud using radius outlier removal
+   * @param input_cloud The input point cloud
+   * @param voxel_leaf_size The voxel leaf size
+   * @param radius_search The radius search
+   * @param min_neighbors The minimum neighbors
+   * @return The filtered point cloud
    */
   static pcl::PointCloud<pcl::PointXYZRGB>::Ptr
   radiusOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud, float voxel_leaf_size = 0.02f,
                        double radius_search = 0.05, int min_neighbors = 5);
 
+
   /**
-   * @brief 对输入点云网格滤波，去除孤立点
-   * @param input_cloud 输入点云
-   * @param grid_size 网格大小
-   * @param grid_min_point_count 网格中点云的最小点数
-   * @return 滤波后的点云
+   * @brief Filter the point cloud using grid based outlier removal
+   * @param input_cloud The input point cloud
+   * @param grid_size The grid size
+   * @param grid_min_point_count The grid min point count threshold
+   * @return The filtered point cloud
    */
   static pcl::PointCloud<pcl::PointXYZRGB>::Ptr
   gridBasedOutlierRemoval(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr &input_cloud, float grid_size = 0.1f,
