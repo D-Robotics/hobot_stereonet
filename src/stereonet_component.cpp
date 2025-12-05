@@ -517,20 +517,6 @@ void StereoNetNode::infer_function(const int &thread_id) {
       pub_data->uncert = uncert;
       pub_data->depth = depth;
 
-      if (render_perf_) {
-        auto now = this->get_clock()->now();
-        auto latency = (now - stereo_msg->header.stamp).seconds() * 1000;
-        // if latency > 1000ms, maybe the time stamp is not correct, set latency to 0
-        pub_data->latency = latency > 1000 ? 0 : latency;
-        performance_writer::Get()->record_performance(pub_data->latency);
-        pub_data->fps = performance_writer::Get()->get_fps();
-        pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
-        pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "=> fps: %d, cpu_usage: %d%%, bpu_usage: %d%%", pub_data->fps, pub_data->cpu_usage,
-                             pub_data->bpu_usage);
-      }
-
       pub_data->rectify_left_img_data = rectify_left_img_data;
       pub_data->rectify_right_img_data = rectify_right_img_data;
 
@@ -676,6 +662,20 @@ void StereoNetNode::publish_function() {
         continue;
       }
       last_frame_timestamp_ = pub_data->timestamp;
+
+      if (render_perf_) {
+        auto now = this->get_clock()->now();
+        auto latency = (now - pub_data->header.stamp).seconds() * 1000;
+        // if latency > 1000ms, maybe the time stamp is not correct, set latency to 0
+        pub_data->latency = latency > 1000 ? 0 : latency;
+        performance_writer::Get()->record_performance(pub_data->latency);
+        pub_data->fps = performance_writer::Get()->get_fps();
+        pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
+        pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "=> fps: %d, cpu_usage: %d%%, bpu_usage: %d%%", pub_data->fps, pub_data->cpu_usage,
+                             pub_data->bpu_usage);
+      }
 
       auto now = this->get_clock()->now();
       auto latency = (now - pub_data->header.stamp).seconds() * 1000;
