@@ -24,6 +24,8 @@
 #define ALIGN(value, alignment) (((value) + ((alignment) - 1)) & ~((alignment) - 1))
 #define ALIGN_32(value) ALIGN(value, 32)
 
+#define TENSOR_SYSMEM(x, y) x.sysMem
+
 using hbPackedDNNHandle_t = hbDNNPackedHandle_t;
 using hbDNNTaskHandle_t = hbUCPTaskHandle_t;
 using hbDNNInferCtrlParam = hbUCPSchedParam;
@@ -43,6 +45,10 @@ static int hbSysWriteMem(hbSysMem *dest, char *src, uint64_t size) {
 
 static int hbSysFlushMem(hbSysMem const *mem, int32_t flag) {
   return hbUCPMemFlush(mem, flag);
+}
+
+static int hbSysFreeMem(hbSysMem *mem) {
+  return hbUCPFree(mem);
 }
 
 static int hbDNNReleaseTask(hbDNNTaskHandle_t taskHandle) {
@@ -88,6 +94,8 @@ static void hbGetInputTensorHW(const hbDNNTensorProperties &properties, int32_t 
 #ifdef PLATFORM_X5
 
 #include <dnn/hb_dnn.h>
+
+#define TENSOR_SYSMEM(x, y) x.sysMem[y]
 
 static void hbGetInputTensorHW(const hbDNNTensorProperties &properties, int32_t &height, int32_t &width) {
   switch (properties.tensorLayout) {

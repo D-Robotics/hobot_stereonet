@@ -23,14 +23,11 @@ StereonetProcess::~StereonetProcess() {
   // Free input memory
   for (int i = 0; i < max_memory_count_; i++) {
     for (size_t j = 0; j < batch_input_tensors_[i].size(); j++) {
+      ret_code = hbSysFreeMem(&TENSOR_SYSMEM(batch_input_tensors_[i][j], 0));
 #ifdef PLATFORM_X5
-      ret_code = hbSysFreeMem(&(batch_input_tensors_[i][j].sysMem[0]));
       if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
-        ret_code = hbSysFreeMem(&(batch_input_tensors_[i][j].sysMem[1]));
+        ret_code = hbSysFreeMem(&TENSOR_SYSMEM(batch_input_tensors_[i][j], 1));
       }
-#endif
-#ifdef PLATFORM_S100
-      ret_code = hbUCPFree(&(batch_input_tensors_[i][j].sysMem));
 #endif
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFreeMem failed");
     }
@@ -38,12 +35,7 @@ StereonetProcess::~StereonetProcess() {
   // Free output memory
   for (int i = 0; i < max_memory_count_; i++) {
     for (size_t j = 0; j < batch_output_tensors_[i].size(); j++) {
-#ifdef PLATFORM_X5
-      ret_code = hbSysFreeMem(&(batch_output_tensors_[i][j].sysMem[0]));
-#endif
-#ifdef PLATFORM_S100
-      ret_code = hbUCPFree(&(batch_output_tensors_[i][j].sysMem));
-#endif
+      ret_code = hbSysFreeMem(&TENSOR_SYSMEM(batch_output_tensors_[i][j], 0));
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFreeMem failed");
     }
   }
@@ -140,12 +132,8 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
     // make sure CPU read data from DDR before using output tensor data
     for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
-#ifdef PLATFORM_X5
-      ret_code = hbSysFlushMem(&(batch_output_tensors_[idle_tensor_id][i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
-#endif
-#ifdef PLATFORM_S100
-      ret_code = hbSysFlushMem(&(batch_output_tensors_[idle_tensor_id][i].sysMem), HB_SYS_MEM_CACHE_INVALIDATE);
-#endif
+      ret_code =
+          hbSysFlushMem(&TENSOR_SYSMEM(batch_output_tensors_[idle_tensor_id][i], 0), HB_SYS_MEM_CACHE_INVALIDATE);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
     }
   }
@@ -217,12 +205,8 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
     // make sure CPU read data from DDR before using output tensor data
     for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
-#ifdef PLATFORM_X5
-      ret_code = hbSysFlushMem(&(batch_output_tensors_[idle_tensor_id][i].sysMem[0]), HB_SYS_MEM_CACHE_INVALIDATE);
-#endif
-#ifdef PLATFORM_S100
-      ret_code = hbSysFlushMem(&(batch_output_tensors_[idle_tensor_id][i].sysMem), HB_SYS_MEM_CACHE_INVALIDATE);
-#endif
+      ret_code =
+          hbSysFlushMem(&TENSOR_SYSMEM(batch_output_tensors_[idle_tensor_id][i], 0), HB_SYS_MEM_CACHE_INVALIDATE);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
     }
   }
@@ -288,14 +272,8 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
       tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
     // get tensor info
-#ifdef PLATFORM_X5
-    auto disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
-    auto spx = reinterpret_cast<float *>(tensors[1].sysMem[0].virAddr);
-#endif
-#ifdef PLATFORM_S100
-    auto disp = reinterpret_cast<float *>(tensors[0].sysMem.virAddr);
-    auto spx = reinterpret_cast<float *>(tensors[1].sysMem.virAddr);
-#endif
+    auto disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
     // multiply element-wise and then add in the c channel
     for (int i = 0; i < c_dim; ++i) {
@@ -308,14 +286,8 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
              tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
     // get tensor info
-#ifdef PLATFORM_X5
-    auto disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
-#endif
-#ifdef PLATFORM_S100
-    auto disp = reinterpret_cast<float *>(tensors[0].sysMem.virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem.virAddr);
-#endif
+    auto disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
     // multiply element-wise and then add in the c channel
     for (int i = 0; i < c_dim; ++i) {
@@ -328,14 +300,8 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32 &&
              tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
     // get tensor info
-#ifdef PLATFORM_X5
-    auto disp = reinterpret_cast<int32_t *>(tensors[0].sysMem[0].virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
-#endif
-#ifdef PLATFORM_S100
-    auto disp = reinterpret_cast<int32_t *>(tensors[0].sysMem.virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem.virAddr);
-#endif
+    auto disp = reinterpret_cast<int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
     // multiply element-wise and then add in the c channel
     for (int i = 0; i < c_dim; ++i) {
@@ -348,14 +314,8 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S16 &&
              tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
     // get tensor info
-#ifdef PLATFORM_X5
-    auto disp = reinterpret_cast<int16_t *>(tensors[0].sysMem[0].virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
-#endif
-#ifdef PLATFORM_S100
-    auto disp = reinterpret_cast<int16_t *>(tensors[0].sysMem.virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem.virAddr);
-#endif
+    auto disp = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
     // multiply element-wise and then add in the c channel
     for (int i = 0; i < c_dim; ++i) {
@@ -425,14 +385,8 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
   float *result_ptr = reinterpret_cast<float *>(out_mat.data);
   if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32 &&
       tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
-#ifdef PLATFORM_X5
-    auto disp = reinterpret_cast<int32_t *>(tensors[0].sysMem[0].virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem[0].virAddr);
-#endif
-#ifdef PLATFORM_S100
-    auto disp = reinterpret_cast<int32_t *>(tensors[0].sysMem.virAddr);
-    auto spx = reinterpret_cast<int16_t *>(tensors[1].sysMem.virAddr);
-#endif
+    auto disp = reinterpret_cast<int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
     for (int32_t i = 0; i < spx_c_dim; ++i) {
       for (int32_t y = 0; y < spx_h_dim; ++y) {
@@ -441,19 +395,15 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
         for (int32_t x = 0; x < spx_w_dim; x += 4) {
           int32_t idx_x = x / scale_w;
 
-          // 1. 加载 int16 spx 权重并扩展为 int32
           int16x4_t spx_s16 = vld1_s16(&spx[y * spx_w_dim + x]);
           int32x4_t spx_s32 = vmovl_s16(spx_s16);
 
-          // 2. 加载 disp 值并复制成 int32x4_t
           int32_t disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
           int32x4_t disp_s32 = vdupq_n_s32(disp_val_scalar);
 
-          // 3. 转换为 float32
           float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
           float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
 
-          // 4. 执行 float 乘法并加到 result_ptr 中
           float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
           float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
           float32x4_t updated_output = vaddq_f32(current_output, mul_result);
@@ -471,14 +421,9 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
     }
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
              tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
-#ifdef PLATFORM_X5
-    auto disp = reinterpret_cast<float *>(tensors[0].sysMem[0].virAddr);
-    auto spx = reinterpret_cast<float *>(tensors[1].sysMem[0].virAddr);
-#endif
-#ifdef PLATFORM_S100
-    auto disp = reinterpret_cast<float *>(tensors[0].sysMem.virAddr);
-    auto spx = reinterpret_cast<float *>(tensors[1].sysMem.virAddr);
-#endif
+    auto disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
     for (int32_t i = 0; i < spx_c_dim; ++i) {
       for (int32_t y = 0; y < spx_h_dim; ++y) {
         int32_t idx_y = y / scale_h;
@@ -486,14 +431,11 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
         for (int32_t x = 0; x < spx_w_dim; x += 4) {
           int32_t idx_x = x / scale_w;
 
-          // 1. 加载 spx float32 权重
           float32x4_t spx_f32 = vld1q_f32(&spx[y * spx_w_dim + x]);
 
-          // 2. 加载 disp float32 标量并广播
           float disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
           float32x4_t disp_f32 = vdupq_n_f32(disp_val_scalar);
 
-          // 3. 执行乘法并累加到 result 中
           float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
           float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
           float32x4_t updated_output = vaddq_f32(current_output, mul_result);
@@ -619,12 +561,7 @@ int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_ten
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputTensorProperties failed");
     RCLCPP_WARN_STREAM_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
                                          static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
-#ifdef PLATFORM_X5
-    ret_code = hbSysAllocCachedMem(&output_tensors[i].sysMem[0], output_tensors[i].properties.alignedByteSize);
-#endif
-#ifdef PLATFORM_S100
-    ret_code = hbSysAllocCachedMem(&output_tensors[i].sysMem, output_tensors[i].properties.alignedByteSize);
-#endif
+    ret_code = hbSysAllocCachedMem(&TENSOR_SYSMEM(output_tensors[i], 0), output_tensors[i].properties.alignedByteSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
     RCLCPP_WARN_STREAM_ONCE(logger_,
                             "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);

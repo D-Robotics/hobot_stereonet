@@ -22,8 +22,8 @@ save_result_flag=False
 save_dir=./stereonet_result
 save_freq=1
 save_total=-1
-mipi_image_width=1920
-mipi_image_height=1080
+mipi_image_width=640
+mipi_image_height=352
 mipi_gdc_enable=True
 mipi_rotation=90.0
 
