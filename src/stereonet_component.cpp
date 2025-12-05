@@ -231,8 +231,8 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<int>("depth_decimal_num", 2);
   depth_decimal_num_ = this->get_parameter("depth_decimal_num").as_int();
-  if (depth_decimal_num_ < 2) depth_decimal_num_ = 2;
-  if (depth_decimal_num_ > 4) depth_decimal_num_ = 4;
+  if (depth_decimal_num_ < 2) depth_decimal_num_ = 2; // cm
+  if (depth_decimal_num_ > 3) depth_decimal_num_ = 3; // mm
 
   this->declare_parameter<int>("render_max_disp", 192);
   render_max_disp_ = this->get_parameter("render_max_disp").as_int();
