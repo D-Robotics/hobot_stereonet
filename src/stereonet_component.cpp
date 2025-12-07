@@ -329,10 +329,8 @@ void StereoNetNode::set_dnn_model() {
 }
 
 void StereoNetNode::set_worker_threads() {
-  if (infer_thread_num_ > 1) {
-    for (int i = 0; i < infer_thread_num_; ++i) {
-      infer_threads_.emplace_back(&StereoNetNode::infer_function, this, i);
-    }
+  for (int i = 0; i < infer_thread_num_; ++i) {
+    infer_threads_.emplace_back(&StereoNetNode::infer_function, this, i);
   }
   publish_thread_ = std::thread(&StereoNetNode::publish_function, this);
 }
@@ -399,6 +397,11 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     {
       ScopeProcessTime t(this->get_logger(), "preprocess");
       preprocess(msg, model_input_w, model_input_h, rectify_left_img_data, rectify_right_img_data);
+      if (pre_process_queue_.size_approx() >= 1) {
+        std::shared_ptr<PreProcessData> drop;
+        pre_process_queue_.try_dequeue(drop);
+      }
+      pre_process_queue_.enqueue(std::make_shared<PreProcessData>(msg, rectify_left_img_data, rectify_right_img_data));
     }
 
     // ================================== Calc FOV ====================================
@@ -408,10 +411,6 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
       RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
       calc_fov_flag_ = true;
     }
-
-    // ================================== Inference ==================================
-    stereonet_process_->forward_async(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_,
-                                      camera_intrinsic_, msg, pub_data_queue_);
   }
 }
 
@@ -435,97 +434,107 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
 
 void StereoNetNode::infer_function(const int &thread_id) {
   while (rclcpp::ok()) {
-    sensor_msgs::msg::Image::SharedPtr stereo_msg;
-    if (input_image_queue_.wait_dequeue_timed(stereo_msg, std::chrono::milliseconds(100))) {
-      // Process the image message
-      // RCLCPP_INFO(this->get_logger(), "Thread %d: Processing image with timestamp %u.%u", thread_id,
-      //             stereo_msg->header.stamp.sec, stereo_msg->header.stamp.nanosec);
+    if (infer_thread_num_ > 1) {
+      sensor_msgs::msg::Image::SharedPtr stereo_msg;
+      if (input_image_queue_.wait_dequeue_timed(stereo_msg, std::chrono::milliseconds(100))) {
+        // Process the image message
+        // RCLCPP_INFO(this->get_logger(), "Thread %d: Processing image with timestamp %u.%u", thread_id,
+        //             stereo_msg->header.stamp.sec, stereo_msg->header.stamp.nanosec);
 
-      // ================================== Preprocess ==================================
-      int model_input_w = 0, model_input_h = 0;
-      stereonet_process_->get_model_input_size(model_input_w, model_input_h);
-      std::vector<uint8_t> rectify_left_img_data, rectify_right_img_data;
-      {
-        ScopeProcessTime t(this->get_logger(), "preprocess");
-        preprocess(stereo_msg, model_input_w, model_input_h, rectify_left_img_data, rectify_right_img_data);
-      }
-
-      // ================================== Calc FOV ====================================
-      if (!calc_fov_flag_) {
-        float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
-        float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
-        RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
-        calc_fov_flag_ = true;
-      }
-
-      // ================================== Inference ==================================
-      cv::Mat disp, uncert;
-      stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_, disp,
-                                  uncert);
-      cv::Mat depth;
-      {
-        ScopeProcessTime t(this->get_logger(), "disp_to_depth");
-        if (camera_intrinsic_->is_valid()) {
-          StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
-        } else {
-          if (calib_method_ == "none") {
-            RCLCPP_ERROR_ONCE(
-                this->get_logger(),
-                "\033[31m=> unable to receive topic %s to obtain camera intrinsic parameters, and the camera "
-                "intrinsic parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] are not manually "
-                "set, please confirm whether the topic is correct or manually set the camera intrinsic "
-                "parameters. when calib_method is none\033[0m",
-                camera_info_topic_.c_str());
-            rclcpp::shutdown();
-          } else if (calib_method_ == "custom") {
-            RCLCPP_ERROR_ONCE(
-                this->get_logger(),
-                "\033[31m=> calib_method is custom, camera intrinsic should be set from stereo_calib_file_path: "
-                "%s\033[0m",
-                stereo_calib_file_path_.c_str());
-            rclcpp::shutdown();
-          }
-          continue;
+        // ================================== Preprocess ==================================
+        int model_input_w = 0, model_input_h = 0;
+        stereonet_process_->get_model_input_size(model_input_w, model_input_h);
+        std::vector<uint8_t> rectify_left_img_data, rectify_right_img_data;
+        {
+          ScopeProcessTime t(this->get_logger(), "preprocess");
+          preprocess(stereo_msg, model_input_w, model_input_h, rectify_left_img_data, rectify_right_img_data);
         }
-      }
-      // ================================== Postprocess ================================
-      if (speckle_filter_enable_) {
-        ScopeProcessTime t(this->get_logger(), "speckle_filter");
-        SpeckleFilter::filter(disp, 0.0f, 100, 1.0f);
-        cv::Mat mask = (disp > 0);
-        depth.setTo(0, ~mask);
-      }
 
-      if (left_img_mask_enable_) {
-        ScopeProcessTime t(this->get_logger(), "left_img_mask");
-        cv::Mat left_bgr;
-        int width = disp.cols;
-        int height = disp.rows;
-        ImgConvertUtils::nv12_to_bgr_mat(rectify_left_img_data.data(), left_bgr, width, height);
-        cv::Mat mask;
-        cv::inRange(left_bgr, cv::Scalar(0, 0, 0), cv::Scalar(2, 2, 2), mask);
-        disp.setTo(0, mask);
+        // ================================== Calc FOV ====================================
+        if (!calc_fov_flag_) {
+          float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
+          float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
+          RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+          calc_fov_flag_ = true;
+        }
+
+        // ================================== Inference ==================================
+        cv::Mat disp, uncert;
+        stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_, disp,
+                                    uncert);
+        cv::Mat depth;
+        {
+          ScopeProcessTime t(this->get_logger(), "disp_to_depth");
+          if (camera_intrinsic_->is_valid()) {
+            StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
+          } else {
+            if (calib_method_ == "none") {
+              RCLCPP_ERROR_ONCE(
+                  this->get_logger(),
+                  "\033[31m=> unable to receive topic %s to obtain camera intrinsic parameters, and the camera "
+                  "intrinsic parameters [camera_fx, camera_fy, camera_cx, camera_cy, baseline] are not manually "
+                  "set, please confirm whether the topic is correct or manually set the camera intrinsic "
+                  "parameters. when calib_method is none\033[0m",
+                  camera_info_topic_.c_str());
+              rclcpp::shutdown();
+            } else if (calib_method_ == "custom") {
+              RCLCPP_ERROR_ONCE(
+                  this->get_logger(),
+                  "\033[31m=> calib_method is custom, camera intrinsic should be set from stereo_calib_file_path: "
+                  "%s\033[0m",
+                  stereo_calib_file_path_.c_str());
+              rclcpp::shutdown();
+            }
+            continue;
+          }
+        }
+        // ================================== Postprocess ================================
+        if (speckle_filter_enable_) {
+          ScopeProcessTime t(this->get_logger(), "speckle_filter");
+          SpeckleFilter::filter(disp, 0.0f, 100, 1.0f);
+          cv::Mat mask = (disp > 0);
+          depth.setTo(0, ~mask);
+        }
+
+        if (left_img_mask_enable_) {
+          ScopeProcessTime t(this->get_logger(), "left_img_mask");
+          cv::Mat left_bgr;
+          int width = disp.cols;
+          int height = disp.rows;
+          ImgConvertUtils::nv12_to_bgr_mat(rectify_left_img_data.data(), left_bgr, width, height);
+          cv::Mat mask;
+          cv::inRange(left_bgr, cv::Scalar(0, 0, 0), cv::Scalar(2, 2, 2), mask);
+          disp.setTo(0, mask);
+        }
+
+        // ================================== Publish ====================================
+        auto pub_data = std::make_shared<PubData>();
+        pub_data->timestamp = static_cast<uint64_t>(stereo_msg->header.stamp.sec) * 1'000'000'000 +
+                              static_cast<uint64_t>(stereo_msg->header.stamp.nanosec);
+        pub_data->header = stereo_msg->header;
+        pub_data->origin_stereo_msg = stereo_msg;
+        pub_data->disp = disp;
+        pub_data->uncert = uncert;
+        pub_data->depth = depth;
+
+        pub_data->rectify_left_img_data = rectify_left_img_data;
+        pub_data->rectify_right_img_data = rectify_right_img_data;
+
+        if (pub_data_queue_.size() >= infer_thread_num_ && use_local_image_flag_ == false) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                               "\033[31m=> drop one message to avoid publish too many messages\033[0m");
+          pub_data_queue_.pop_front();
+        }
+        pub_data_queue_.put(pub_data->timestamp, pub_data);
       }
-
-      // ================================== Publish ====================================
-      auto pub_data = std::make_shared<PubData>();
-      pub_data->timestamp = static_cast<uint64_t>(stereo_msg->header.stamp.sec) * 1'000'000'000 +
-                            static_cast<uint64_t>(stereo_msg->header.stamp.nanosec);
-      pub_data->header = stereo_msg->header;
-      pub_data->origin_stereo_msg = stereo_msg;
-      pub_data->disp = disp;
-      pub_data->uncert = uncert;
-      pub_data->depth = depth;
-
-      pub_data->rectify_left_img_data = rectify_left_img_data;
-      pub_data->rectify_right_img_data = rectify_right_img_data;
-
-      if (pub_data_queue_.size() >= infer_thread_num_ && use_local_image_flag_ == false) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "\033[31m=> drop one message to avoid publish too many messages\033[0m");
-        pub_data_queue_.pop_front();
+    } else {
+      // ================================== Inference ==================================
+      std::shared_ptr<PreProcessData> pre_process_data;
+      if (pre_process_queue_.wait_dequeue_timed(pre_process_data, std::chrono::milliseconds(100))) {
+        stereonet_process_->forward_async(pre_process_data->rectify_left_img_data,
+                                          pre_process_data->rectify_right_img_data, uncertainty_th_, postprocess_,
+                                          camera_intrinsic_, pre_process_data->stereo_msg, pub_data_queue_);
       }
-      pub_data_queue_.put(pub_data->timestamp, pub_data);
     }
   }
 }

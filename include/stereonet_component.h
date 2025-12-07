@@ -50,6 +50,17 @@ namespace fs = std::filesystem;
 
 using RoiVec = std::vector<uint16_t>;
 
+struct PreProcessData {
+  PreProcessData(sensor_msgs::msg::Image::SharedPtr stereo_msg, std::vector<uint8_t> rectify_left_img_data,
+                 std::vector<uint8_t> rectify_right_img_data)
+      : stereo_msg(stereo_msg), rectify_left_img_data(rectify_left_img_data),
+        rectify_right_img_data(rectify_right_img_data) {
+  }
+  sensor_msgs::msg::Image::SharedPtr stereo_msg;
+  std::vector<uint8_t> rectify_left_img_data;
+  std::vector<uint8_t> rectify_right_img_data;
+};
+
 namespace stereonet {
 
 /**
@@ -300,6 +311,7 @@ private:
   uint64_t last_frame_timestamp_ = 0;
   std::unique_ptr<BS::thread_pool<>> save_thread_pool_ptr_ = nullptr;
   int save_thread_num_ = 4;
+  moodycamel::BlockingConcurrentQueue<std::shared_ptr<PreProcessData>> pre_process_queue_;
 };
 } // namespace stereonet
 #endif // HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
