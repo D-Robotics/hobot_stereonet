@@ -55,7 +55,6 @@ def generate_launch_description():
         ),
         launch_arguments={
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "convex_upsampling_with_uncert",
             "camera_info_topic": "/image_combine_raw/camera_info",
             "use_mipi_cam": "False",
         }.items(),

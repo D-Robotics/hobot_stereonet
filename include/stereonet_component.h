@@ -247,7 +247,6 @@ private:
   // model params
   std::shared_ptr<StereonetProcess> stereonet_process_ = nullptr;
   std::string stereonet_model_file_path_ = "";
-  std::string postprocess_ = "convex_upsampling";
   double uncertainty_th_ = 0.0;
 
   int pointcloud_downsample_step_ = 2;

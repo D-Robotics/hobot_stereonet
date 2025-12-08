@@ -101,8 +101,7 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
 }
 
 int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                              const double &uncertainty_th, const std::string &postprocess, cv::Mat &disp,
-                              cv::Mat &uncert) {
+                              const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
   int ret_code = 0;
 
   int idle_tensor_id = get_idle_tensor();
@@ -140,9 +139,23 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
 
   {
     ScopeProcessTime t(logger_, "postprocess");
-    if (postprocess == "convex_upsampling") {
+
+    // get shape info
+    auto disp_tensor = batch_output_tensors_[idle_tensor_id][0];
+    auto spx_tensor = batch_output_tensors_[idle_tensor_id][1];
+    const int32_t *disp_shape = disp_tensor.properties.validShape.dimensionSize;
+    int disp_h_dim = disp_shape[2];
+    int disp_w_dim = disp_shape[3];
+    const int32_t *spx_shape = spx_tensor.properties.validShape.dimensionSize;
+    int spx_h_dim = spx_shape[2];
+    int spx_w_dim = spx_shape[3];
+
+    // postprocess
+    if (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
       ret_code = postprocess_convex_upsampling(batch_output_tensors_[idle_tensor_id], disp);
-    } else if (postprocess == "convex_upsampling_with_uncert") {
+    } else if (output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) {
+      ret_code = postprocess_convex_upsampling_with_interp(batch_output_tensors_[idle_tensor_id], disp);
+    } else if (output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
       std::vector<hbDNNTensor> infer_disp_tensor(batch_output_tensors_[idle_tensor_id].begin(),
                                                  batch_output_tensors_[idle_tensor_id].begin() + 2);
       ret_code = postprocess_convex_upsampling(infer_disp_tensor, disp);
@@ -156,10 +169,24 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
         cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
         disp = disp.mul(mask);
       }
-    } else if (postprocess == "convex_upsampling_with_interp") {
-      ret_code = postprocess_convex_upsampling_with_interp(batch_output_tensors_[idle_tensor_id], disp);
+    } else if (output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) {
+      std::vector<hbDNNTensor> infer_disp_tensor(batch_output_tensors_[idle_tensor_id].begin(),
+                                                 batch_output_tensors_[idle_tensor_id].begin() + 2);
+      ret_code = postprocess_convex_upsampling_with_interp(infer_disp_tensor, disp);
+      if (uncertainty_th > 0) {
+        std::vector<hbDNNTensor> init_disp_tensor(batch_output_tensors_[idle_tensor_id].begin() + 2,
+                                                  batch_output_tensors_[idle_tensor_id].begin() + 4);
+        cv::Mat init_disp, mask;
+        ret_code = postprocess_convex_upsampling_with_interp(init_disp_tensor, init_disp);
+        // filter disp with uncert
+        uncert = cv::abs(init_disp - disp) / init_disp;
+        cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+        disp = disp.mul(mask);
+      }
     } else {
-      RCLCPP_ERROR_STREAM(logger_, "=> not support postprocess: " << postprocess);
+      RCLCPP_ERROR(logger_,
+                   "\033[31m=> not support postprocess! output_count: %d, disp dim [%d, %d], spx dim [%d, %d]\033[0m",
+                   output_count_, disp_h_dim, disp_w_dim, spx_h_dim, spx_w_dim);
       ret_code = -1;
     }
   }
@@ -170,8 +197,7 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
 }
 
 int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                                    const double &uncertainty_th, const std::string &postprocess,
-                                    std::shared_ptr<CameraIntrinsic> camera_intrinsic,
+                                    const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
                                     order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue) {
   int ret_code = 0;
@@ -211,12 +237,26 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
     }
   }
 
-  postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, postprocess, left_img_data,
-                                             right_img_data, camera_intrinsic, stereo_msg, &pub_data_queue]() {
+  postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, left_img_data, right_img_data,
+                                             camera_intrinsic, stereo_msg, &pub_data_queue]() {
     cv::Mat disp, uncert;
-    if (postprocess == "convex_upsampling") {
+
+    // get shape info
+    auto disp_tensor = batch_output_tensors_[idle_tensor_id][0];
+    auto spx_tensor = batch_output_tensors_[idle_tensor_id][1];
+    const int32_t *disp_shape = disp_tensor.properties.validShape.dimensionSize;
+    int disp_h_dim = disp_shape[2];
+    int disp_w_dim = disp_shape[3];
+    const int32_t *spx_shape = spx_tensor.properties.validShape.dimensionSize;
+    int spx_h_dim = spx_shape[2];
+    int spx_w_dim = spx_shape[3];
+
+    // postprocess
+    if (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
       postprocess_convex_upsampling(batch_output_tensors_[idle_tensor_id], disp);
-    } else if (postprocess == "convex_upsampling_with_uncert") {
+    } else if (output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) {
+      postprocess_convex_upsampling_with_interp(batch_output_tensors_[idle_tensor_id], disp);
+    } else if (output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
       std::vector<hbDNNTensor> infer_disp_tensor(batch_output_tensors_[idle_tensor_id].begin(),
                                                  batch_output_tensors_[idle_tensor_id].begin() + 2);
       postprocess_convex_upsampling(infer_disp_tensor, disp);
@@ -230,10 +270,24 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
         cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
         disp = disp.mul(mask);
       }
-    } else if (postprocess == "convex_upsampling_with_interp") {
-      postprocess_convex_upsampling_with_interp(batch_output_tensors_[idle_tensor_id], disp);
+    } else if (output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) {
+      std::vector<hbDNNTensor> infer_disp_tensor(batch_output_tensors_[idle_tensor_id].begin(),
+                                                 batch_output_tensors_[idle_tensor_id].begin() + 2);
+      postprocess_convex_upsampling_with_interp(infer_disp_tensor, disp);
+      if (uncertainty_th > 0) {
+        std::vector<hbDNNTensor> init_disp_tensor(batch_output_tensors_[idle_tensor_id].begin() + 2,
+                                                  batch_output_tensors_[idle_tensor_id].begin() + 4);
+        cv::Mat init_disp, mask;
+        postprocess_convex_upsampling_with_interp(init_disp_tensor, init_disp);
+        // filter disp with uncert
+        uncert = cv::abs(init_disp - disp) / init_disp;
+        cv::threshold(uncert, mask, uncertainty_th, 1, cv::THRESH_BINARY_INV);
+        disp = disp.mul(mask);
+      }
     } else {
-      RCLCPP_ERROR_STREAM(logger_, "=> not support postprocess: " << postprocess);
+      RCLCPP_ERROR(logger_,
+                   "\033[31m=> not support postprocess! output_count: %d, disp dim [%d, %d], spx dim [%d, %d]\033[0m",
+                   output_count_, disp_h_dim, disp_w_dim, spx_h_dim, spx_w_dim);
     }
 
     set_tensor_idle(idle_tensor_id);

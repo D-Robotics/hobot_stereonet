@@ -28,7 +28,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'DStereoV2.4.0_1280_704.bin'
+        'DStereoV2.4_1280_704.bin'
     )
 
     # stereonet node
@@ -41,7 +41,6 @@ def generate_launch_description():
         ),
         launch_arguments = {
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "convex_upsampling_with_interp",
         }.items(),
     )
 

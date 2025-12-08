@@ -85,8 +85,6 @@ def generate_launch_description():
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
 
-        {'name':'postprocess', 'default_value':'convex_upsampling', 'description': '[convex_upsampling convex_upsampling_with_uncert convex_upsampling_with_interp]'},
-
         {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
         {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
         {'name':'image_sleep', 'default_value': "0", 'description': 'image_sleep ms'},

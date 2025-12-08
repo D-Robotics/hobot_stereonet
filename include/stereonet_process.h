@@ -69,11 +69,10 @@ public:
    * @return 0 on success, -1 on failure
    */
   int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, const double &uncertainty_th,
-              const std::string &postprocess, cv::Mat &disp, cv::Mat &uncert);
+              cv::Mat &disp, cv::Mat &uncert);
 
   int forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                    const double &uncertainty_th, const std::string &postprocess,
-                    std::shared_ptr<CameraIntrinsic> camera_intrinsic,
+                    const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
                     order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue);
 

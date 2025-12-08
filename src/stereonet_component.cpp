@@ -79,18 +79,6 @@ void StereoNetNode::set_node_params() {
     performance_writer::Get();
   }
 
-  this->declare_parameter<std::string>("postprocess", "convex_upsampling");
-  postprocess_ = this->get_parameter("postprocess").as_string();
-  auto is_valid_postprocess = [](const std::string &postprocess) {
-    return postprocess == "convex_upsampling" || postprocess == "convex_upsampling_with_uncert" ||
-           postprocess == "convex_upsampling_with_interp";
-  };
-  if (!is_valid_postprocess(postprocess_)) {
-    RCLCPP_ERROR(this->get_logger(), "\033[32m=> postprocess parameter invalid, should be one of [convex_upsampling, "
-                                     "convex_upsampling_with_uncert, convex_upsampling_with_interp]\033[0m");
-    rclcpp::shutdown();
-  }
-
   this->declare_parameter<double>("uncertainty_th", 0.0);
   uncertainty_th_ = this->get_parameter("uncertainty_th").as_double();
 
@@ -253,7 +241,6 @@ void StereoNetNode::set_node_params() {
           << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
           << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
           << "visual_image_topic: " << visual_image_topic_ << std::endl
-          << "postprocess: " << postprocess_ << std::endl
           << "uncertainty_th: " << uncertainty_th_ << std::endl
           << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
           << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy << ", "
@@ -460,8 +447,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
 
         // ================================== Inference ==================================
         cv::Mat disp, uncert;
-        stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, postprocess_, disp,
-                                    uncert);
+        stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, disp, uncert);
         cv::Mat depth;
         {
           ScopeProcessTime t(this->get_logger(), "disp_to_depth");
@@ -532,8 +518,8 @@ void StereoNetNode::infer_function(const int &thread_id) {
       std::shared_ptr<PreProcessData> pre_process_data;
       if (pre_process_queue_.wait_dequeue_timed(pre_process_data, std::chrono::milliseconds(100))) {
         stereonet_process_->forward_async(pre_process_data->rectify_left_img_data,
-                                          pre_process_data->rectify_right_img_data, uncertainty_th_, postprocess_,
-                                          camera_intrinsic_, pre_process_data->stereo_msg, pub_data_queue_);
+                                          pre_process_data->rectify_right_img_data, uncertainty_th_, camera_intrinsic_,
+                                          pre_process_data->stereo_msg, pub_data_queue_);
       }
     }
   }
