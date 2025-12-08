@@ -24,30 +24,30 @@ ScopeProcessTime::~ScopeProcessTime() {
 
   if (!name_.empty()) {
     if (level_ == "info")
-      RCLCPP_INFO_STREAM(logger_,
+      LOG_INFO(logger_,
                          "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else if (level_ == "warn")
-      RCLCPP_WARN_STREAM(logger_,
+      LOG_WARN(logger_,
                          "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else if (level_ == "error")
-      RCLCPP_ERROR_STREAM(logger_,
+      LOG_ERROR(logger_,
                           "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else if (level_ == "fatal")
-      RCLCPP_FATAL_STREAM(logger_,
+      LOG_FATAL(logger_,
                           "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else
-      RCLCPP_DEBUG_STREAM(logger_,
+      LOG_DEBUG(logger_,
                           "=> " << name_ << " time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
   } else {
     if (level_ == "info")
-      RCLCPP_INFO_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+      LOG_INFO(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else if (level_ == "warn")
-      RCLCPP_WARN_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+      LOG_WARN(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else if (level_ == "error")
-      RCLCPP_ERROR_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+      LOG_ERROR(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else if (level_ == "fatal")
-      RCLCPP_FATAL_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+      LOG_FATAL(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
     else
-      RCLCPP_DEBUG_STREAM(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
+      LOG_DEBUG(logger_, "=> time cost: " << duration << " ms, fps: " << 1 / (duration / 1000.0));
   }
 }

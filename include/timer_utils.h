@@ -17,7 +17,7 @@
 
 #include <chrono>
 #include <string>
-#include "rclcpp/rclcpp.hpp"
+#include "log_macros.h"
 
 class ScopeProcessTime {
 public:

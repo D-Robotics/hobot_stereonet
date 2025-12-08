@@ -41,7 +41,7 @@ StereoNetNode::~StereoNetNode() {
 
 void StereoNetNode::set_node_params() {
   RCLCPP_WARN_STREAM(this->get_logger(),
-                     "=> ===================== init " << this->get_name() << "=====================" << std::endl);
+                     "=> ===================== init " << this->get_name() << " =====================" << std::endl);
   this->declare_parameter<std::string>("stereonet_model_file_path", "");
   stereonet_model_file_path_ = this->get_parameter("stereonet_model_file_path").as_string();
   if (stereonet_model_file_path_.empty() || !fs::exists(stereonet_model_file_path_)) {

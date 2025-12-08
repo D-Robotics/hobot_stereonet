@@ -42,7 +42,7 @@ StereonetProcess::~StereonetProcess() {
   // Release dnn handle
   ret_code = hbDNNRelease(packed_dnn_handle_);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
-  RCLCPP_WARN_STREAM(logger_, "=> release StereonetProcess");
+  LOG_WARN(logger_, "=> release StereonetProcess");
 }
 
 int StereonetProcess::init(const std::string &model_path, const int &max_memory_count) {
@@ -66,10 +66,10 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputCount failed");
   ret_code = hbDNNGetOutputCount(&output_count_, dnn_handle_);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputCount failed");
-  RCLCPP_WARN(logger_, "=> ============ init model start ============");
-  RCLCPP_WARN_STREAM(logger_, "=> model name: " << model_name_list_[0]);
-  RCLCPP_WARN_STREAM(logger_, "=> input_count: " << input_count_);
-  RCLCPP_WARN_STREAM(logger_, "=> output_count: " << output_count_);
+  LOG_WARN(logger_, "=> ============ init model start ============");
+  LOG_WARN(logger_, "=> model name: " << model_name_list_[0]);
+  LOG_WARN(logger_, "=> input_count: " << input_count_);
+  LOG_WARN(logger_, "=> output_count: " << output_count_);
 
   // get model input size from input tensor[0]
   hbDNNTensorProperties properties;
@@ -78,7 +78,7 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   properties.quantizeAxis = 3;
 #endif
   hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
-  RCLCPP_WARN_STREAM(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
+  LOG_WARN(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
 
   // prepare input tensor and output tensor
   max_memory_count_ = max_memory_count;
@@ -95,7 +95,7 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   for (int i = 0; i < max_memory_count_; ++i) {
     ret_code = prepare_output_tensor(batch_output_tensors_[i]);
   }
-  RCLCPP_WARN_ONCE(logger_, "=> ============ init model end ============");
+  LOG_WARN_ONCE(logger_, "=> ============ init model end ============");
 
   return ret_code;
 }
@@ -108,7 +108,7 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
   {
     ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
     if (idle_tensor_id == -1) {
-      RCLCPP_ERROR_STREAM(logger_, "=> no idle tensor");
+      LOG_ERROR(logger_, "=> no idle tensor");
       return -1;
     }
     ret_code =
@@ -184,9 +184,9 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
         disp = disp.mul(mask);
       }
     } else {
-      RCLCPP_ERROR(logger_,
-                   "\033[31m=> not support postprocess! output_count: %d, disp dim [%d, %d], spx dim [%d, %d]\033[0m",
-                   output_count_, disp_h_dim, disp_w_dim, spx_h_dim, spx_w_dim);
+      LOG_ERROR(logger_, "\033[31m=> not support postprocess! output_count: "
+                             << output_count_ << ", disp dim [" << disp_h_dim << ", " << disp_w_dim << "], spx dim ["
+                             << spx_h_dim << ", " << spx_w_dim << "]\033[0m");
       ret_code = -1;
     }
   }
@@ -196,6 +196,7 @@ int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<u
   return ret_code;
 }
 
+#if HOBOT_HAS_RCLCPP
 int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                                     const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
@@ -208,7 +209,7 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
   {
     ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
     if (idle_tensor_id == -1) {
-      RCLCPP_ERROR_STREAM(logger_, "=> no idle tensor");
+      LOG_ERROR(logger_, "=> no idle tensor");
       return -1;
     }
     ret_code =
@@ -285,9 +286,9 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
         disp = disp.mul(mask);
       }
     } else {
-      RCLCPP_ERROR(logger_,
-                   "\033[31m=> not support postprocess! output_count: %d, disp dim [%d, %d], spx dim [%d, %d]\033[0m",
-                   output_count_, disp_h_dim, disp_w_dim, spx_h_dim, spx_w_dim);
+      LOG_ERROR(logger_, "\033[31m=> not support postprocess! output_count: "
+                             << output_count_ << ", disp dim [" << disp_h_dim << ", " << disp_w_dim << "], spx dim ["
+                             << spx_h_dim << ", " << spx_w_dim << "]\033[0m");
     }
 
     set_tensor_idle(idle_tensor_id);
@@ -313,6 +314,7 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 
   return ret_code;
 }
+#endif
 
 int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat) {
   // get shape info
@@ -380,11 +382,10 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
       result.noalias() += matrix_disp.cast<float>().cwiseProduct(matrix_spx.cast<float>());
     }
   } else {
-    RCLCPP_ERROR_STREAM(logger_,
-                        "=> output tensor type unsupported! tensor[0]: "
-                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[0].properties.tensorType))
-                            << ", tensor[1]: "
-                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
+    LOG_ERROR(logger_, "=> output tensor type unsupported! tensor[0]: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[0].properties.tensorType))
+                           << ", tensor[1]: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
     return -1;
   }
   // get scale info
@@ -531,11 +532,10 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
       }
     }
   } else {
-    RCLCPP_ERROR_STREAM(logger_,
-                        "=> output tensor type unsupported! tensor[0]: "
-                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[0].properties.tensorType))
-                            << ", tensor[1]: "
-                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
+    LOG_ERROR(logger_, "=> output tensor type unsupported! tensor[0]: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[0].properties.tensorType))
+                           << ", tensor[1]: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
     return -1;
   }
   return 0;
@@ -543,7 +543,7 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
 int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensors) {
   int ret_code = 0;
-  RCLCPP_WARN_ONCE(logger_, "=> ----- prepare_input_tensor -----");
+  LOG_WARN_ONCE(logger_, "=> ----- prepare_input_tensor -----");
 
   // allocate memory for input tensor
   input_tensors.resize(input_count_);
@@ -553,20 +553,20 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     hbDNNTensorProperties properties;
     ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputTensorProperties failed");
-    RCLCPP_WARN_STREAM_ONCE(logger_, "=> input tensor type is "
-                                         << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
+    LOG_WARN_ONCE(logger_, "=> input tensor type is "
+                               << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
     input_tensor_type_ = properties.tensorType;
 
 #ifdef PLATFORM_X5
     if ((properties.tensorType != HB_DNN_IMG_TYPE_NV12) && (properties.tensorType != HB_DNN_IMG_TYPE_NV12_SEPARATE)) {
-      RCLCPP_ERROR(logger_, "=> input tensor type is not in [HB_DNN_IMG_TYPE_NV12, HB_DNN_IMG_TYPE_NV12_SEPARATE]");
+      LOG_ERROR(logger_, "=> input tensor type is not in [HB_DNN_IMG_TYPE_NV12, HB_DNN_IMG_TYPE_NV12_SEPARATE]");
       return -1;
     }
 #endif
 
 #ifdef PLATFORM_S100
     if ((properties.tensorType != HB_DNN_TENSOR_TYPE_U8)) {
-      RCLCPP_ERROR(logger_, "=> input tensor type is not in [HB_DNN_TENSOR_TYPE_U8]");
+      LOG_ERROR(logger_, "=> input tensor type is not in [HB_DNN_TENSOR_TYPE_U8]");
       return -1;
     }
 #endif
@@ -599,7 +599,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], (3 * model_input_h_ * model_input_w_) / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[0].memSize = (3 * model_input_h_ * model_input_w_) / 2;
-      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
+      LOG_WARN_ONCE(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
     } else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], model_input_h_ * model_input_w_);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
@@ -608,8 +608,8 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[1], model_input_h_ * model_input_w_ / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[1].memSize = model_input_h_ * model_input_w_ / 2;
-      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
-      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
+      LOG_WARN_ONCE(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
+      LOG_WARN_ONCE(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
     } else {
       return -1;
     }
@@ -619,7 +619,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem, properties.alignedByteSize);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-      RCLCPP_WARN_STREAM_ONCE(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
+      LOG_WARN_ONCE(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
     } else {
       return -1;
     }
@@ -630,17 +630,16 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
 
 int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_tensors) {
   int ret_code = 0;
-  RCLCPP_WARN_ONCE(logger_, "=> ----- prepare_output_tensor -----");
+  LOG_WARN_ONCE(logger_, "=> ----- prepare_output_tensor -----");
   output_tensors.resize(output_count_);
   for (int i = 0; i < output_count_; ++i) {
     ret_code = hbDNNGetOutputTensorProperties(&output_tensors[i].properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputTensorProperties failed");
-    RCLCPP_WARN_STREAM_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
-                                         static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
+    LOG_WARN_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
+                               static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
     ret_code = hbSysAllocCachedMem(&TENSOR_SYSMEM(output_tensors[i], 0), output_tensors[i].properties.alignedByteSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-    RCLCPP_WARN_STREAM_ONCE(logger_,
-                            "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
+    LOG_WARN_ONCE(logger_, "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
   }
   return ret_code;
 }
@@ -671,7 +670,6 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
   hbDNNTensor &right_input_tensor = input_tensors[1];
 
   if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12) {
-    // RCLCPP_INFO(logger_, "=> fill image data into memory HB_DNN_IMG_TYPE_NV12");
     // fill image data into memory
     ret_code = hbSysWriteMem(&left_input_tensor.sysMem[0], (char *)left_img_data, left_input_tensor.sysMem[0].memSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysWriteMem failed");
@@ -685,7 +683,6 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
     ret_code = hbSysFlushMem(&right_input_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
   } else if (input_tensor_type_ == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
-    // RCLCPP_INFO(logger_, "=>fill image data into memory HB_DNN_IMG_TYPE_NV12_SEPARATE");
     // fill image data into memory
     ret_code = hbSysWriteMem(&left_input_tensor.sysMem[0], (char *)left_img_data, left_input_tensor.sysMem[0].memSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysWriteMem failed");
@@ -710,7 +707,7 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
     ret_code = hbSysFlushMem(&right_input_tensor.sysMem[1], HB_SYS_MEM_CACHE_CLEAN);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
   } else {
-    RCLCPP_ERROR(logger_, "=> input_tensor_type is not in [HB_DNN_IMG_TYPE_NV12, HB_DNN_IMG_TYPE_NV12_SEPARATE]");
+    LOG_ERROR(logger_, "=> input_tensor_type is not in [HB_DNN_IMG_TYPE_NV12, HB_DNN_IMG_TYPE_NV12_SEPARATE]");
     return -1;
   }
 #endif
@@ -722,7 +719,6 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
   hbDNNTensor &right_input_uv_tensor = input_tensors[3];
 
   if (input_tensor_type_ == HB_DNN_TENSOR_TYPE_U8) {
-    // RCLCPP_INFO(logger_, "=>fill image data into memory HB_DNN_TENSOR_TYPE_U8");
     // fill image data into memory
     ret_code = hbSysWriteMem(&left_input_y_tensor.sysMem, (char *)left_img_data, left_input_y_tensor.sysMem.memSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysWriteMem failed");
@@ -746,7 +742,7 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
     ret_code = hbSysFlushMem(&right_input_uv_tensor.sysMem, HB_SYS_MEM_CACHE_CLEAN);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
   } else {
-    RCLCPP_ERROR(logger_, "=> input_tensor_type is not in [HB_DNN_TENSOR_TYPE_U8]");
+    LOG_ERROR(logger_, "=> input_tensor_type is not in [HB_DNN_TENSOR_TYPE_U8]");
     return -1;
   }
 #endif

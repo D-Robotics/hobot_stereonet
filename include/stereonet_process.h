@@ -18,16 +18,18 @@
 #include <atomic>
 #include <deque>
 #include <string>
-#include <rclcpp/rclcpp.hpp>
 #include <opencv2/opencv.hpp>
+#include "log_macros.h"
 #include "order_blockqueue.hpp"
 #include "camera_intrinsic.h"
-#include "pub_data.h"
 #include "Eigen/Dense"
 #include "magic_enum/magic_enum.hpp"
 #include "dnn_platform.h"
 #include "timer_utils.h"
 #include "BS_thread_pool.hpp"
+#if HOBOT_HAS_RCLCPP
+#include "pub_data.h"
+#endif
 
 namespace stereonet {
 // =================================================================================================================================
@@ -35,7 +37,7 @@ namespace stereonet {
   do {                                                                                                                 \
     /*value can be call of function*/                                                                                  \
     if (ret_code != 0) {                                                                                               \
-      RCLCPP_ERROR_STREAM(logger, "=> [BPU ERROR]: " << errmsg << ", error code: " << ret_code);                       \
+      LOG_ERROR(logger, "=> [BPU ERROR]: " << errmsg << ", error code: " << ret_code);                                 \
     }                                                                                                                  \
   } while (0);
 
@@ -71,10 +73,22 @@ public:
   int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, const double &uncertainty_th,
               cv::Mat &disp, cv::Mat &uncert);
 
+#if HOBOT_HAS_RCLCPP
+  /**
+   * @brief Perform forward inference using the StereoNet model asynchronously
+   * @param left_img_data Pointer to the left image data in NV12 format
+   * @param right_img_data Pointer to the right image data in NV12 format
+   * @param uncertainty_th Uncertainty threshold for postprocessing
+   * @param camera_intrinsic Pointer to the camera intrinsic parameters
+   * @param stereo_msg Pointer to the stereo image message
+   * @param pub_data_queue Output queue for publishing processed data
+   * @return 0 on success, -1 on failure
+   */
   int forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                     const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
                     order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue);
+#endif
 
   /**
    * @brief Get the input size required by the model
