@@ -69,6 +69,19 @@ public:
 };
 } // namespace rclcpp
 
+enum LogLevel {
+  LOG_LEVEL_DEBUG = 0,
+  LOG_LEVEL_INFO = 1,
+  LOG_LEVEL_WARN = 2,
+  LOG_LEVEL_ERROR = 3,
+  LOG_LEVEL_FATAL = 4,
+  LOG_LEVEL_NONE = 5,
+};
+
+inline LogLevel GLOBAL_LOG_LEVEL = LOG_LEVEL_INFO;
+
+#define LOG_SHOULD_PRINT(level) ((level) >= GLOBAL_LOG_LEVEL)
+
 inline const char *getCurrentTimeStr() {
   static char buf[32];
   std::time_t t = std::time(nullptr);
@@ -83,16 +96,35 @@ inline const char *getCurrentTimeStr() {
     std::cout << "[" << level << "] [" << getCurrentTimeStr() << "] " << _oss.str() << std::endl;                      \
   } while (0)
 
-#define LOG_DEBUG(logger, ...) LOG_PRINT_STREAM("DEBUG", __VA_ARGS__)
-#define LOG_INFO(logger, ...) LOG_PRINT_STREAM("INFO", __VA_ARGS__)
-#define LOG_WARN(logger, ...) LOG_PRINT_STREAM("WARN", __VA_ARGS__)
-#define LOG_ERROR(logger, ...) LOG_PRINT_STREAM("ERROR", __VA_ARGS__)
-#define LOG_FATAL(logger, ...) LOG_PRINT_STREAM("FATAL", __VA_ARGS__)
+#define LOG_DEBUG(logger, ...)                                                                                         \
+  do {                                                                                                                 \
+    if (LOG_SHOULD_PRINT(LOG_LEVEL_DEBUG)) LOG_PRINT_STREAM("DEBUG", __VA_ARGS__);                                     \
+  } while (0)
+
+#define LOG_INFO(logger, ...)                                                                                          \
+  do {                                                                                                                 \
+    if (LOG_SHOULD_PRINT(LOG_LEVEL_INFO)) LOG_PRINT_STREAM("INFO", __VA_ARGS__);                                       \
+  } while (0)
+
+#define LOG_WARN(logger, ...)                                                                                          \
+  do {                                                                                                                 \
+    if (LOG_SHOULD_PRINT(LOG_LEVEL_WARN)) LOG_PRINT_STREAM("WARN", __VA_ARGS__);                                       \
+  } while (0)
+
+#define LOG_ERROR(logger, ...)                                                                                         \
+  do {                                                                                                                 \
+    if (LOG_SHOULD_PRINT(LOG_LEVEL_ERROR)) LOG_PRINT_STREAM("ERROR", __VA_ARGS__);                                     \
+  } while (0)
+
+#define LOG_FATAL(logger, ...)                                                                                         \
+  do {                                                                                                                 \
+    if (LOG_SHOULD_PRINT(LOG_LEVEL_FATAL)) LOG_PRINT_STREAM("FATAL", __VA_ARGS__);                                     \
+  } while (0)
 
 #define LOG_DEBUG_ONCE(logger, ...)                                                                                    \
   do {                                                                                                                 \
     static bool done = false;                                                                                          \
-    if (!done) {                                                                                                       \
+    if (!done && LOG_SHOULD_PRINT(LOG_LEVEL_DEBUG)) {                                                                  \
       done = true;                                                                                                     \
       LOG_PRINT_STREAM("DEBUG", __VA_ARGS__);                                                                          \
     }                                                                                                                  \
@@ -101,7 +133,7 @@ inline const char *getCurrentTimeStr() {
 #define LOG_INFO_ONCE(logger, ...)                                                                                     \
   do {                                                                                                                 \
     static bool done = false;                                                                                          \
-    if (!done) {                                                                                                       \
+    if (!done && LOG_SHOULD_PRINT(LOG_LEVEL_INFO)) {                                                                   \
       done = true;                                                                                                     \
       LOG_PRINT_STREAM("INFO", __VA_ARGS__);                                                                           \
     }                                                                                                                  \
@@ -110,7 +142,7 @@ inline const char *getCurrentTimeStr() {
 #define LOG_WARN_ONCE(logger, ...)                                                                                     \
   do {                                                                                                                 \
     static bool done = false;                                                                                          \
-    if (!done) {                                                                                                       \
+    if (!done && LOG_SHOULD_PRINT(LOG_LEVEL_WARN)) {                                                                   \
       done = true;                                                                                                     \
       LOG_PRINT_STREAM("WARN", __VA_ARGS__);                                                                           \
     }                                                                                                                  \
@@ -119,7 +151,7 @@ inline const char *getCurrentTimeStr() {
 #define LOG_ERROR_ONCE(logger, ...)                                                                                    \
   do {                                                                                                                 \
     static bool done = false;                                                                                          \
-    if (!done) {                                                                                                       \
+    if (!done && LOG_SHOULD_PRINT(LOG_LEVEL_ERROR)) {                                                                  \
       done = true;                                                                                                     \
       LOG_PRINT_STREAM("ERROR", __VA_ARGS__);                                                                          \
     }                                                                                                                  \
@@ -128,7 +160,7 @@ inline const char *getCurrentTimeStr() {
 #define LOG_FATAL_ONCE(logger, ...)                                                                                    \
   do {                                                                                                                 \
     static bool done = false;                                                                                          \
-    if (!done) {                                                                                                       \
+    if (!done && LOG_SHOULD_PRINT(LOG_LEVEL_FATAL)) {                                                                  \
       done = true;                                                                                                     \
       LOG_PRINT_STREAM("FATAL", __VA_ARGS__);                                                                          \
     }                                                                                                                  \
