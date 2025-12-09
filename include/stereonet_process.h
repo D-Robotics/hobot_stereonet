@@ -20,14 +20,14 @@
 #include <string>
 #include <opencv2/opencv.hpp>
 #include "log_macros.h"
-#include "order_blockqueue.hpp"
 #include "camera_intrinsic.h"
 #include "Eigen/Dense"
 #include "magic_enum/magic_enum.hpp"
 #include "dnn_platform.h"
 #include "timer_utils.h"
-#include "BS_thread_pool.hpp"
 #if HOBOT_HAS_RCLCPP
+#include "order_blockqueue.hpp"
+#include "BS_thread_pool.hpp"
 #include "pub_data.h"
 #endif
 
@@ -49,6 +49,7 @@ namespace stereonet {
  */
 class StereonetProcess {
 public:
+  StereonetProcess() = default;
   explicit StereonetProcess(const rclcpp::Logger &logger);
   ~StereonetProcess();
 
@@ -188,7 +189,9 @@ private:
   int max_disp_ = 192;
   float uncertainty_th_ = 0.10;
 
+#if HOBOT_HAS_RCLCPP
   std::unique_ptr<BS::thread_pool<>> postprocess_thread_pool_ptr_ = nullptr;
+#endif
 };
 } // namespace stereonet
 
