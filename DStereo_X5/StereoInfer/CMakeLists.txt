@@ -28,13 +28,12 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
     GIT_TAG master
 )
-# FetchContent_Declare(
-#     bs_thread_pool
-#     GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
-#     GIT_TAG master
-# )
-# FetchContent_MakeAvailable(magic_enum concurrentqueue bs_thread_pool)
-FetchContent_MakeAvailable(magic_enum concurrentqueue)
+FetchContent_Declare(
+    bs_thread_pool
+    GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
+    GIT_TAG master
+)
+FetchContent_MakeAvailable(magic_enum concurrentqueue bs_thread_pool)
 
 # =================================== set include & link dirs =========================
 include_directories(
@@ -56,6 +55,6 @@ add_executable(stereo_infer
 )
 target_include_directories(stereo_infer PUBLIC
     ${concurrentqueue_SOURCE_DIR}
-    # ${bs_thread_pool_SOURCE_DIR}/include
+    ${bs_thread_pool_SOURCE_DIR}/include
 )
 target_link_libraries(stereo_infer dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS} magic_enum::magic_enum)

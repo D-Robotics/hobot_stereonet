@@ -92,6 +92,23 @@ public:
 #endif
 
   /**
+   * @brief Perform forward inference using the StereoNet model asynchronously
+   * @param left_img_data Pointer to the left image data in NV12 format
+   * @param right_img_data Pointer to the right image data in NV12 format
+   * @param idle_tensor_id Output tensor id
+   * @return 0 on success, -1 on failure
+   */
+  int forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data, int &idle_tensor_id);
+
+  /**
+   * @brief Postprocess the output tensors using convex upsampling
+   * @param tensors Vector of output tensors from the model
+   * @param out_mat Output matrix to hold the processed result
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess(int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
+
+  /**
    * @brief Get the input size required by the model
    * @param w Width of the input image
    * @param h Height of the input image
