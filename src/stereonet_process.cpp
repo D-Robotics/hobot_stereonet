@@ -103,40 +103,9 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
 int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                               const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
   int ret_code = 0;
-
-  int idle_tensor_id = get_idle_tensor();
-  {
-    ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
-    if (idle_tensor_id == -1) {
-      LOG_ERROR(logger_, "=> no idle tensor");
-      return -1;
-    }
-    ret_code =
-        fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data.data(), right_img_data.data());
-  }
-
-  {
-    ScopeProcessTime t(logger_, "infer");
-    hbDNNTensor *output = batch_output_tensors_[idle_tensor_id].data();
-    hbDNNInferCtrlParam infer_ctrl_param;
-    HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
-    hbDNNTaskHandle_t task_handle = nullptr;
-    ret_code =
-        hbDNNInfer(&task_handle, &output, batch_input_tensors_[idle_tensor_id].data(), dnn_handle_, &infer_ctrl_param);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
-    // wait task done
-    ret_code = hbDNNWaitTaskDone(task_handle, 0);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNWaitTaskDone failed");
-    ret_code = hbDNNReleaseTask(task_handle);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
-    // make sure CPU read data from DDR before using output tensor data
-    for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
-      ret_code =
-          hbSysFlushMem(&TENSOR_SYSMEM(batch_output_tensors_[idle_tensor_id][i], 0), HB_SYS_MEM_CACHE_INVALIDATE);
-      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
-    }
-  }
-
+  // forward
+  int idle_tensor_id = 0;
+  ret_code = forward(left_img_data, right_img_data, idle_tensor_id);
   // postprocess
   ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
 
@@ -152,39 +121,11 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 
   if (postprocess_thread_pool_ptr_ == nullptr) postprocess_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
 
-  int idle_tensor_id = get_idle_tensor();
-  {
-    ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
-    if (idle_tensor_id == -1) {
-      LOG_ERROR(logger_, "=> no idle tensor");
-      return -1;
-    }
-    ret_code =
-        fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data.data(), right_img_data.data());
-  }
+  // forward
+  int idle_tensor_id = 0;
+  ret_code = forward(left_img_data, right_img_data, idle_tensor_id);
 
-  {
-    ScopeProcessTime t(logger_, "infer_async");
-    hbDNNTensor *output = batch_output_tensors_[idle_tensor_id].data();
-    hbDNNInferCtrlParam infer_ctrl_param;
-    HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
-    hbDNNTaskHandle_t task_handle = nullptr;
-    ret_code =
-        hbDNNInfer(&task_handle, &output, batch_input_tensors_[idle_tensor_id].data(), dnn_handle_, &infer_ctrl_param);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
-    // wait task done
-    ret_code = hbDNNWaitTaskDone(task_handle, 0);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNWaitTaskDone failed");
-    ret_code = hbDNNReleaseTask(task_handle);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
-    // make sure CPU read data from DDR before using output tensor data
-    for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
-      ret_code =
-          hbSysFlushMem(&TENSOR_SYSMEM(batch_output_tensors_[idle_tensor_id][i], 0), HB_SYS_MEM_CACHE_INVALIDATE);
-      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
-    }
-  }
-
+  // postprocess
   postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, left_img_data, right_img_data,
                                              camera_intrinsic, stereo_msg, &pub_data_queue]() {
     cv::Mat disp, uncert;
