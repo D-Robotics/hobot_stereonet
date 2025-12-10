@@ -21,7 +21,7 @@ void ImgConvertUtils::nv12_to_bgr24_neon(uint8_t *nv12, uint8_t *bgr24, int widt
   int8x8_t _v127 = vdup_n_s8(127);
   uint8x8_t _v16 = vdup_n_u8(16);
   uint8x8_t _v75 = vdup_n_u8(75);
-  uint8x8_t _vu64 = vdup_n_u8(64);
+  // uint8x8_t _vu64 = vdup_n_u8(64);
   int8x8_t _v52 = vdup_n_s8(52);
   int8x8_t _v25 = vdup_n_s8(25);
   int8x8_t _v102 = vdup_n_s8(102);

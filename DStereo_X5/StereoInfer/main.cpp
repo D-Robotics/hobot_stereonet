@@ -22,12 +22,20 @@
 #include <opencv2/opencv.hpp>
 #include "blockingconcurrentqueue.h"
 #include "BS_thread_pool.hpp"
+#include <atomic>
+#include <csignal>
 // =============== stereonet ===============
 #include "log_macros.h"
 #include "camera_intrinsic.h"
 #include "stereonet_process.h"
 #include "img_convert_utils.h"
 // =============== stereonet ===============
+
+static std::atomic<bool> g_running{true};
+
+void signal_handler(int) {
+  g_running = false;
+}
 
 class StereoNetNode {
 public:
@@ -45,7 +53,15 @@ public:
     publish_thread_ = std::thread(&StereoNetNode::publish_function, this);
     postprocess_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
   }
-  ~StereoNetNode() = default;
+
+  ~StereoNetNode() {
+    LOG_INFO(nullptr, "=> release StereoNetNode");
+    g_running = false;
+    if (capture_thread_.joinable()) capture_thread_.join();
+    for (auto &t : infer_threads_)
+      if (t.joinable()) t.join();
+    if (publish_thread_.joinable()) publish_thread_.join();
+  }
 
 private:
   void capture_function() {
@@ -88,7 +104,7 @@ private:
     ImgConvertUtils::bgr_mat_to_nv12(right_img_resize, right_img_nv12.data());
 
     // enqueue
-    while (true) {
+    while (g_running) {
       while (input_image_queue_.size_approx() >= 10) {
         // LOG_INFO(nullptr, "=> drop one input image");
         std::pair<std::vector<uint8_t>, std::vector<uint8_t>> drop;
@@ -100,16 +116,16 @@ private:
   }
 
   void infer_function() {
-    while (true) {
+    while (g_running) {
       std::pair<std::vector<uint8_t>, std::vector<uint8_t>> input_data;
       if (input_image_queue_.wait_dequeue_timed(input_data, std::chrono::milliseconds(100))) {
         // infer by multi-thread
-        auto left_img_nv12 = input_data.first;
-        auto right_img_nv12 = input_data.second;
         if (infer_thread_num_ > 1) {
+          std::vector<uint8_t> left_img_nv12 = input_data.first;
+          std::vector<uint8_t> right_img_nv12 = input_data.second;
           LOG_INFO_ONCE(nullptr, "=> infer by multi-thread: " << infer_thread_num_);
           cv::Mat disp, uncert;
-          stereonet_process_->forward(left_img_nv12, right_img_nv12, uncertainty_th_, disp, uncert);
+          stereonet_process_->forward_sync(left_img_nv12, right_img_nv12, uncertainty_th_, disp, uncert);
           cv::Mat depth;
           stereonet_process_->disp_to_depth(disp, depth, camera_intrinsic_.fx, camera_intrinsic_.baseline);
 
@@ -121,21 +137,31 @@ private:
           }
           pub_data_queue_.enqueue(std::make_pair(disp, depth));
         } else {
+          uint8_t *left_img_nv12 = input_data.first.data();
+          uint8_t *right_img_nv12 = input_data.second.data();
           LOG_INFO_ONCE(nullptr, "=> infer by single thread");
-          int idle_tensor_id;
+          int idle_tensor_id = 0;
           stereonet_process_->forward(left_img_nv12, right_img_nv12, idle_tensor_id);
           postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, left_img_nv12, right_img_nv12]() {
-            cv::Mat disp, uncert;
-            stereonet_process_->postprocess(idle_tensor_id, uncertainty_th_, disp, uncert);
-            cv::Mat depth;
-            stereonet_process_->disp_to_depth(disp, depth, camera_intrinsic_.fx, camera_intrinsic_.baseline);
+            int width, height;
+            stereonet_process_->get_model_input_size(width, height);
+            std::vector<float> disp, uncert;
+            std::vector<uint16_t> depth;
+            disp.resize(width * height);
+            uncert.resize(width * height);
+            depth.resize(width * height);
+            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, disp.data(), uncert.data(), camera_intrinsic_.fx, camera_intrinsic_.baseline, depth.data());
+            cv::Mat disp_mat(height, width, CV_32FC1);
+            memcpy(disp_mat.data, disp.data(), width * height * sizeof(float));
+            cv::Mat depth_mat(height, width, CV_16UC1);
+            memcpy(depth_mat.data, depth.data(), width * height * sizeof(uint16_t));
             // enquque
             while (pub_data_queue_.size_approx() >= 10) {
               LOG_INFO(nullptr, "=> drop one pub data");
               std::pair<cv::Mat, cv::Mat> drop;
               pub_data_queue_.try_dequeue(drop);
             }
-            pub_data_queue_.enqueue(std::make_pair(disp, depth));
+            pub_data_queue_.enqueue(std::make_pair(disp_mat, depth_mat));
           });
         }
       }
@@ -146,7 +172,7 @@ private:
     // calc time cost
     auto now = std::chrono::system_clock::now();
     int count = 0;
-    while (true) {
+    while (g_running) {
       // dequeue
       std::pair<cv::Mat, cv::Mat> pub_data;
       if (pub_data_queue_.wait_dequeue_timed(pub_data, std::chrono::milliseconds(100))) {
@@ -216,6 +242,9 @@ private:
 };
 
 int main(int argc, char **argv) {
+  std::signal(SIGINT, signal_handler);
+  std::signal(SIGTERM, signal_handler);
+
   std::string model_path = "./DStereoV2.6_int8.bin";
   int infer_thread_num = 1;
   if (argc > 1) {
@@ -231,8 +260,13 @@ int main(int argc, char **argv) {
 
   auto stereonet_node = std::make_shared<StereoNetNode>(model_path, infer_thread_num);
 
-  while (true) {
+  // ctrl + c signal handler
+  while (g_running) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
+
+  // release StereoNetNode
+  stereonet_node.reset();
 
   return 0;
 }

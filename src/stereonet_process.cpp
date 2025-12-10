@@ -100,12 +100,50 @@ int StereonetProcess::init(const std::string &model_path, const int &max_memory_
   return ret_code;
 }
 
-int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                              const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
+int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, int &idle_tensor_id) {
+  int ret_code = 0;
+
+  idle_tensor_id = get_idle_tensor();
+  {
+    ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
+    if (idle_tensor_id == -1) {
+      LOG_ERROR(logger_, "=> no idle tensor");
+      return -1;
+    }
+    ret_code = fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data, right_img_data);
+  }
+
+  {
+    ScopeProcessTime t(logger_, "infer");
+    hbDNNTensor *output = batch_output_tensors_[idle_tensor_id].data();
+    hbDNNInferCtrlParam infer_ctrl_param;
+    HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
+    hbDNNTaskHandle_t task_handle = nullptr;
+    ret_code =
+        hbDNNInfer(&task_handle, &output, batch_input_tensors_[idle_tensor_id].data(), dnn_handle_, &infer_ctrl_param);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
+    // wait task done
+    ret_code = hbDNNWaitTaskDone(task_handle, 0);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNWaitTaskDone failed");
+    ret_code = hbDNNReleaseTask(task_handle);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
+    // make sure CPU read data from DDR before using output tensor data
+    for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
+      ret_code =
+          hbSysFlushMem(&TENSOR_SYSMEM(batch_output_tensors_[idle_tensor_id][i], 0), HB_SYS_MEM_CACHE_INVALIDATE);
+      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
+    }
+  }
+
+  return ret_code;
+}
+
+int StereonetProcess::forward_sync(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
+                                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
   int ret_code = 0;
   // forward
   int idle_tensor_id = 0;
-  ret_code = forward(left_img_data, right_img_data, idle_tensor_id);
+  ret_code = forward(left_img_data.data(), right_img_data.data(), idle_tensor_id);
   // postprocess
   ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
 
@@ -123,7 +161,7 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 
   // forward
   int idle_tensor_id = 0;
-  ret_code = forward(left_img_data, right_img_data, idle_tensor_id);
+  ret_code = forward(left_img_data.data(), right_img_data.data(), idle_tensor_id);
 
   // postprocess
   postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, left_img_data, right_img_data,
@@ -154,47 +192,8 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 }
 #endif
 
-int StereonetProcess::forward(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                              int &idle_tensor_id) {
-  int ret_code = 0;
-
-  idle_tensor_id = get_idle_tensor();
-  {
-    ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
-    if (idle_tensor_id == -1) {
-      LOG_ERROR(logger_, "=> no idle tensor");
-      return -1;
-    }
-    ret_code =
-        fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data.data(), right_img_data.data());
-  }
-
-  {
-    ScopeProcessTime t(logger_, "infer");
-    hbDNNTensor *output = batch_output_tensors_[idle_tensor_id].data();
-    hbDNNInferCtrlParam infer_ctrl_param;
-    HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
-    hbDNNTaskHandle_t task_handle = nullptr;
-    ret_code =
-        hbDNNInfer(&task_handle, &output, batch_input_tensors_[idle_tensor_id].data(), dnn_handle_, &infer_ctrl_param);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInfer failed");
-    // wait task done
-    ret_code = hbDNNWaitTaskDone(task_handle, 0);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNWaitTaskDone failed");
-    ret_code = hbDNNReleaseTask(task_handle);
-    HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNReleaseTask failed");
-    // make sure CPU read data from DDR before using output tensor data
-    for (size_t i = 0; i < batch_output_tensors_[idle_tensor_id].size(); i++) {
-      ret_code =
-          hbSysFlushMem(&TENSOR_SYSMEM(batch_output_tensors_[idle_tensor_id][i], 0), HB_SYS_MEM_CACHE_INVALIDATE);
-      HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
-    }
-  }
-
-  return ret_code;
-}
-
-int StereonetProcess::postprocess(int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
+int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp,
+                                  cv::Mat &uncert) {
   int ret_code = 0;
 
   ScopeProcessTime t(logger_, "postprocess");
@@ -256,6 +255,22 @@ int StereonetProcess::postprocess(int idle_tensor_id, const double &uncertainty_
 
   // reset idle tensor
   set_tensor_idle(idle_tensor_id);
+
+  return ret_code;
+}
+
+int StereonetProcess::postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th, float *disp,
+                                                 float *uncert, const double fx, const double baseline,
+                                                 uint16_t *depth) {
+  int ret_code = 0;
+  cv::Mat disp_mat, uncert_mat, depth_mat;
+  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp_mat, uncert_mat);
+  // disp_mat.setTo(0, disp_mat > 192.0);
+  disp_to_depth(disp_mat, depth_mat, fx, baseline);
+
+  memcpy(disp, disp_mat.data, disp_mat.total() * sizeof(float));
+  memcpy(uncert, uncert_mat.data, uncert_mat.total() * sizeof(float));
+  memcpy(depth, depth_mat.data, depth_mat.total() * sizeof(uint16_t));
 
   return ret_code;
 }
@@ -355,7 +370,7 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
 int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors,
                                                                 cv::Mat &out_mat) {
   const int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
-  int disp_c_dim = disp_shape[1];
+  // int disp_c_dim = disp_shape[1];
   int disp_h_dim = disp_shape[2];
   int disp_w_dim = disp_shape[3];
   int total_disp_size = disp_h_dim * disp_w_dim;
@@ -715,7 +730,7 @@ void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const 
 }
 */
 
-void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double &fx, const double &baseline) {
+void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double fx, const double baseline) {
   depth.create(disp.size(), CV_16UC1);
   const int rows = disp.rows;
   const int cols = disp.cols;

@@ -447,7 +447,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
 
         // ================================== Inference ==================================
         cv::Mat disp, uncert;
-        stereonet_process_->forward(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, disp, uncert);
+        stereonet_process_->forward_sync(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, disp, uncert);
         cv::Mat depth;
         {
           ScopeProcessTime t(this->get_logger(), "disp_to_depth");

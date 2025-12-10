@@ -4,3 +4,5 @@ tools/build
 platform_private
 DStereo_X5/StereoInfer/build
 DStereo_X5/DepthToPointCloud/build
+src/*.dep
+src/*.obj
