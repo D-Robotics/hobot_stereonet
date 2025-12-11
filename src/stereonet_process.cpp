@@ -139,13 +139,14 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, i
 }
 
 int StereonetProcess::forward_sync(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
+                                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert,
+                                   const std::string &post_version) {
   int ret_code = 0;
   // forward
   int idle_tensor_id = 0;
   ret_code = forward(left_img_data.data(), right_img_data.data(), idle_tensor_id);
   // postprocess
-  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
+  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert, post_version);
 
   return ret_code;
 }
@@ -154,7 +155,8 @@ int StereonetProcess::forward_sync(std::vector<uint8_t> &left_img_data, std::vec
 int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                                     const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
-                                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue) {
+                                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue,
+                                    const std::string &post_version) {
   int ret_code = 0;
 
   if (postprocess_thread_pool_ptr_ == nullptr) postprocess_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
@@ -165,12 +167,12 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 
   // postprocess
   postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, left_img_data, right_img_data,
-                                             camera_intrinsic, stereo_msg, &pub_data_queue]() {
+                                             camera_intrinsic, stereo_msg, &pub_data_queue, post_version]() {
     cv::Mat disp, uncert;
-    postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
+    postprocess(idle_tensor_id, uncertainty_th, disp, uncert, post_version);
 
     cv::Mat depth;
-    disp_to_depth(disp, depth, camera_intrinsic->fx, camera_intrinsic->baseline);
+    disp_to_depth(disp, depth, *camera_intrinsic);
 
     auto pub_data = std::make_shared<PubData>();
     pub_data->timestamp = static_cast<uint64_t>(stereo_msg->header.stamp.sec) * 1'000'000'000 +
@@ -216,12 +218,12 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
   int spx_w_dim = spx_shape[3];
 
   // postprocess
-  if ((output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) || post_version == "v2.0") {
+  if (post_version == "v2.0" || (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
     ret_code = postprocess_convex_upsampling(outputs, disp);
-  } else if ((output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) ||
-             post_version == "v2.2" || post_version == "v2.3" || post_version == "v2.4") {
+  } else if (post_version == "v2.2" || post_version == "v2.3" || post_version == "v2.4" ||
+             (output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim)) {
     ret_code = postprocess_convex_upsampling_with_interp(outputs, disp);
-  } else if ((output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) || post_version == "v2.1") {
+  } else if (post_version == "v2.1" || (output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
     std::vector<hbDNNTensor> infer_disp_tensor(outputs.begin(), outputs.begin() + 2);
     ret_code = postprocess_convex_upsampling(infer_disp_tensor, disp);
     if (uncertainty_th > 0 && ret_code == 0) {
@@ -234,8 +236,8 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
         disp = disp.mul(mask);
       }
     }
-  } else if ((output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) ||
-             post_version == "v2.4_uncert") {
+  } else if (post_version == "v2.4_uncert" ||
+             (output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim)) {
     std::vector<hbDNNTensor> infer_disp_tensor(outputs.begin(), outputs.begin() + 2);
     ret_code = postprocess_convex_upsampling_with_interp(infer_disp_tensor, disp);
     if (uncertainty_th > 0 && ret_code == 0) {
@@ -261,14 +263,13 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
   return ret_code;
 }
 
-int StereonetProcess::postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th, float *disp,
-                                                 float *uncert, const double fx, const double baseline,
-                                                 uint16_t *depth) {
+int StereonetProcess::postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th,
+                                                 const CameraIntrinsic &camera_intrinsic, float *disp, float *uncert,
+                                                 uint16_t *depth, const std::string &post_version) {
   int ret_code = 0;
   cv::Mat disp_mat, uncert_mat, depth_mat;
-  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp_mat, uncert_mat);
-  // disp_mat.setTo(0, disp_mat > 192.0);
-  disp_to_depth(disp_mat, depth_mat, fx, baseline);
+  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp_mat, uncert_mat, post_version);
+  disp_to_depth(disp_mat, depth_mat, camera_intrinsic);
 
   memcpy(disp, disp_mat.data, disp_mat.total() * sizeof(float));
   memcpy(uncert, uncert_mat.data, uncert_mat.total() * sizeof(float));
@@ -615,7 +616,7 @@ int StereonetProcess::get_idle_tensor() {
   return -1;
 }
 
-int StereonetProcess::set_tensor_idle(int tensor_id) {
+int StereonetProcess::set_tensor_idle(const int &tensor_id) {
   if (tensor_id >= 0 || tensor_id < max_memory_count_) {
     idle_tensor_[tensor_id] = true;
     return 0;
@@ -711,8 +712,13 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
   return ret_code;
 }
 
+void StereonetProcess::get_model_input_size(int &w, int &h) const {
+  w = model_input_w_;
+  h = model_input_h_;
+}
+
 /*
-void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double &fx, const double &baseline) {
+void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic) {
   depth = cv::Mat::zeros(disp.size(), CV_16UC1);
   for (int i = 0; i < disp.rows; ++i) {
     for (int j = 0; j < disp.cols; ++j) {
@@ -720,7 +726,7 @@ void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const 
       if (d <= 0.0) {
         depth.at<uint16_t>(i, j) = 0;
       } else {
-        float z = (baseline * fx * 1000.0) / d; // in mm
+        float z = (camera_intrinsic.baseline * camera_intrinsic.fx * 1000.0) / (d + camera_intrinsic.doffs); // in mm
         if (z > 65535.0) {
           depth.at<uint16_t>(i, j) = 65535;
         } else {
@@ -732,12 +738,13 @@ void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const 
 }
 */
 
-void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double fx, const double baseline) {
+void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic) {
   depth.create(disp.size(), CV_16UC1);
   const int rows = disp.rows;
   const int cols = disp.cols;
 
-  float scale = baseline * fx * 1000.0f; // in mm
+  float fb = camera_intrinsic.baseline * camera_intrinsic.fx * 1000.0f; // in mm
+  float doffs = camera_intrinsic.doffs;
 
   for (int i = 0; i < rows; ++i) {
     const float *disp_ptr = disp.ptr<float>(i);
@@ -751,8 +758,8 @@ void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const 
       // mask for d > 0
       uint32x4_t mask = vcgtq_f32(d, vdupq_n_f32(0.0f));
 
-      // z = scale / d
-      float32x4_t z = vdivq_f32(vdupq_n_f32(scale), d);
+      // z = scale / (d+doffs)
+      float32x4_t z = vdivq_f32(vdupq_n_f32(fb), vaddq_f32(d, vdupq_n_f32(doffs)));
 
       // clamp to 65535
       float32x4_t z_clamped = vminq_f32(z, vdupq_n_f32(65535.0f));
@@ -772,15 +779,151 @@ void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const 
       if (d <= 0.0f)
         depth_ptr[j] = 0;
       else {
-        float z = scale / d;
+        float z = fb / (d + doffs);
         depth_ptr[j] = (z > 65535.0f) ? 65535 : static_cast<uint16_t>(z);
       }
     }
   }
 }
 
-void StereonetProcess::get_model_input_size(int &w, int &h) const {
-  w = model_input_w_;
-  h = model_input_h_;
+void StereonetProcess::depth_to_pointcloud(const cv::Mat &depth, const CameraIntrinsic &camera_intrinsic,
+                                           std::vector<PointXYZ> &pointcloud, const float &max_depth) {
+  CV_Assert(depth.type() == CV_16UC1);
+
+  const int rows = depth.rows;
+  const int cols = depth.cols;
+  pointcloud.clear();
+  pointcloud.resize(static_cast<size_t>(rows) * cols); // allocate once
+
+  const float inv_fx = 1.0f / camera_intrinsic.fx;
+  const float inv_fy = 1.0f / camera_intrinsic.fy;
+  const float cx = camera_intrinsic.cx;
+  const float cy = camera_intrinsic.cy;
+
+  size_t out_idx = 0;
+  for (int i = 0; i < rows; ++i) {
+    const uint16_t *dptr = depth.ptr<uint16_t>(i);
+    const float y_factor = (i - cy) * inv_fy; // reuse per row
+    for (int j = 0; j < cols; ++j) {
+      const uint16_t d = dptr[j];
+      if (d == 0) continue;       // invalid depth
+      const float Z = d * 0.001f; // mm -> m
+      if (Z > max_depth) continue;     // invalid depth
+      const float X = (j - cx) * Z * inv_fx;
+      const float Y = y_factor * Z;
+      pointcloud[out_idx++] = PointXYZ(X, Y, Z);
+    }
+  }
+  pointcloud.resize(out_idx);
 }
+
+void StereonetProcess::depth_to_pointcloud_rgb(const cv::Mat &depth, const cv::Mat &rgb,
+                                               const CameraIntrinsic &camera_intrinsic,
+                                               std::vector<PointXYZRGB> &pointcloud, const float &max_depth) {
+  CV_Assert(depth.type() == CV_16UC1);
+  CV_Assert(rgb.type() == CV_8UC3);
+
+  const int rows = depth.rows;
+  const int cols = depth.cols;
+  pointcloud.clear();
+  pointcloud.resize(static_cast<size_t>(rows) * cols); // allocate once
+
+  const float inv_fx = 1.0f / camera_intrinsic.fx;
+  const float inv_fy = 1.0f / camera_intrinsic.fy;
+  const float cx = camera_intrinsic.cx;
+  const float cy = camera_intrinsic.cy;
+
+  size_t out_idx = 0;
+  for (int i = 0; i < rows; ++i) {
+    const uint16_t *dptr = depth.ptr<uint16_t>(i);
+    const cv::Vec3b *rgb_ptr = rgb.ptr<cv::Vec3b>(i);
+    const float y_factor = (i - cy) * inv_fy; // reuse per row
+    for (int j = 0; j < cols; ++j) {
+      const uint16_t d = dptr[j];
+      if (d == 0) continue;       // invalid depth
+      const float Z = d * 0.001f; // mm -> m
+      if (Z > max_depth) continue;     // invalid depth
+      const float X = (j - cx) * Z * inv_fx;
+      const float Y = y_factor * Z;
+      pointcloud[out_idx++] = PointXYZRGB(X, Y, Z, rgb_ptr[j][2], rgb_ptr[j][1], rgb_ptr[j][0]);
+    }
+  }
+  pointcloud.resize(out_idx);
+}
+
+void StereonetProcess::dump_pcd_file(const std::string &filename, const std::vector<PointXYZ> &pointcloud,
+                                     const std::string &format) {
+  bool is_ascii = (format == "ascii");
+  std::ofstream ofs(filename, std::ios::binary);
+  if (!ofs.is_open()) return;
+
+  const size_t n = pointcloud.size();
+
+  // header
+  std::ostringstream header;
+  header << "# .PCD v0.7 - Point Cloud Data file format\n";
+  header << "VERSION 0.7\n";
+  header << "FIELDS x y z\n";
+  header << "SIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\n";
+  header << "WIDTH " << n << "\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS " << n << "\n";
+  header << "DATA " << (is_ascii ? "ascii" : "binary") << "\n";
+  ofs.write(header.str().c_str(), header.str().size());
+
+  // write data
+  if (is_ascii) {
+    for (const auto &point : pointcloud) {
+      ofs << point.X << " " << point.Y << " " << point.Z << "\n";
+    }
+  } else {
+    for (const auto &point : pointcloud) {
+      float data[3] = {point.X, point.Y, point.Z};
+      ofs.write(reinterpret_cast<const char *>(data), sizeof(data));
+    }
+  }
+
+  ofs.close();
+}
+
+void StereonetProcess::dump_pcd_file_rgb(const std::string &filename, const std::vector<PointXYZRGB> &pointcloud,
+                                         const std::string &format) {
+  bool is_ascii = (format == "ascii");
+  std::ofstream ofs(filename, std::ios::binary);
+  if (!ofs.is_open()) return;
+
+  size_t n = pointcloud.size();
+
+  // header
+  std::ostringstream header;
+  header << "# .PCD v0.7 - Point Cloud Data file format\n";
+  header << "VERSION 0.7\n";
+  header << "FIELDS x y z rgb\n";
+  header << "SIZE 4 4 4 4\nTYPE F F F F\nCOUNT 1 1 1 1\n";
+  header << "WIDTH " << n << "\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS " << n << "\n";
+  header << "DATA " << (is_ascii ? "ascii" : "binary") << "\n";
+  ofs.write(header.str().c_str(), header.str().size());
+
+  // helper to pack RGB to float
+  auto packRGB = [](uint8_t r, uint8_t g, uint8_t b) -> float {
+    uint32_t rgb = (uint32_t(r) << 16) | (uint32_t(g) << 8) | uint32_t(b);
+    float f;
+    std::memcpy(&f, &rgb, sizeof(float));
+    return f;
+  };
+
+  // write data
+  if (is_ascii) {
+    for (const auto &p : pointcloud) {
+      float rgb_f = packRGB(p.R, p.G, p.B);
+      ofs << p.X << " " << p.Y << " " << p.Z << " " << rgb_f << "\n";
+    }
+  } else {
+    for (const auto &p : pointcloud) {
+      float data[4] = {p.X, p.Y, p.Z, packRGB(p.R, p.G, p.B)};
+      ofs.write(reinterpret_cast<const char *>(data), sizeof(data));
+    }
+  }
+
+  ofs.close();
+}
+
 } // namespace stereonet

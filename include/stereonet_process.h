@@ -19,6 +19,7 @@
 #include <deque>
 #include <string>
 #include <opencv2/opencv.hpp>
+#include <fstream>
 #include "log_macros.h"
 #include "camera_intrinsic.h"
 #include "Eigen/Dense"
@@ -42,6 +43,27 @@ namespace stereonet {
   } while (0);
 
 // =================================================================================================================================
+
+/**
+ * @brief XYZ point structure
+ */
+struct PointXYZ {
+  PointXYZ() = default;
+  PointXYZ(float x, float y, float z) : X(x), Y(y), Z(z) {
+  }
+  float X, Y, Z;
+};
+
+/**
+ * @brief RGB point structure
+ */
+struct PointXYZRGB {
+  PointXYZRGB() = default;
+  PointXYZRGB(float x, float y, float z, uint8_t r, uint8_t g, uint8_t b) : X(x), Y(y), Z(z), R(r), G(g), B(b) {
+  }
+  float X, Y, Z;
+  uint8_t R, G, B;
+};
 
 /**
  * @brief StereonetProcess class for StereoNet model inference
@@ -81,7 +103,8 @@ public:
    * @return 0 on success, -1 on failure
    */
   int forward_sync(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
+                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert,
+                   const std::string &post_version = "auto");
 
 #if HOBOT_HAS_RCLCPP
   /**
@@ -97,7 +120,8 @@ public:
   int forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                     const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
-                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue);
+                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue,
+                    const std::string &post_version = "auto");
 #endif
 
   /**
@@ -114,15 +138,15 @@ public:
    * @brief Postprocess and output disparity map, uncertainty map and depth map
    * @param idle_tensor_id Output tensor id
    * @param uncertainty_th Uncertainty threshold for postprocessing
+   * @param camera_intrinsic Camera intrinsic parameters
    * @param disp Output disparity map
    * @param uncert Output uncertainty map
-   * @param fx Focal length in x direction
-   * @param baseline Baseline distance between the two cameras
    * @param depth Output depth map
    * @return 0 on success, -1 on failure
    */
-  int postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th, float *disp, float *uncert,
-                                 const double fx, const double baseline, uint16_t *depth);
+  int postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th,
+                                 const CameraIntrinsic &camera_intrinsic, float *disp, float *uncert, uint16_t *depth,
+                                 const std::string &post_version = "auto");
 
   /**
    * @brief Get the input size required by the model
@@ -135,10 +159,46 @@ public:
    * @brief Convert disparity map to depth map
    * @param disp Input disparity map
    * @param depth Output depth map
-   * @param fx Focal length in x direction
-   * @param baseline Baseline distance between the two cameras
+   * @param camera_intrinsic Camera intrinsic parameters
    */
-  static void disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const double fx, const double baseline);
+  static void disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic);
+
+  /**
+   * @brief Convert depth map to point cloud
+   * @param depth Input depth map
+   * @param camera_intrinsic Camera intrinsic parameters
+   * @param pointcloud Output point cloud
+   * @param max_depth Maximum depth value (unit: m)
+   */
+  static void depth_to_pointcloud(const cv::Mat &depth, const CameraIntrinsic &camera_intrinsic,
+                                  std::vector<PointXYZ> &pointcloud, const float &max_depth = 5.0f);
+
+  /**
+   * @brief Convert depth map to point cloud with RGB
+   * @param depth Input depth map
+   * @param rgb Input RGB image
+   * @param camera_intrinsic Camera intrinsic parameters
+   * @param pointcloud Output point cloud
+   * @param max_depth Maximum depth value (unit: m)
+   */
+  static void depth_to_pointcloud_rgb(const cv::Mat &depth, const cv::Mat &rgb, const CameraIntrinsic &camera_intrinsic,
+                                      std::vector<PointXYZRGB> &pointcloud, const float &max_depth = 5.0f);
+
+  /**
+   * @brief Dump point cloud to PCD file
+   * @param filename Output PCD file name
+   * @param pointcloud Input point cloud
+   */
+  static void dump_pcd_file(const std::string &filename, const std::vector<PointXYZ> &pointcloud,
+                            const std::string &format = "binary");
+
+  /**
+   * @brief Dump point cloud to PCD file with RGB
+   * @param filename Output PCD file name
+   * @param pointcloud Input point cloud
+   */
+  static void dump_pcd_file_rgb(const std::string &filename, const std::vector<PointXYZRGB> &pointcloud,
+                                const std::string &format = "binary");
 
 private:
   // ===================================== member functions =======================================
@@ -167,7 +227,7 @@ private:
    * @param tensor_id Index of the tensor to set as idle
    * @return 0 on success, -1 on failure
    */
-  int set_tensor_idle(int tensor_id);
+  int set_tensor_idle(const int &tensor_id);
 
   /**
    * @brief Fill image data into the input tensor

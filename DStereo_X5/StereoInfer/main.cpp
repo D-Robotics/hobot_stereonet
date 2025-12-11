@@ -29,6 +29,7 @@
 #include "camera_intrinsic.h"
 #include "stereonet_process.h"
 #include "img_convert_utils.h"
+#include "performance_record.h"
 // =============== stereonet ===============
 
 static std::atomic<bool> g_running{true};
@@ -36,6 +37,29 @@ static std::atomic<bool> g_running{true};
 void signal_handler(int) {
   g_running = false;
 }
+
+struct InputData {
+  InputData(uint64_t timestamp, const cv::Mat &left_img, const std::vector<uint8_t> &left_img_nv12,
+            const std::vector<uint8_t> &right_img_nv12)
+      : timestamp(timestamp), left_img(left_img), left_img_nv12(left_img_nv12), right_img_nv12(right_img_nv12) {
+  }
+  // timestamp
+  uint64_t timestamp; // ms
+  cv::Mat left_img;
+  std::vector<uint8_t> left_img_nv12;
+  std::vector<uint8_t> right_img_nv12;
+};
+
+struct PubData {
+  PubData(uint64_t timestamp, const cv::Mat &left_img, const cv::Mat &disp, const cv::Mat &depth)
+      : timestamp(timestamp), left_img(left_img), disp(disp), depth(depth) {
+  }
+  // timestamp
+  uint64_t timestamp; // ms
+  cv::Mat left_img;
+  cv::Mat disp;
+  cv::Mat depth;
+};
 
 class StereoNetNode {
 public:
@@ -53,6 +77,10 @@ public:
     }
     publish_thread_ = std::thread(&StereoNetNode::publish_function, this);
     postprocess_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
+    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
+
+    // performance
+    performance_writer::Get();
   }
 
   ~StereoNetNode() {
@@ -62,6 +90,14 @@ public:
     for (auto &t : infer_threads_)
       if (t.joinable()) t.join();
     if (publish_thread_.joinable()) publish_thread_.join();
+    if (postprocess_thread_pool_ptr_) {
+      postprocess_thread_pool_ptr_->wait();
+      postprocess_thread_pool_ptr_.reset();
+    }
+    if (save_thread_pool_ptr_) {
+      save_thread_pool_ptr_->wait();
+      save_thread_pool_ptr_.reset();
+    }
   }
 
 private:
@@ -106,44 +142,55 @@ private:
 
     // enqueue
     while (g_running) {
-      while (input_image_queue_.size_approx() >= 10) {
+      while (input_image_queue_.size_approx() >= 1) {
         // LOG_INFO(nullptr, "=> drop one input image");
-        std::pair<std::vector<uint8_t>, std::vector<uint8_t>> drop;
+        std::shared_ptr<InputData> drop;
         input_image_queue_.try_dequeue(drop);
       }
-      input_image_queue_.enqueue(std::make_pair(left_img_nv12, right_img_nv12));
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      // timestamp ms
+      auto timestamp =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+              .count();
+      std::shared_ptr<InputData> input_data =
+          std::make_shared<InputData>(timestamp, left_img_resize, left_img_nv12, right_img_nv12);
+      input_image_queue_.enqueue(input_data);
+      std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
   }
 
   void infer_function() {
     while (g_running) {
-      std::pair<std::vector<uint8_t>, std::vector<uint8_t>> input_data;
+      std::shared_ptr<InputData> input_data;
       if (input_image_queue_.wait_dequeue_timed(input_data, std::chrono::milliseconds(100))) {
         // infer by multi-thread
         if (infer_thread_num_ > 1) {
-          std::vector<uint8_t> left_img_nv12 = input_data.first;
-          std::vector<uint8_t> right_img_nv12 = input_data.second;
           LOG_INFO_ONCE(nullptr, "=> infer by multi-thread: " << infer_thread_num_);
+
+          // infer
+          std::vector<uint8_t> left_img_nv12 = input_data->left_img_nv12;
+          std::vector<uint8_t> right_img_nv12 = input_data->right_img_nv12;
           cv::Mat disp, uncert;
           stereonet_process_->forward_sync(left_img_nv12, right_img_nv12, uncertainty_th_, disp, uncert);
           cv::Mat depth;
-          stereonet_process_->disp_to_depth(disp, depth, camera_intrinsic_.fx, camera_intrinsic_.baseline);
+          stereonet_process_->disp_to_depth(disp, depth, camera_intrinsic_);
 
           // enquque
           while (pub_data_queue_.size_approx() >= infer_thread_num_) {
             LOG_INFO(nullptr, "=> drop one pub data");
-            std::pair<cv::Mat, cv::Mat> drop;
+            std::shared_ptr<PubData> drop;
             pub_data_queue_.try_dequeue(drop);
           }
-          pub_data_queue_.enqueue(std::make_pair(disp, depth));
+          pub_data_queue_.enqueue(std::make_shared<PubData>(input_data->timestamp, input_data->left_img, disp, depth));
         } else {
-          uint8_t *left_img_nv12 = input_data.first.data();
-          uint8_t *right_img_nv12 = input_data.second.data();
           LOG_INFO_ONCE(nullptr, "=> infer by single thread");
+
+          // infer
+          uint8_t *left_img_nv12 = input_data->left_img_nv12.data();
+          uint8_t *right_img_nv12 = input_data->right_img_nv12.data();
           int idle_tensor_id = 0;
           stereonet_process_->forward(left_img_nv12, right_img_nv12, idle_tensor_id);
-          postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, left_img_nv12, right_img_nv12]() {
+          postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, input_data]() {
+            // postprocess
             int width, height;
             stereonet_process_->get_model_input_size(width, height);
             std::vector<float> disp, uncert;
@@ -151,20 +198,21 @@ private:
             disp.resize(width * height);
             uncert.resize(width * height);
             depth.resize(width * height);
-            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, disp.data(), uncert.data(),
-                                                           camera_intrinsic_.fx, camera_intrinsic_.baseline,
-                                                           depth.data());
+            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, camera_intrinsic_,
+                                                           disp.data(), uncert.data(), depth.data());
             cv::Mat disp_mat(height, width, CV_32FC1);
             memcpy(disp_mat.data, disp.data(), width * height * sizeof(float));
             cv::Mat depth_mat(height, width, CV_16UC1);
             memcpy(depth_mat.data, depth.data(), width * height * sizeof(uint16_t));
+
             // enquque
-            while (pub_data_queue_.size_approx() >= 10) {
+            while (pub_data_queue_.size_approx() >= infer_thread_num_) {
               LOG_INFO(nullptr, "=> drop one pub data");
-              std::pair<cv::Mat, cv::Mat> drop;
+              std::shared_ptr<PubData> drop;
               pub_data_queue_.try_dequeue(drop);
             }
-            pub_data_queue_.enqueue(std::make_pair(disp_mat, depth_mat));
+            pub_data_queue_.enqueue(
+                std::make_shared<PubData>(input_data->timestamp, input_data->left_img, disp_mat, depth_mat));
           });
         }
       }
@@ -172,26 +220,41 @@ private:
   }
 
   void publish_function() {
-    // calc time cost
-    auto now = std::chrono::system_clock::now();
     int count = 0;
     while (g_running) {
       // dequeue
-      std::pair<cv::Mat, cv::Mat> pub_data;
+      std::shared_ptr<PubData> pub_data;
       if (pub_data_queue_.wait_dequeue_timed(pub_data, std::chrono::milliseconds(100))) {
-        cv::Mat &disp = pub_data.first;
-        cv::Mat &depth = pub_data.second;
+        uint64_t now_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+        uint64_t latency = now_ms - pub_data->timestamp;
+        performance_writer::Get()->record_performance(latency);
         ++count;
         if (count == 100) {
-          auto end = std::chrono::system_clock::now();
-          auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
-          now = end;
           count = 0;
-          cv::imwrite("disp.pfm", disp);
-          cv::imwrite("depth.png", depth);
-          LOG_INFO(nullptr, "=> save disp.pfm and depth.png, time cost: "
-                                << std::fixed << std::setprecision(3) << (duration / 100.0)
-                                << "ms, fps: " << std::setprecision(3) << 1000.0 / (duration / 100.0));
+
+          // print performance
+          auto fps = performance_writer::Get()->get_fps();
+          auto cpu_usage = performance_writer::Get()->get_cpu_usage();
+          auto bpu_usage = performance_writer::Get()->get_bpu_usage();
+          LOG_INFO(nullptr, "=> fps: " << fps << ", latency: " << latency << "ms, cpu_usage: " << cpu_usage
+                                       << "%, bpu_usage: " << bpu_usage << "%");
+
+          // save result
+          save_thread_pool_ptr_->detach_task([this, pub_data]() {
+            // LOG_INFO(nullptr, "=> save disp.pfm / depth.png / pointcloud.pcd");
+            cv::imwrite("disp_" + std::to_string(pub_data->timestamp) + ".pfm", pub_data->disp);
+            cv::imwrite("depth_" + std::to_string(pub_data->timestamp) + ".png", pub_data->depth);
+            // std::vector<stereonet::PointXYZ> pointcloud;
+            // stereonet_process_->depth_to_pointcloud(pub_data->depth, camera_intrinsic_, pointcloud);
+            // stereonet_process_->dump_pcd_file("pointcloud.pcd", pointcloud);
+            std::vector<stereonet::PointXYZRGB> pointcloud;
+            stereonet_process_->depth_to_pointcloud_rgb(pub_data->depth, pub_data->left_img, camera_intrinsic_,
+                                                        pointcloud);
+            stereonet_process_->dump_pcd_file_rgb("pointcloud_" + std::to_string(pub_data->timestamp) + ".pcd",
+                                                  pointcloud);
+          });
         }
       }
     }
@@ -231,12 +294,13 @@ private:
 
   // thread
   std::thread capture_thread_;
-  moodycamel::BlockingConcurrentQueue<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>> input_image_queue_;
+  moodycamel::BlockingConcurrentQueue<std::shared_ptr<InputData>> input_image_queue_;
   std::vector<std::thread> infer_threads_;
   int infer_thread_num_ = 1;
-  moodycamel::BlockingConcurrentQueue<std::pair<cv::Mat, cv::Mat>> pub_data_queue_;
+  moodycamel::BlockingConcurrentQueue<std::shared_ptr<PubData>> pub_data_queue_;
   std::thread publish_thread_;
   std::unique_ptr<BS::thread_pool<>> postprocess_thread_pool_ptr_ = nullptr;
+  std::unique_ptr<BS::thread_pool<>> save_thread_pool_ptr_ = nullptr;
 
   // camera intrinsic
   stereonet::CameraIntrinsic camera_intrinsic_;

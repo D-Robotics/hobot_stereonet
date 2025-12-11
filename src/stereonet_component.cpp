@@ -452,7 +452,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
         {
           ScopeProcessTime t(this->get_logger(), "disp_to_depth");
           if (camera_intrinsic_->is_valid()) {
-            StereonetProcess::disp_to_depth(disp, depth, camera_intrinsic_->fx, camera_intrinsic_->baseline);
+            StereonetProcess::disp_to_depth(disp, depth, *camera_intrinsic_);
           } else {
             if (calib_method_ == "none") {
               RCLCPP_ERROR_ONCE(

@@ -15,22 +15,12 @@
 #ifndef HOBOT_STEREONET_INCLUDE_LOG_MACROS_H_
 #define HOBOT_STEREONET_INCLUDE_LOG_MACROS_H_
 
-#if defined(__has_include)
 #if __has_include(<rclcpp/rclcpp.hpp>)
 #define HOBOT_HAS_RCLCPP 1
 #pragma message("Detected rclcpp.hpp → ROS2 logging enabled")
 #else
 #define HOBOT_HAS_RCLCPP 0
 #pragma message("rclcpp.hpp not found → non-ROS logging enabled")
-#endif
-#else
-#ifdef RCLCPP_RCLCPP_HPP
-#define HOBOT_HAS_RCLCPP 1
-#pragma message("RCLCPP_RCLCPP_HPP defined → ROS2 logging enabled")
-#else
-#define HOBOT_HAS_RCLCPP 0
-#pragma message("RCLCPP_RCLCPP_HPP not defined → non-ROS logging enabled")
-#endif
 #endif
 
 #if HOBOT_HAS_RCLCPP

@@ -27,6 +27,7 @@ struct CameraIntrinsic {
   double fx = 0.0;
   double fy = 0.0;
   double baseline = 0.0; // in meters
+  double doffs = 0.0;
 
   bool is_valid() const {
     return (fx > 0.0 && fy > 0.0 && cx >= 0.0 && cy >= 0.0 && baseline > 0.0);
