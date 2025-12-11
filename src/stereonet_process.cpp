@@ -806,9 +806,9 @@ void StereonetProcess::depth_to_pointcloud(const cv::Mat &depth, const CameraInt
     const float y_factor = (i - cy) * inv_fy; // reuse per row
     for (int j = 0; j < cols; ++j) {
       const uint16_t d = dptr[j];
-      if (d == 0) continue;       // invalid depth
-      const float Z = d * 0.001f; // mm -> m
-      if (Z > max_depth) continue;     // invalid depth
+      if (d == 0) continue;        // invalid depth
+      const float Z = d * 0.001f;  // mm -> m
+      if (Z > max_depth) continue; // invalid depth
       const float X = (j - cx) * Z * inv_fx;
       const float Y = y_factor * Z;
       pointcloud[out_idx++] = PointXYZ(X, Y, Z);
@@ -840,9 +840,9 @@ void StereonetProcess::depth_to_pointcloud_rgb(const cv::Mat &depth, const cv::M
     const float y_factor = (i - cy) * inv_fy; // reuse per row
     for (int j = 0; j < cols; ++j) {
       const uint16_t d = dptr[j];
-      if (d == 0) continue;       // invalid depth
-      const float Z = d * 0.001f; // mm -> m
-      if (Z > max_depth) continue;     // invalid depth
+      if (d == 0) continue;        // invalid depth
+      const float Z = d * 0.001f;  // mm -> m
+      if (Z > max_depth) continue; // invalid depth
       const float X = (j - cx) * Z * inv_fx;
       const float Y = y_factor * Z;
       pointcloud[out_idx++] = PointXYZRGB(X, Y, Z, rgb_ptr[j][2], rgb_ptr[j][1], rgb_ptr[j][0]);
@@ -924,6 +924,58 @@ void StereonetProcess::dump_pcd_file_rgb(const std::string &filename, const std:
   }
 
   ofs.close();
+}
+
+void StereonetProcess::convert_visual_img(const cv::Mat &rgb, const cv::Mat &disp, const cv::Mat &depth,
+                                          cv::Mat &visual_img, int render_max_disp, int depth_decimal_num) {
+  if (depth_decimal_num < 2) depth_decimal_num = 2; // cm
+  if (depth_decimal_num > 3) depth_decimal_num = 3; // mm
+  CV_Assert(rgb.type() == CV_8UC3);
+  CV_Assert(disp.type() == CV_32FC1);
+  CV_Assert(depth.type() == CV_16UC1);
+  disp.convertTo(visual_img, CV_8UC1, 255.0 / render_max_disp);
+  cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
+  static cv::Mat lut;
+  if (lut.empty()) {
+    cv::Mat tmp(1, 256, CV_8UC1);
+    for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = i;
+    cv::applyColorMap(tmp, lut, cv::COLORMAP_JET);
+  }
+  cv::LUT(visual_img, lut, visual_img);
+  cv::Mat mask = (disp == 0);
+  visual_img.setTo(cv::Vec3b(0, 0, 0), mask);
+  cv::vconcat(rgb, visual_img, visual_img);
+
+  double font_scale = std::min(rgb.cols, rgb.rows) / 700.0;
+  int set_num = 6;
+  int x_step = rgb.cols / set_num;
+  int y_step = rgb.rows / set_num;
+
+  // draw lines
+  for (int i = 1; i < set_num; ++i) {
+    // vertical line
+    cv::line(visual_img, cv::Point(i * x_step, 0), cv::Point(i * x_step, visual_img.rows), cv::Scalar(255, 255, 255),
+             1);
+    // horizontal line
+    cv::line(visual_img, cv::Point(0, i * y_step), cv::Point(rgb.cols, i * y_step), cv::Scalar(255, 255, 255), 1);
+    cv::line(visual_img, cv::Point(0, rgb.rows + i * y_step), cv::Point(rgb.cols, rgb.rows + i * y_step),
+             cv::Scalar(255, 255, 255), 1);
+  }
+
+  // draw depth values
+  for (int i = 1; i < set_num; ++i) {
+    for (int j = 1; j < set_num; ++j) {
+      int x = i * x_step;
+      int y = j * y_step;
+      float depth_value = depth.at<uint16_t>(y, x) * 0.001f; // convert mm to m
+      std::stringstream depth_text;
+      depth_text << std::fixed << std::setprecision(depth_decimal_num) << depth_value << "m";
+      cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, y - 5), cv::FONT_HERSHEY_SIMPLEX, font_scale,
+                  CV_RGB(255, 255, 255), 2);
+      cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, rgb.rows + y - 5), cv::FONT_HERSHEY_SIMPLEX,
+                  font_scale, CV_RGB(255, 255, 255), 2);
+    }
+  }
 }
 
 } // namespace stereonet

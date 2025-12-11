@@ -1,98 +1,101 @@
-# X5 双目开发交付
-
 # StereoInfer
 
-双目推理代码，输入双目左右图片和相机内参，输出视差图、深度图
+Stereo inference code. It takes stereo left-right images and camera intrinsics as input,
+and outputs disparity maps, depth maps, visualization images, point clouds, etc.
 
-## 编译
+## Build
 
-- 依赖opencv（图像处理）、eigen（矩阵运算）、dnn（X5 BPU接口）、neon（ARM指令加速），这些库都在3rdparty目录下
+-   Dependencies: OpenCV (image processing), Eigen (matrix operations),
+    DNN (X5 BPU interface), NEON (ARM instruction acceleration).
+    All of these libraries are located in the `3rdparty` directory.
 
-- 下载编译器
-  - 下载地址：https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
-  - 本例使用的是arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz，请下载对应版本并解压
-    ```bash
-    tar -xvf arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-    ```
+-   Download the compiler
 
-- 使用交叉编译进行编译，注意CMakeLists.txt的编译器目录设置为自己对应的目录
+    -   Download link:
+        https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
-```cmake
-set(CMAKE_C_COMPILER /root/dockershare/1_RosCode/work_humble_ws_x5/compiler/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
-set(CMAKE_CXX_COMPILER /root/dockershare/1_RosCode/work_humble_ws_x5/compiler/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
+    -   This example uses `arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz `.
+        Please download the corresponding version and extract it.
+
+        ``` bash
+        tar -xvf arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt
+        ```
+
+-   Use cross-compilation for building. Make sure the compiler path in `run_build.sh` matches your own installation.
+
+``` cmake
+cmake -DCMAKE_BUILD_TYPE=Release .. \
+  -DCMAKE_C_COMPILER=/opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc \
+  -DCMAKE_CXX_COMPILER=/opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++
 ```
 
-- 最后执行编译命令
+-   Enter the `DStereo_X5` directory and run the build script:
 
-```bash
-cd StereoInfer
+``` bash
+cd DStereo_X5
 bash run_build.sh
 ```
 
-- 编译将生成build目录
+-   After compilation, an algorithm test package `StereoInfer.tar` will
+    be generated in the `build` directory.\
+    Copy the test package to the `userdata` directory on the X5 board
+    and extract it:
 
-## 执行
-
-- 需要将build目录、3rdparty目录、make_ln.sh文件复制到X5板端，例如将这些文件复制到X5目录/userdata/
-
-- 然后在/userdata/目录执行
-
-```
-bash make_ln.sh
-```
-
-- 最后运行程序
-
-```bash
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/lib_opencv4.5.4/lib/
-# 指定任意模型均可运行
-./stereo_infer ./DStereoV2.4_int8_544_448.bin
+``` bash
+cd /userdata/
+mkdir StereoInfer
+tar -xvf StereoInfer.tar -C StereoInfer
 ```
 
-- 视差图、深度图打开方式：建议安装[cvkit](https://github.com/roboception/cvkit/releases/tag/v2.6.10)软件打开pfm和png格式图像
+## Run
 
-
-# DepthToPointCloud
-
-深度转点云代码，输入深度图和相机内参，输出点云文件
-
-## 编译
-
-- 依赖opencv（图像处理），这些库都在3rdparty目录下
-
-- 配置交叉编译环境，参考上文
-
-- 使用交叉编译进行编译，注意CMakeLists.txt的编译器目录设置为自己对应的目录
-
-```cmake
-set(CMAKE_C_COMPILER /root/dockershare/1_RosCode/work_humble_ws_x5/compiler/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
-set(CMAKE_CXX_COMPILER /root/dockershare/1_RosCode/work_humble_ws_x5/compiler/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
+-   After extracting the test package, go into the `StereoInfer`
+    directory and run the script to create symbolic links:
+``` bash
+    cd /userdata/StereoInfer
+    bash make_ln.sh
 ```
 
-- 执行编译命令
+-   Finally, run the program:
 
-```bash
-cd DepthToPointCloud
-bash run_build.sh
+``` bash
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/StereoInfer/3rdparty/lib_opencv4.5.4/lib/
+./stereo_infer ./model/DStereoV2.4_int16_uncertainty.bin 1 0.10
 ```
 
-- 编译将生成build目录
+Parameter Explanation:
+1. The first parameter is the `bin` model, which allows you to specify other models, and the model is in the `model` directory
+2. The second parameter is the number of `inference threads`, set to 1 for single-threaded inference, greater than 1 for multi-threaded inference, and the single-threaded inference `latency` is smaller
+3. The third parameter is `uncertainty`, which will only take effect if the model supports uncertainty, and it is recommended to set it to `0.10`
+4. All 3 parameters are optional, and the default value is `./model/DStereoV2.4_int16.bin` for the first parameter, `1` for the second parameter, and `-0.10` for the third parameter
 
-## 执行
+After execution, you can check the console log output for the program's `fps`, `latency`, `cpu_usage`, `bpu_usage`.
+This information is also recorded in `performance_xx.txt` in the current directory.
 
-- 需要将build目录、3rdparty目录、make_ln.sh文件复制到X5板端，例如将这些文件复制到X5目录/userdata/
+![console_log_performance](docs/console_log_performance.png)
 
-- 然后在/userdata/目录执行
+ | Name      | Description                                                                                                                                                  |
+ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+ | fps       | Frame processed per second                                                                                                                                   |
+ | latency   | Including process of 'model inference', 'disparity porcess and convert disparity to depth and point cloud', 'uncertainty filter'                             |
+ | cpu_usage | One-core CPU usage for the whole program, including model processing and result saving                                                                       |
+ | bpu_usage | One-core BPU usage for the whole system. If other models, such as segmentation or detection, are running at the same time, their usage will also be included |
 
-```
-bash make_ln.sh
-```
 
-- 最后运行程序
+We have two types of models currently: one includes uncertainty information, while the other does not.
+Comparing the results below, we can see that the noise can be filtered out using the uncertainty.
 
-```bash
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/lib_opencv4.5.4/lib/
-./depth_to_pointcloud
-```
+The following files will be generated in the `result` directory:
 
-- 点云文件打开方式：建议安装[CloudCompare](https://www.cloudcompare.org/)软件打开点云文件
+  | Name                       | without uncertainty Result                       | with uncertainty Result                                                                                         | Description                                                                                                                                                            |
+  | -------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | depth_{timestamp}.png      | ![depth](docs/depth_1765459980707_visual.png)    | None                                                                                                            | Depth map aligned with the left image (unit: mm)                                                                                                                       |
+  | disparity_{timestamp}.pfm  | ![disparity](docs/disp_1765459980707_visual.png) | ![disparity](docs/disp_1765459116550_visual.png)                                                                | Disparity map aligned with the left image (unit:pixels)                                                                                                                |
+  | visual_{timestamp}.png     | ![visual](docs/visual_1765459980707.png)         | ![visual](docs/visual_1765459116550.png)   the black empty hole is the bad or edge area filtered by uncertainty | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
+  | pointcloud_{timestamp}.pcd | ![pcd](docs/pointcloud_1765459980707_visual.png) | ![pcd](docs/pointcloud_1765459116550_visual.png)                                                                | 3D point cloud generated from the left image                                                                                                                           |
+-   Disparity maps, depth maps, and visualization images: It is
+    recommended to use
+    [cvkit](https://github.com/roboception/cvkit/releases/tag/v2.6.10)
+    to open `.pfm` and `.png` files.
+-   Point cloud files: It is recommended to use
+    [CloudCompare](https://www.cloudcompare.org/) to open `.pcd` files.

@@ -42,12 +42,13 @@ struct performance_writer {
     writer.close();
   }
 
-  int write(uint ts, uint fps, uint cpu_usage, uint bpu_ratio, uint latency) {
+  int write(uint ts, double fps, uint cpu_usage, uint bpu_ratio, uint latency) {
     if (!writer.good()) {
       std::cerr << "performance.txt is not good" << std::endl;
       return -1;
     }
-    writer << ts << ", " << fps << ", " << cpu_usage << "%" << ", " << bpu_ratio << "%" << ", " << latency << std::endl;
+    writer << ts << ", " << std::fixed << std::setprecision(2) << fps << ", " << cpu_usage << "%, " << bpu_ratio
+           << "%, " << latency << std::endl;
     writer.flush();
     return 0;
   }
@@ -56,17 +57,17 @@ struct performance_writer {
     static auto last_calculation = std::chrono::system_clock::now();
     auto current = std::chrono::system_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(current - last_calculation).count();
-    ++fps_;
+    fps_ += 1.0;
     latency_ = latency;
     if (duration >= 1000) {
-      true_fps_ = fps_ / (duration / 1000.);
-      fps_ = 0;
+      true_fps_ = fps_ / (duration / 1000.0);
+      fps_ = 0.0;
       cd_.notify_one();
       last_calculation = current;
     }
   }
 
-  int get_fps() {
+  double get_fps() {
     return true_fps_;
   }
 
@@ -89,7 +90,9 @@ struct performance_writer {
 private:
   std::ofstream writer;
   std::atomic_bool is_running_{true};
-  std::atomic_uint fps_{0}, latency_{0}, true_fps_{0}, bpu_ratio_{0}, cpu_usage_{0};
+  double fps_ = 0.0;
+  double true_fps_ = 0.0;
+  std::atomic_uint latency_{0}, bpu_ratio_{0}, cpu_usage_{0};
   std::shared_ptr<std::thread> record_thread_ = nullptr;
   std::mutex mtx_;
   std::condition_variable cd_;
@@ -99,9 +102,10 @@ private:
     static pid_t pid = getpid();
     char buffer[128] = {0};
     static std::string pid_str = std::to_string(pid);
-    static std::string cmd = "top -b -n 1 -p " + pid_str +
-                             " | tail -n 2 "
-                             "| awk '/^ *PID/ {for (i=1; i<=NF; i++) {if ($i==\"%CPU\") cpu_col=i}} NR>1 {print $cpu_col}'";
+    static std::string cmd =
+        "top -b -n 1 -p " + pid_str +
+        " | tail -n 2 "
+        "| awk '/^ *PID/ {for (i=1; i<=NF; i++) {if ($i==\"%CPU\") cpu_col=i}} NR>1 {print $cpu_col}'";
     while (is_running_) {
       std::unique_lock<std::mutex> lock(mtx_);
       cd_.wait(lock);

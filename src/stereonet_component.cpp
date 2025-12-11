@@ -668,7 +668,7 @@ void StereoNetNode::publish_function() {
         pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
         pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "=> fps: %d, cpu_usage: %d%%, bpu_usage: %d%%", pub_data->fps, pub_data->cpu_usage,
+                             "=> fps: %.2f, cpu_usage: %d%%, bpu_usage: %d%%", pub_data->fps, pub_data->cpu_usage,
                              pub_data->bpu_usage);
       }
 
@@ -1280,8 +1280,8 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   // ===================================== render performance metrics =======================================
   if (render_perf_) {
     std::stringstream perf_text;
-    perf_text << "FPS: " << pub_data->fps << " Latency: " << pub_data->latency << "ms CPU: " << pub_data->cpu_usage
-              << "% BPU: " << pub_data->bpu_usage << "%";
+    perf_text << "FPS: " << std::fixed << std::setprecision(2) << pub_data->fps << " Latency: " << pub_data->latency
+              << "ms CPU: " << pub_data->cpu_usage << "% BPU: " << pub_data->bpu_usage << "%";
     static int text_height = 0;
     if (text_height == 0) {
       int baseline = 0;

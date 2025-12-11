@@ -200,6 +200,18 @@ public:
   static void dump_pcd_file_rgb(const std::string &filename, const std::vector<PointXYZRGB> &pointcloud,
                                 const std::string &format = "binary");
 
+  /**
+   * @brief Convert RGB image, disparity map and depth map to visual image
+   * @param rgb Input RGB image
+   * @param disp Input disparity map
+   * @param depth Input depth map
+   * @param visual_img Output visual image
+   * @param render_max_disp Maximum disparity value (unit: pixel)
+   * @param depth_decimal_num Depth decimal number
+   */
+  static void convert_visual_img(const cv::Mat &rgb, const cv::Mat &disp, const cv::Mat &depth, cv::Mat &visual_img,
+                                 int render_max_disp = 80, int depth_decimal_num = 2);
+
 private:
   // ===================================== member functions =======================================
   /**

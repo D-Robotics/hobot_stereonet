@@ -37,8 +37,10 @@ struct PubData {
   cv::Mat uncert;
   std::vector<uint8_t> rectify_left_img_data;  // nv12
   std::vector<uint8_t> rectify_right_img_data; // nv12
-  int fps, latency;
-  int cpu_usage, bpu_usage;
+  double fps;
+  int latency;
+  int cpu_usage;
+  int bpu_usage;
 
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointcloud = nullptr;
   cv::Mat visual_img;
