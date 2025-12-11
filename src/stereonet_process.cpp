@@ -193,7 +193,7 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 #endif
 
 int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp,
-                                  cv::Mat &uncert) {
+                                  cv::Mat &uncert, const std::string &post_version) {
   int ret_code = 0;
 
   ScopeProcessTime t(logger_, "postprocess");
@@ -216,11 +216,12 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
   int spx_w_dim = spx_shape[3];
 
   // postprocess
-  if (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
+  if ((output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) || post_version == "v2.0") {
     ret_code = postprocess_convex_upsampling(outputs, disp);
-  } else if (output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) {
+  } else if ((output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) ||
+             post_version == "v2.2" || post_version == "v2.3" || post_version == "v2.4") {
     ret_code = postprocess_convex_upsampling_with_interp(outputs, disp);
-  } else if (output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
+  } else if ((output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) || post_version == "v2.1") {
     std::vector<hbDNNTensor> infer_disp_tensor(outputs.begin(), outputs.begin() + 2);
     ret_code = postprocess_convex_upsampling(infer_disp_tensor, disp);
     if (uncertainty_th > 0 && ret_code == 0) {
@@ -233,7 +234,8 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
         disp = disp.mul(mask);
       }
     }
-  } else if (output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) {
+  } else if ((output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim) ||
+             post_version == "v2.4_uncert") {
     std::vector<hbDNNTensor> infer_disp_tensor(outputs.begin(), outputs.begin() + 2);
     ret_code = postprocess_convex_upsampling_with_interp(infer_disp_tensor, disp);
     if (uncertainty_th > 0 && ret_code == 0) {

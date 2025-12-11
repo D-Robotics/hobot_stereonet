@@ -107,7 +107,8 @@ public:
    * @param disp Output disparity map
    * @param uncert Output uncertainty map
    */
-  int postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
+  int postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert,
+                  const std::string &post_version = "auto");
 
   /**
    * @brief Postprocess and output disparity map, uncertainty map and depth map

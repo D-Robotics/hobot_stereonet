@@ -39,8 +39,9 @@ void signal_handler(int) {
 
 class StereoNetNode {
 public:
-  StereoNetNode(const std::string &model_path, int infer_thread_num) {
+  StereoNetNode(const std::string &model_path, int infer_thread_num, float uncertainty_th = -0.10) {
     infer_thread_num_ = infer_thread_num;
+    uncertainty_th_ = uncertainty_th;
     // stereonet process
     stereonet_process_ = std::make_shared<stereonet::StereonetProcess>();
     stereonet_process_->init(model_path);
@@ -150,7 +151,9 @@ private:
             disp.resize(width * height);
             uncert.resize(width * height);
             depth.resize(width * height);
-            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, disp.data(), uncert.data(), camera_intrinsic_.fx, camera_intrinsic_.baseline, depth.data());
+            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, disp.data(), uncert.data(),
+                                                           camera_intrinsic_.fx, camera_intrinsic_.baseline,
+                                                           depth.data());
             cv::Mat disp_mat(height, width, CV_32FC1);
             memcpy(disp_mat.data, disp.data(), width * height * sizeof(float));
             cv::Mat depth_mat(height, width, CV_16UC1);
@@ -247,18 +250,23 @@ int main(int argc, char **argv) {
 
   std::string model_path = "./DStereoV2.6_int8.bin";
   int infer_thread_num = 1;
+  float uncertainty_th = -0.10;
   if (argc > 1) {
     model_path = argv[1];
   }
   if (argc > 2) {
     infer_thread_num = std::stoi(argv[2]);
   }
+  if (argc > 3) {
+    uncertainty_th = std::stof(argv[3]);
+  }
+
   if (!std::filesystem::exists(model_path)) {
     LOG_ERROR(nullptr, "=> model file not exist: " << model_path);
     return -1;
   }
 
-  auto stereonet_node = std::make_shared<StereoNetNode>(model_path, infer_thread_num);
+  auto stereonet_node = std::make_shared<StereoNetNode>(model_path, infer_thread_num, uncertainty_th);
 
   // ctrl + c signal handler
   while (g_running) {
