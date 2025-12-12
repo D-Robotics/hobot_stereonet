@@ -36,8 +36,6 @@ struct StereoImageSet {
   std::string left_image_file;
   std::string right_image_file;
   std::string disparity_image_file;
-
- private:
   std::vector<double> camera_params;
 };
 
@@ -76,7 +74,7 @@ class StereoDataLoader {
 
     for (rapidjson::SizeType i = 0; i + 2 < doc.Size(); i += 3) {
       StereoImageSet stereo_set = parse(doc[i], doc[i + 1], doc[i + 2], i);
-      if (stereo_set.isValid()) {
+      if (stereo_set.is_valid()) {
         stereo_sets.push_back(stereo_set);
       }
     }
@@ -117,7 +115,7 @@ class StereoDataLoader {
     }
 
     // Validate the set forms a complete stereo pair
-    if (!stereo_set.isValid()) {
+    if (!stereo_set.is_valid()) {
       std::cerr << "Warning: Incomplete stereo set at indices " << base_index
                 << "-" << base_index + 2 << ", skipping" << std::endl;
     }

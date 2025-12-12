@@ -19,6 +19,7 @@
 #include <memory>
 #include <thread>
 #include <csignal>
+#include <filesystem>
 
 #include "stereonet_process.h"
 #include "image_conversion.h"
@@ -83,7 +84,8 @@ struct DataWrapper {
 struct StereoDemo {
   int init(const std::string &stereonet_model_file_path,
            const std::string &post_version,
-           int max_disp);
+           int max_disp,
+           float uncertainty_th = 0.1);
   int deinit();
 
   int get_image(InferenceData &infer_data);
@@ -107,13 +109,14 @@ struct StereoDemo {
 
 int StereoDemo::init(const std::string &stereonet_model_file_path,
                      const std::string &post_version,
-                     int max_disp) {
+                     int max_disp,
+                     float uncertainty_th) {
   int ret = 0;
   stereonet_process_ = std::make_shared<StereonetProcess>();
   //  The `uncertainty_th` ranges from 0.0 to 1.0
   //  — the closer it is to 0.0, the more aggressive the filtering.
   ret = stereonet_process_->stereonet_init(
-      stereonet_model_file_path, max_disp, post_version, 0.1);
+      stereonet_model_file_path, max_disp, post_version, uncertainty_th);
   if (ret != 0) {
     std::cerr << "stereonet init failed!" << std::endl;
     return -1;
@@ -126,6 +129,17 @@ int StereoDemo::init(const std::string &stereonet_model_file_path,
   std::cout << "model_input_w: " << model_input_w_ << ", model_input_h: " << model_input_h_ << std::endl;
 
   return 0;
+}
+
+std::string get_pure_file_name(const std::string &file_name) {
+  std::string file;
+  std::filesystem::path path(file_name);
+  if (path.extension() == ".png") {
+    file = path.stem().string();
+  } else {
+    file = file_name;
+  }
+  return file;
 }
 
 int StereoDemo::deinit() {
@@ -158,14 +172,15 @@ int StereoDemo::get_inference_result(
   cv::Mat model_depth_img = cv::Mat(model_output_h_, model_output_w_, CV_16UC1);
   uint16_t *depth_data = (uint16_t *)model_depth_img.data;
   float factor = 1000 * (camera_parameter.camera_fx * camera_parameter.base_line);
-  float32x4_t zero_vec = vdupq_n_f32(0.f);
+  float min_disparity = 50000 / factor;
+  float32x4_t min_disparity_vec = vdupq_n_f32(min_disparity);
   //uint16x4_t zero_vec_u16 = vget_low_u16(vdupq_n_u16(0));
   float32x4_t factor_vector = vdupq_n_f32(factor);
+
   for (uint32_t i = 0; i < points.size(); i += 4) {
-    float32x4_t points_vec = vld1q_f32(&points[i]);
-    uint32x4_t mask = vcgtq_f32(points_vec, zero_vec);
+    float32x4_t points_vec = vmaxq_f32(vld1q_f32(&points[i]), min_disparity_vec);
     float32x4_t depth_vec = vdivq_f32(factor_vector, points_vec);
-    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(vbslq_f32(mask, depth_vec, zero_vec)));
+    uint16x4_t depth_int16_vec = vmovn_u32(vcvtq_u32_f32(depth_vec));
     vst1_u16(&depth_data[i], depth_int16_vec);
   }
 
@@ -197,15 +212,34 @@ void signal_handler(int signo) {
   }
 }
 
-int dump_depth_in_mm(StereoResult &stereo_result) {
+int dump_depth_in_mm(StereoResult &stereo_result, const std::string &file_name = "") {
   auto ts = stereo_result.ts;
-  cv::imwrite("./result/"+ std::to_string(ts) +"_depth.png", stereo_result.model_depth);
+  cv::Mat depth;
+  switch (stereo_result.model_depth.type()) {
+    case CV_64FC1:
+    case CV_32FC1:
+      depth = (stereo_result.model_depth * 1000);
+      depth.convertTo(depth, CV_16UC1);
+      break;
+    case CV_16UC1:
+      depth = stereo_result.model_depth;
+      break;
+  }
+  if (file_name.empty()) {
+    cv::imwrite("./result/" + std::to_string(ts) +"_depth.png", depth);
+  } else {
+    cv::imwrite("./result/" + get_pure_file_name(file_name) +"_depth.png", depth);
+  }
   return 0;
 }
 
-int dump_disparity(StereoResult &stereo_result, cv::Mat& disparity) {
+int dump_disparity(StereoResult &stereo_result, cv::Mat& disparity, const std::string &file_name = "") {
   auto ts = stereo_result.ts;
-  cv::imwrite("./result/"+ std::to_string(ts) +"_disparity.pfm", disparity);
+  if (file_name.empty()) {
+    cv::imwrite("./result/" + std::to_string(ts) +"_disparity.pfm", disparity);
+  } else {
+    cv::imwrite("./result/" + get_pure_file_name(file_name) +"_disparity.pfm", disparity);
+  }
   return 0;
 }
 
@@ -259,7 +293,8 @@ void dump_pcd_file(StereoResult &stereo_result) {
 
 int dump_visual_image(InferenceData &infer_data,
                       StereoResult &stereo_result,
-                      std::vector<float>&points) {
+                      std::vector<float>&points,
+                      const std::string &file_name = "") {
   auto ts = stereo_result.ts;
   const cv::Mat &depth_img = stereo_result.model_depth;
   cv::Mat bgr_image = infer_data.left_image;
@@ -267,7 +302,7 @@ int dump_visual_image(InferenceData &infer_data,
   bgr_image.copyTo(visual_img(cv::Rect(0, 0, bgr_image.cols, bgr_image.rows)));
 
   cv::Mat feat_mat(bgr_image.rows, bgr_image.cols, CV_32F, const_cast<float *>(points.data()));
-  dump_disparity(stereo_result, feat_mat);
+  dump_disparity(stereo_result, feat_mat, file_name);
   cv::Mat feat_visual;
   feat_mat.convertTo(feat_visual, CV_8U, 4, 0);
   //  cv::convertScaleAbs(feat_visual, feat_visual, 2);
@@ -294,9 +329,22 @@ int dump_visual_image(InferenceData &infer_data,
       cv::line(visual_img, cv::Point2i(j * x_step, 0),
                cv::Point2i(j * x_step, bgr_image.rows),
                cv::Scalar(255, 255, 255), 1);
-      uint16_t Z = depth_img.at<uint16_t>(i * y_step, j * x_step);
-      // mm -> m
-      double distance = static_cast<double>(Z) / 1000.0;
+      uint16_t Z;
+      double distance;
+      switch (depth_img.type()) {
+        case CV_32FC1:
+          distance = depth_img.at<float>(i * y_step, j * x_step);
+          Z = distance;
+          break;
+        case CV_16UC1:
+          Z = depth_img.at<uint16_t>(i * y_step, j * x_step);
+          distance = static_cast<double>(Z) / 1000.0;
+          break;
+        case CV_64FC1:
+          distance = depth_img.at<double>(i * y_step, j * x_step);
+          Z = distance;
+          break;
+      }
 
       // distance = points[i * y_step * bgr_image.cols + j * x_step];
 
@@ -313,7 +361,11 @@ int dump_visual_image(InferenceData &infer_data,
                   cv::Scalar(255, 255, 255), 2);
     }
   }
-  cv::imwrite("./result/" + std::to_string(ts) +"_visual.jpg", visual_img);
+  if (file_name.empty()) {
+    cv::imwrite("./result/" + std::to_string(ts) +"_visual.jpg", visual_img);
+  } else {
+    cv::imwrite("./result/" + get_pure_file_name(file_name) +"_visual.jpg", visual_img);
+  }
   return 0;
 }
 
@@ -336,7 +388,6 @@ int main_V2_4(int argc, char **argv) {
   camera_parameter.base_line = 0.0804746;
 
   signal(SIGINT, signal_handler);
-  system("mkdir -p ./result/");
 
   ret = stereo_demo.init(stereonet_model_file_path, "v2.4", 192);
   if (ret != 0) {
@@ -358,7 +409,6 @@ int main_V2_4(int argc, char **argv) {
   stereo_demo.deinit();
   return 0;
 }
-
 
 int main_V2_4_uncertainty(int argc, char **argv) {
   int ret;
@@ -383,7 +433,6 @@ int main_V2_4_uncertainty(int argc, char **argv) {
   camera_parameter.base_line = 0.0804746;
 
   signal(SIGINT, signal_handler);
-  system("mkdir -p ./result/");
 
   ret = stereo_demo.init(stereonet_model_file_path, "v2.4", 192);
   if (ret != 0) {
@@ -441,25 +490,31 @@ int main_V2_4_uncertainty(int argc, char **argv) {
   return 0;
 }
 
-
-void calculate_metrics(std::string &json_file, const std::string &data_path) {
+void calculate_metrics(const std::string &json_file, const std::string &data_path) {
+  int index = 0;
+  MetricsJsonWriter metrics_json_writer;
   StereoDemo stereo_demo;
   std::vector<StereoImageSet> stereo_image_sets;
-  std::string stereonet_model_file_path = "./config/DStereoV2.4_int16_uncertainty.bin";
+  std::string stereonet_model_file_path = "./config/DStereoV23_int16_1110.bin";
 
-  std::vector<double> epes, ffprs, fnprs, infinity_metrics;
-  std::vector<std::pair<double, double>> bad_pixels;
-  std::vector<std::vector<double>> a99s;
+  std::vector<double> epes, ffprs, fnprs, infinity_metrics,
+                      bad_pixels_2, bad_pixels_4,
+                      a99_0, a99_1, a99_2;
 
-  stereo_demo.init(stereonet_model_file_path, "v2.4", 192);
+  std::vector<double> a99s_max(3, std::numeric_limits<double>::min());
+  std::vector<int> a99s_max_index(3, -1);
+
+  stereo_demo.init(stereonet_model_file_path, "v2.4", 192, -0.1);
   stereo_image_sets = StereoDataLoader::load(json_file);
+  std::cout << "stereo_image_sets count: " << stereo_image_sets.size() << std::endl;
+  auto start = std::chrono::high_resolution_clock::now();
   for (auto &stereo_image : stereo_image_sets) {
     std::string left_image_file = data_path + "/" + stereo_image.left_image_file;
     std::string right_image_file = data_path + "/" + stereo_image.right_image_file;
     std::string disparity_image_file = data_path + "/" + stereo_image.disparity_image_file;
     InferenceData infer_data(std::chrono::high_resolution_clock::now().time_since_epoch().count(),
                              left_image_file, right_image_file);
-    cv::Mat gt_disparity = cv::imread(disparity_image_file);
+    cv::Mat gt_disparity = cv::imread(disparity_image_file, cv::IMREAD_UNCHANGED);
     if (stereo_image.is_valid() && infer_data.is_valid() && !gt_disparity.empty()) {
       CameraParameter camera_parameter;
       StereoResult stereo_result;
@@ -470,7 +525,7 @@ void calculate_metrics(std::string &json_file, const std::string &data_path) {
           camera_parameter.camera_cx, camera_parameter.camera_cy,
           camera_parameter.base_line);
       if (stereo_demo.get_inference_result(infer_data, stereo_result,
-          infer_disparity_points, camera_parameter) == 0) {
+                                           infer_disparity_points, camera_parameter) == 0) {
         infer_disparity = cv::Mat(
             stereo_result.model_depth.rows, stereo_result.model_depth.cols,
             CV_32FC1, infer_disparity_points.data());
@@ -481,16 +536,17 @@ void calculate_metrics(std::string &json_file, const std::string &data_path) {
             gt_disparity, infer_disparity);
 
         double ffpr = MetricsProcess::calculateFFPR(gt_disparity, infer_disparity,
-            camera_parameter.camera_fx, camera_parameter.base_line);
+                                                    camera_parameter.camera_fx, camera_parameter.base_line);
 
         double fnpr = MetricsProcess::calculateFNPR(gt_disparity, infer_disparity,
-            camera_parameter.camera_fx, camera_parameter.base_line);
+                                                    camera_parameter.camera_fx, camera_parameter.base_line);
 
         std::vector<std::pair<double, double>> ranges;
-        ranges.push_back(std::make_pair(0.15, 0.999));
-        ranges.push_back(std::make_pair(1, 1.999));
+        ranges.push_back(std::make_pair(0.15, 1));
+        ranges.push_back(std::make_pair(1, 2));
         ranges.push_back(std::make_pair(2, 3));
         std::vector<double> a99 = MetricsProcess::calculateA99DepthRelativeError(
+            stereo_image.left_image_file,
             gt_disparity, infer_disparity, ranges,
             camera_parameter.camera_fx, camera_parameter.base_line);
 
@@ -499,27 +555,132 @@ void calculate_metrics(std::string &json_file, const std::string &data_path) {
             camera_parameter.camera_fx, camera_parameter.base_line);
 
         std::cout << "file: " << left_image_file
-                  << ", epe: " << epe << ", bad_pixel2|4: " << bad_pixel.first << " | " << bad_pixel.second
-                  << ", ffpr: " << ffpr << ", fnpr: " << fnpr << ", infinity_metric: " << infinity_metric << std::endl;
-        std::cout << "A99 range [0.15, 1]: " << a99[0] << std::endl;
-        std::cout << "A99 range [1, 2]: "    << a99[1] << std::endl;
-        std::cout << "A99 range [2, 3]: "    << a99[2] << std::endl;
+                  << ", process(" << index + 1 << "/" << stereo_image_sets.size() << ")"
+                  << ", epe: " << epe << ", bad_pixel_2|4: " << bad_pixel.first << " | " << bad_pixel.second
+                  << ", fnpr: " << fnpr << ", ffpr: " << ffpr
+                  << ", infinity_metric: " << infinity_metric << std::endl;
+        std::cout << "A99 range [0.15, 1): " << a99[0] << std::endl;
+        std::cout << "A99 range [1, 2): "    << a99[1] << std::endl;
+        std::cout << "A99 range [2, 3): "    << a99[2] << std::endl;
 
-        epes.push_back(epe);
-        bad_pixels.push_back(bad_pixel);
-        fnprs.push_back(fnpr);
-        ffprs.push_back(ffpr);
-        a99s.push_back(a99);
-        infinity_metrics.push_back(infinity_metric);
+        metrics_json_writer.add_image_metrics(stereo_image.left_image_file,
+                                              epe, bad_pixel.first, bad_pixel.second,
+                                              fnpr, ffpr, a99, infinity_metric);
+
+        if (!std::isnan(epe) && !std::isinf(epe)) epes.push_back(epe);
+        if (!std::isnan(bad_pixel.first) && !std::isinf(bad_pixel.first)) bad_pixels_2.push_back(bad_pixel.first);
+        if (!std::isnan(bad_pixel.second) && !std::isinf(bad_pixel.second)) bad_pixels_4.push_back(bad_pixel.second);
+        if (!std::isnan(fnpr) && !std::isinf(fnpr)) fnprs.push_back(fnpr);
+        if (!std::isnan(ffpr) && !std::isinf(ffpr)) ffprs.push_back(ffpr);
+        if (!std::isnan(infinity_metric) && !std::isinf(infinity_metric)) infinity_metrics.push_back(infinity_metric);
+        if (!std::isnan(a99[0]) && !std::isinf(a99[0])) {
+          a99_0.push_back(a99[0]);
+          if (a99[0] > a99s_max[0]) {
+            a99s_max[0] = a99[0];
+            a99s_max_index[0] = index;
+          }
+        }
+        if (!std::isnan(a99[1]) && !std::isinf(a99[1])) {
+          a99_1.push_back(a99[1]);
+          if (a99[1] > a99s_max[1]) {
+            a99s_max[1] = a99[1];
+            a99s_max_index[1] = index;
+          }
+        }
+        if (!std::isnan(a99[2]) && !std::isinf(a99[2])) {
+          a99_2.push_back(a99[2]);
+          if (a99[2] > a99s_max[2]) {
+            a99s_max[2] = a99[2];
+            a99s_max_index[2] = index;
+          }
+        }
       } else {
         std::cerr << "inference failed" << std::endl;
       }
     } else {
       std::cerr << "stereo_image is invalid" << std::endl;
     }
+    double epe_sum = std::accumulate(epes.begin(), epes.end(), 0.);
+    double bad_pixels2_sum = std::accumulate(bad_pixels_2.begin(), bad_pixels_2.end(), 0.);
+    double bad_pixels4_sum = std::accumulate(bad_pixels_4.begin(), bad_pixels_4.end(), 0.);
+    double fnpr_sum = std::accumulate(fnprs.begin(), fnprs.end(), 0.);
+    double ffpr_sum = std::accumulate(ffprs.begin(), ffprs.end(), 0.);
+    double infinity_metric_sum = std::accumulate(infinity_metrics.begin(), infinity_metrics.end(), 0.);
+    double a99_0_sum = std::accumulate(a99_0.begin(), a99_0.end(), 0.);
+    double a99_1_sum = std::accumulate(a99_1.begin(), a99_1.end(), 0.);
+    double a99_2_sum = std::accumulate(a99_2.begin(), a99_2.end(), 0.);
+
+    std::cout << "average epe: " << epe_sum / epes.size() << ", bad_pixel_2|4: " << bad_pixels2_sum / bad_pixels_2.size()
+              << " | " << bad_pixels4_sum / bad_pixels_4.size()
+              << ", fnpr: " << fnpr_sum / fnprs.size() << ", ffpr: " << ffpr_sum /  ffprs.size()
+              << ", infinity_metric: " << infinity_metric_sum / infinity_metrics.size() << std::endl;
+    std::cout << "A99 range [0.15, 1): " << a99_0_sum / a99_0.size() << std::endl;
+    std::cout << "A99 range [1, 2): "    << a99_1_sum / a99_1.size() << std::endl;
+    std::cout << "A99 range [2, 3): "    << a99_2_sum / a99_2.size() << std::endl;
+
+    index++;
   }
+
+  index = 0;
+  for (const auto &i : a99s_max_index) {
+    std::string left_image_file = data_path + "/" + stereo_image_sets[i].left_image_file;
+    std::string right_image_file = data_path + "/" + stereo_image_sets[i].right_image_file;
+    std::string disparity_image_file = data_path + "/" + stereo_image_sets[i].disparity_image_file;
+
+    auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    InferenceData infer_data(now, left_image_file, right_image_file);
+
+    std::cout << "a99 max index: " << index << ", value: " << a99s_max[index] << std::endl;
+    std::cout << "file: " << left_image_file << std::endl;
+
+    CameraParameter camera_parameter;
+    StereoResult stereo_result;
+    cv::Mat infer_disparity;
+    cv::Mat gt_disparity = cv::imread(disparity_image_file, cv::IMREAD_UNCHANGED), gt_disparity_32FC;
+    gt_disparity.convertTo(gt_disparity_32FC, CV_32FC1);
+    std::vector<float> infer_disparity_points;
+    std::vector<float> gt_disparity_points(gt_disparity_32FC.begin<float>(), gt_disparity_32FC.end<float>());
+    stereo_image_sets[i].get_camera_parameter(
+        camera_parameter.camera_fx, camera_parameter.camera_fy,
+        camera_parameter.camera_cx, camera_parameter.camera_cy,
+        camera_parameter.base_line);
+
+    if (stereo_demo.get_inference_result(infer_data, stereo_result,
+                                         infer_disparity_points, camera_parameter) == 0) {
+      dump_visual_image(infer_data, stereo_result, infer_disparity_points,
+                        "infer_disp_" + stereo_image_sets[i].left_image_file);
+      infer_disparity = cv::Mat(
+          stereo_result.model_depth.rows, stereo_result.model_depth.cols,
+          CV_32FC1, infer_disparity_points.data());
+      stereo_result.model_depth = MetricsProcess::dispToDepth(infer_disparity,
+                                                              camera_parameter.camera_fx, camera_parameter.base_line);
+      dump_depth_in_mm(stereo_result, "infer_depth_" + stereo_image_sets[i].left_image_file);
+      now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+      InferenceData gt_data(now, left_image_file, right_image_file);
+
+      stereo_result.ts = now;
+      stereo_result.model_depth = MetricsProcess::dispToDepth(gt_disparity,
+          camera_parameter.camera_fx, camera_parameter.base_line);
+      dump_visual_image(gt_data, stereo_result, gt_disparity_points,
+                        "gt_disp_" + stereo_image_sets[i].left_image_file);
+      dump_depth_in_mm(stereo_result, "gt_depth_" + stereo_image_sets[i].left_image_file);
+    }
+    index++;
+  }
+
+  metrics_json_writer.save_to_file("./X5_metrics.json");
+
+  auto end = std::chrono::high_resolution_clock::now();
+  std::cout << "metric calculation finished! Consume: " << std::fixed << std::setprecision(4)
+            << std::chrono::duration_cast<std::chrono::seconds>(end - start).count()
+            << " second" << std::endl;
 }
 
 int main(int argc, char **argv) {
-  return main_V2_4_uncertainty(argc, argv);
+//  system("mkdir -p ./result/");
+//  calculate_metrics("../testset/scene_flow_test/calib.json", "../testset/scene_flow_test/");
+//  return 0;
+//  return main_V2_4(argc, argv);
+
+  return main_V2_4(argc, argv);
 }
