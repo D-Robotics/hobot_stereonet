@@ -81,7 +81,7 @@ public:
    * @param max_memory_count Maximum number of memory buffers to allocate
    * @return 0 on success, -1 on failure
    */
-  int init(const std::string &model_path, const int &max_memory_count = 5);
+  int init(const std::string &model_path, const std::string &post_version = "auto", const int &max_memory_count = 5);
 
   /**
    * @brief Perform forward inference using the StereoNet model asynchronously
@@ -103,8 +103,7 @@ public:
    * @return 0 on success, -1 on failure
    */
   int forward_sync(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert,
-                   const std::string &post_version = "auto");
+                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
 
 #if HOBOT_HAS_RCLCPP
   /**
@@ -120,8 +119,7 @@ public:
   int forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                     const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
-                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue,
-                    const std::string &post_version = "auto");
+                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue);
 #endif
 
   /**
@@ -131,8 +129,7 @@ public:
    * @param disp Output disparity map
    * @param uncert Output uncertainty map
    */
-  int postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert,
-                  const std::string &post_version = "auto");
+  int postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
 
   /**
    * @brief Postprocess and output disparity map, uncertainty map and depth map
@@ -145,8 +142,19 @@ public:
    * @return 0 on success, -1 on failure
    */
   int postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th,
-                                 const CameraIntrinsic &camera_intrinsic, float *disp, float *uncert, uint16_t *depth,
-                                 const std::string &post_version = "auto");
+                                 const CameraIntrinsic &camera_intrinsic, cv::Mat &disp, cv::Mat &uncert,
+                                 cv::Mat &depth);
+
+  /**
+   * @brief Postprocess and output depth map
+   * @param idle_tensor_id Output tensor id
+   * @param uncertainty_th Uncertainty threshold for postprocessing
+   * @param camera_intrinsic Camera intrinsic parameters
+   * @param depth Output depth map
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess_out_depth(const int idle_tensor_id, const double &uncertainty_th,
+                            const CameraIntrinsic &camera_intrinsic, cv::Mat &depth);
 
   /**
    * @brief Get the input size required by the model
@@ -289,10 +297,10 @@ private:
   // int model_output_w_;
   // int model_output_h_;
 
-  std::string postprocess_;
-
-  int max_disp_ = 192;
-  float uncertainty_th_ = 0.10;
+  // uncertainty
+  float uncertainty_th_ = -0.10;
+  // postprocess
+  std::string post_version_ = "auto";
 
 #if HOBOT_HAS_RCLCPP
   std::unique_ptr<BS::thread_pool<>> postprocess_thread_pool_ptr_ = nullptr;

@@ -32,12 +32,24 @@
 #include "performance_record.h"
 // =============== stereonet ===============
 
+/**
+ * @brief global variable for control c signal
+ *  if set to false, the program will exit
+ */
 static std::atomic<bool> g_running{true};
 
+/**
+ * @brief control c signal handler
+ * @param sig Signal number
+ * @return void
+ */
 void signal_handler(int) {
   g_running = false;
 }
 
+/**
+ * @brief Input data structure used for input data queue
+ */
 struct InputData {
   InputData(uint64_t timestamp, const cv::Mat &left_img, const std::vector<uint8_t> &left_img_nv12,
             const std::vector<uint8_t> &right_img_nv12)
@@ -50,6 +62,9 @@ struct InputData {
   std::vector<uint8_t> right_img_nv12;
 };
 
+/**
+ * @brief Publish data structure used for pub data queue
+ */
 struct PubData {
   PubData(uint64_t timestamp, const cv::Mat &left_img, const cv::Mat &disp, const cv::Mat &depth)
       : timestamp(timestamp), left_img(left_img), disp(disp), depth(depth) {
@@ -61,14 +76,30 @@ struct PubData {
   cv::Mat depth;
 };
 
+/**
+ * @brief StereoNetNode class for StereoNet model inference
+ * This class is used to initialize and manage the StereoNet model inference process.
+ */
 class StereoNetNode {
 public:
-  StereoNetNode(const std::string &model_path, int infer_thread_num, float uncertainty_th = -0.10) {
+  /**
+   * @brief Constructor
+   * @param model_path Model path
+   * @param infer_thread_num Inference thread number
+   * @param uncertainty_th Uncertainty threshold
+   * @param post_version Postprocess version
+   * @return void
+   */
+  StereoNetNode(const std::string &model_path, int infer_thread_num, float uncertainty_th = -0.10,
+                std::string post_version = "auto") {
+    // member variables
     infer_thread_num_ = infer_thread_num;
     uncertainty_th_ = uncertainty_th;
+    post_version_ = post_version;
+
     // stereonet process
     stereonet_process_ = std::make_shared<stereonet::StereonetProcess>();
-    stereonet_process_->init(model_path);
+    stereonet_process_->init(model_path, post_version);
 
     // thread
     capture_thread_ = std::thread(&StereoNetNode::capture_function, this);
@@ -83,6 +114,9 @@ public:
     performance_writer::Get();
   }
 
+  /**
+   * @brief Destructor
+   */
   ~StereoNetNode() {
     LOG_INFO(nullptr, "=> release StereoNetNode");
     g_running = false;
@@ -101,6 +135,10 @@ public:
   }
 
 private:
+  /**
+   * @brief This function is used to simulate the camera's acquisition of left and right images
+   * @return void
+   */
   void capture_function() {
     // read left and right images
     cv::Mat left_img = cv::imread("./img/left000000.png", cv::IMREAD_COLOR);
@@ -158,6 +196,10 @@ private:
     }
   }
 
+  /**
+   * @brief This function is used to infer the model
+   * @return void
+   */
   void infer_function() {
     while (g_running) {
       std::shared_ptr<InputData> input_data;
@@ -191,19 +233,9 @@ private:
           stereonet_process_->forward(left_img_nv12, right_img_nv12, idle_tensor_id);
           postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, input_data]() {
             // postprocess
-            int width, height;
-            stereonet_process_->get_model_input_size(width, height);
-            std::vector<float> disp, uncert;
-            std::vector<uint16_t> depth;
-            disp.resize(width * height);
-            uncert.resize(width * height);
-            depth.resize(width * height);
-            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, camera_intrinsic_,
-                                                           disp.data(), uncert.data(), depth.data());
-            cv::Mat disp_mat(height, width, CV_32FC1);
-            memcpy(disp_mat.data, disp.data(), width * height * sizeof(float));
-            cv::Mat depth_mat(height, width, CV_16UC1);
-            memcpy(depth_mat.data, depth.data(), width * height * sizeof(uint16_t));
+            cv ::Mat disp, uncert, depth;
+            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, camera_intrinsic_, disp,
+                                                           uncert, depth);
 
             // enquque
             while (pub_data_queue_.size_approx() >= infer_thread_num_) {
@@ -212,13 +244,17 @@ private:
               pub_data_queue_.try_dequeue(drop);
             }
             pub_data_queue_.enqueue(
-                std::make_shared<PubData>(input_data->timestamp, input_data->left_img, disp_mat, depth_mat));
+                std::make_shared<PubData>(input_data->timestamp, input_data->left_img, disp, depth));
           });
         }
       }
     }
   }
 
+  /**
+   * @brief This function is used to count resource consumption and save the results
+   * @return void
+   */
   void publish_function() {
     int count = 0;
     while (g_running) {
@@ -243,19 +279,19 @@ private:
 
           // save result async
           save_thread_pool_ptr_->detach_task([this, pub_data]() {
-            // LOG_INFO(nullptr, "=> save disp.pfm / depth.png / pointcloud.pcd");
-            cv::imwrite("disp_" + std::to_string(pub_data->timestamp) + ".pfm", pub_data->disp);
-            cv::imwrite("depth_" + std::to_string(pub_data->timestamp) + ".png", pub_data->depth);
+            // save disp
+            cv::imwrite("./result/disp_" + std::to_string(pub_data->timestamp) + ".pfm", pub_data->disp);
+            // save depth
+            cv::imwrite("./result/depth_" + std::to_string(pub_data->timestamp) + ".png", pub_data->depth);
+            // save visual
             cv::Mat visual_img;
             stereonet_process_->convert_visual_img(pub_data->left_img, pub_data->disp, pub_data->depth, visual_img);
-            cv::imwrite("visual_" + std::to_string(pub_data->timestamp) + ".png", visual_img);
-            // std::vector<stereonet::PointXYZ> pointcloud;
-            // stereonet_process_->depth_to_pointcloud(pub_data->depth, camera_intrinsic_, pointcloud);
-            // stereonet_process_->dump_pcd_file("pointcloud.pcd", pointcloud);
+            cv::imwrite("./result/visual_" + std::to_string(pub_data->timestamp) + ".png", visual_img);
+            // save pointcloud
             std::vector<stereonet::PointXYZRGB> pointcloud;
             stereonet_process_->depth_to_pointcloud_rgb(pub_data->depth, pub_data->left_img, camera_intrinsic_,
                                                         pointcloud);
-            stereonet_process_->dump_pcd_file_rgb("pointcloud_" + std::to_string(pub_data->timestamp) + ".pcd",
+            stereonet_process_->dump_pcd_file_rgb("./result/pointcloud_" + std::to_string(pub_data->timestamp) + ".pcd",
                                                   pointcloud);
           });
         }
@@ -263,6 +299,12 @@ private:
     }
   }
 
+  /**
+   * @brief Read camera intrinsic from file
+   * @param file_path File path
+   * @param intrinsic Camera intrinsic
+   * @return true if read successfully, false otherwise
+   */
   bool readCameraIntrinsicFromFile(const std::string &file_path, stereonet::CameraIntrinsic &intrinsic) {
     std::ifstream infile(file_path);
     if (!infile.is_open()) {
@@ -293,6 +335,7 @@ private:
     return false;
   }
 
+  // stereonet process
   std::shared_ptr<stereonet::StereonetProcess> stereonet_process_;
 
   // thread
@@ -308,34 +351,62 @@ private:
   // camera intrinsic
   stereonet::CameraIntrinsic camera_intrinsic_;
 
+  // uncertainty threshold
   float uncertainty_th_ = -0.10;
+  // postprocess version
+  std::string post_version_ = "auto";
 };
 
+void print_help(const char *prog_name) {
+  std::cout << R"(Usage:)" << prog_name << R"( [model_path] [infer_thread_num] [uncertainty_th] [post_version]
+
+Arguments:
+  model_path         Path to stereo model (.bin)
+                     default: ./model/DStereoV2.4_int16.bin
+  infer_thread_num   Inference thread number
+                     default: 1
+  uncertainty_th     Uncertainty threshold
+                     default: -0.10
+  post_version       Postprocess version: auto | v2.0 | v2.1 | v2.2 | v2.3 | v2.4 | v2.4_uncert
+                     default: auto
+
+Examples: )" << prog_name
+            << R"( ./model/DStereoV2.4_int16.bin)" << std::endl;
+}
+
 int main(int argc, char **argv) {
+  // help
+  if (argc > 1) {
+    std::string arg1(argv[1]);
+    if (arg1 == "-h" || arg1 == "--help") {
+      print_help(argv[0]);
+      return 0;
+    }
+  }
+
+  // control c signal
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
 
+  // parse arguments
   std::string model_path = "./model/DStereoV2.4_int16.bin";
   int infer_thread_num = 1;
   float uncertainty_th = -0.10;
-  if (argc > 1) {
-    model_path = argv[1];
-  }
-  if (argc > 2) {
-    infer_thread_num = std::stoi(argv[2]);
-  }
-  if (argc > 3) {
-    uncertainty_th = std::stof(argv[3]);
-  }
+  std::string post_version = "auto";
+  if (argc > 1) model_path = argv[1];
+  if (argc > 2) infer_thread_num = std::stoi(argv[2]);
+  if (argc > 3) uncertainty_th = std::stof(argv[3]);
+  if (argc > 4) post_version = argv[4];
 
   if (!std::filesystem::exists(model_path)) {
     LOG_ERROR(nullptr, "=> model file not exist: " << model_path);
     return -1;
   }
 
-  auto stereonet_node = std::make_shared<StereoNetNode>(model_path, infer_thread_num, uncertainty_th);
+  // init StereoNetNode
+  auto stereonet_node = std::make_shared<StereoNetNode>(model_path, infer_thread_num, uncertainty_th, post_version);
 
-  // ctrl + c signal handler
+  // spin
   while (g_running) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }

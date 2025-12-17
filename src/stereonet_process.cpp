@@ -45,10 +45,12 @@ StereonetProcess::~StereonetProcess() {
   LOG_WARN(logger_, "=> release StereonetProcess");
 }
 
-int StereonetProcess::init(const std::string &model_path, const int &max_memory_count) {
+int StereonetProcess::init(const std::string &model_path, const std::string &post_version,
+                           const int &max_memory_count) {
   int ret_code = 0;
   // load model
   model_path_ = model_path;
+  post_version_ = post_version;
   const char *model_path_cstr = model_path_.c_str();
   ret_code = hbDNNInitializeFromFiles(&packed_dnn_handle_, &model_path_cstr, 1);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInitializeFromFiles failed");
@@ -139,14 +141,13 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, i
 }
 
 int StereonetProcess::forward_sync(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
-                                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert,
-                                   const std::string &post_version) {
+                                   const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert) {
   int ret_code = 0;
   // forward
   int idle_tensor_id = 0;
   ret_code = forward(left_img_data.data(), right_img_data.data(), idle_tensor_id);
   // postprocess
-  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert, post_version);
+  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
 
   return ret_code;
 }
@@ -155,8 +156,7 @@ int StereonetProcess::forward_sync(std::vector<uint8_t> &left_img_data, std::vec
 int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data,
                                     const double &uncertainty_th, std::shared_ptr<CameraIntrinsic> camera_intrinsic,
                                     const sensor_msgs::msg::Image::SharedPtr &stereo_msg,
-                                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue,
-                                    const std::string &post_version) {
+                                    order_blockqueue<std::shared_ptr<PubData>> &pub_data_queue) {
   int ret_code = 0;
 
   if (postprocess_thread_pool_ptr_ == nullptr) postprocess_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
@@ -167,9 +167,9 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 
   // postprocess
   postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, uncertainty_th, left_img_data, right_img_data,
-                                             camera_intrinsic, stereo_msg, &pub_data_queue, post_version]() {
+                                             camera_intrinsic, stereo_msg, &pub_data_queue]() {
     cv::Mat disp, uncert;
-    postprocess(idle_tensor_id, uncertainty_th, disp, uncert, post_version);
+    postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
 
     cv::Mat depth;
     disp_to_depth(disp, depth, *camera_intrinsic);
@@ -195,7 +195,7 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 #endif
 
 int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp,
-                                  cv::Mat &uncert, const std::string &post_version) {
+                                  cv::Mat &uncert) {
   int ret_code = 0;
 
   ScopeProcessTime t(logger_, "postprocess");
@@ -218,12 +218,12 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
   int spx_w_dim = spx_shape[3];
 
   // postprocess
-  if (post_version == "v2.0" || (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
+  if (post_version_ == "v2.0" || (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
     ret_code = postprocess_convex_upsampling(outputs, disp);
-  } else if (post_version == "v2.2" || post_version == "v2.3" || post_version == "v2.4" ||
+  } else if (post_version_ == "v2.2" || post_version_ == "v2.3" || post_version_ == "v2.4" ||
              (output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim)) {
     ret_code = postprocess_convex_upsampling_with_interp(outputs, disp);
-  } else if (post_version == "v2.1" || (output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
+  } else if (post_version_ == "v2.1" || (output_count_ == 4 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
     std::vector<hbDNNTensor> infer_disp_tensor(outputs.begin(), outputs.begin() + 2);
     ret_code = postprocess_convex_upsampling(infer_disp_tensor, disp);
     if (uncertainty_th > 0 && ret_code == 0) {
@@ -236,7 +236,7 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
         disp = disp.mul(mask);
       }
     }
-  } else if (post_version == "v2.4_uncert" ||
+  } else if (post_version_ == "v2.4_uncert" ||
              (output_count_ == 4 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim)) {
     std::vector<hbDNNTensor> infer_disp_tensor(outputs.begin(), outputs.begin() + 2);
     ret_code = postprocess_convex_upsampling_with_interp(infer_disp_tensor, disp);
@@ -264,17 +264,20 @@ int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncert
 }
 
 int StereonetProcess::postprocess_out_disp_depth(const int idle_tensor_id, const double &uncertainty_th,
-                                                 const CameraIntrinsic &camera_intrinsic, float *disp, float *uncert,
-                                                 uint16_t *depth, const std::string &post_version) {
+                                                 const CameraIntrinsic &camera_intrinsic, cv::Mat &disp,
+                                                 cv::Mat &uncert, cv::Mat &depth) {
   int ret_code = 0;
-  cv::Mat disp_mat, uncert_mat, depth_mat;
-  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp_mat, uncert_mat, post_version);
-  disp_to_depth(disp_mat, depth_mat, camera_intrinsic);
+  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
+  disp_to_depth(disp, depth, camera_intrinsic);
+  return ret_code;
+}
 
-  memcpy(disp, disp_mat.data, disp_mat.total() * sizeof(float));
-  memcpy(uncert, uncert_mat.data, uncert_mat.total() * sizeof(float));
-  memcpy(depth, depth_mat.data, depth_mat.total() * sizeof(uint16_t));
-
+int StereonetProcess::postprocess_out_depth(const int idle_tensor_id, const double &uncertainty_th,
+                                            const CameraIntrinsic &camera_intrinsic, cv::Mat &depth) {
+  int ret_code = 0;
+  cv::Mat disp, uncert;
+  ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
+  disp_to_depth(disp, depth, camera_intrinsic);
   return ret_code;
 }
 

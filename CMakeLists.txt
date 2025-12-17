@@ -19,6 +19,7 @@ find_package(OpenMP REQUIRED)
 
 # =================================== FetchContent ====================================
 include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
 FetchContent_Declare(
   concurrentqueue
   GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git

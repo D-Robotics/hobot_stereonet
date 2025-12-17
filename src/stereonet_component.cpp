@@ -409,13 +409,14 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
   camera_intrinsic_->cx = msg->p[2];
   camera_intrinsic_->cy = msg->p[6];
   camera_intrinsic_->baseline = msg->p[3] / camera_intrinsic_->fx;
+  camera_intrinsic_->doffs = msg->p[11];
 
   if (camera_intrinsic_->baseline > 1) camera_intrinsic_->baseline *= 0.001f; // convert mm to m
 
   RCLCPP_WARN(this->get_logger(),
-              "\033[31m=> sub rectified [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, %f, %f]\033[0m",
+              "\033[31m=> sub rectified [fx, fy, cx, cy, baseline(m), doffs] : [%f, %f, %f, %f, %f, %f]\033[0m",
               camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-              camera_intrinsic_->baseline);
+              camera_intrinsic_->baseline, camera_intrinsic_->doffs);
   sub_camera_info_flag_ = true;
 }
 

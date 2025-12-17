@@ -18,6 +18,7 @@ find_package(OpenCV REQUIRED)
 
 # =================================== FetchContent ====================================
 include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
 FetchContent_Declare(
     magic_enum
     GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
