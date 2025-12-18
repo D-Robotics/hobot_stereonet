@@ -191,22 +191,6 @@ private:
   void save_result(const std::shared_ptr<PubData> &pub_data);
 
   /**
-   * @brief Extract center ROI from depth image
-   * @param depth The depth image
-   * @param cx The center x coordinate
-   * @param cy The center y coordinate
-   * @return The extracted ROI
-   */
-  RoiVec extract_center_roi(const cv::Mat &depth, int cx, int cy);
-
-  /**
-   * @brief Merge buffer frames into a single vector and filter out invalid (zero) depths
-   * @param buf The buffer frames
-   * @return The merged and filtered vector
-   */
-  std::vector<uint16_t> merge_and_filter_valid(const std::deque<RoiVec> &buf);
-
-  /**
    * @brief Compute trimmed mean and ranges after removing lowest k and highest k elements
    * Returns tuple(mean_mm, neg_range_mm, pos_range_mm, trimmed_count)
    * @param vals The vector of depth values
@@ -290,7 +274,7 @@ private:
   std::shared_ptr<StereoRectify> stereo_rectifier_ = nullptr;
 
   // render
-  std::string render_type_ = "indoor";
+  std::string render_type_ = "distance";
   bool render_perf_ = true;
   int depth_decimal_num_ = 2;
   int render_max_disp_ = 80;
@@ -310,6 +294,7 @@ private:
   uint64_t last_frame_timestamp_ = 0;
   std::unique_ptr<BS::thread_pool<>> save_thread_pool_ptr_ = nullptr;
   int save_thread_num_ = 4;
+  bool save_pcd_flag_ = false;
   moodycamel::BlockingConcurrentQueue<std::shared_ptr<PreProcessData>> pre_process_queue_;
 };
 } // namespace stereonet

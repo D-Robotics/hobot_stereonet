@@ -121,6 +121,8 @@ void StereoNetNode::set_node_params() {
   if (infer_thread_num_ > 4) infer_thread_num_ = 4;
   if (save_thread_num_ <= 0) save_thread_num_ = 1;
   if (save_thread_num_ > 8) save_thread_num_ = 8;
+  this->declare_parameter<bool>("save_pcd_flag", false);
+  save_pcd_flag_ = this->get_parameter("save_pcd_flag").as_bool();
 
   this->declare_parameter<std::string>("calib_method", "none");
   calib_method_ = this->get_parameter("calib_method").as_string();
@@ -198,7 +200,7 @@ void StereoNetNode::set_node_params() {
   render_type_ = this->get_parameter("render_type").as_string();
   auto is_valid_render_type = [](const std::string &render_type) {
     return render_type == "indoor" || render_type == "outdoor" || render_type == "indoor-reverse" ||
-           render_type == "outdoor-reverse";
+           render_type == "outdoor-reverse" || render_type == "distance" || render_type == "distance-reverse";
   };
   if (!is_valid_render_type(render_type_)) {
     RCLCPP_ERROR(this->get_logger(), "\033[31m=> render_type parameter invalid, should be one of [indoor, outdoor, "
@@ -250,8 +252,8 @@ void StereoNetNode::set_node_params() {
           << "(m), " << pointcloud_depth_max_ << "(m)]" << std::endl
           << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
           << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
-          << "[save_result_flag, save_dir, save_freq, save_total]: [" << save_result_flag_ << ", " << save_dir_ << ", "
-          << save_freq_ << ", " << save_total_ << "]" << std::endl
+          << "[save_result_flag, save_dir, save_freq, save_total, save_pcd_flag]: [" << save_result_flag_ << ", "
+          << save_dir_ << ", " << save_freq_ << ", " << save_total_ << ", " << save_pcd_flag_ << "]" << std::endl
           << "[calib_method, stereo_calib_file_path]: [" << calib_method_ << ", " << stereo_calib_file_path_ << "]"
           << std::endl
           << "[speckle_filter_enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_ << ", "
@@ -422,7 +424,7 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
 
 void StereoNetNode::infer_function(const int &thread_id) {
   while (rclcpp::ok()) {
-    if (infer_thread_num_ > 1) {
+    if (infer_thread_num_ > 1 || use_local_image_flag_) {
       sensor_msgs::msg::Image::SharedPtr stereo_msg;
       if (input_image_queue_.wait_dequeue_timed(stereo_msg, std::chrono::milliseconds(100))) {
         // Process the image message
@@ -1015,6 +1017,104 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   }
 }
 
+/**
+ * @brief Compute the near depth percentile
+ * @param depth The depth image
+ * @param percentile The percentile
+ * @return The near depth
+ */
+static double compute_near_depth_percentile(const cv::Mat &depth, double percentile = 0.02) {
+  // std::vector<double> valid;
+  // valid.reserve(depth.total());
+
+  // for (int y = 0; y < depth.rows; ++y) {
+  //   const uint16_t *ptr = depth.ptr<uint16_t>(y);
+  //   for (int x = 0; x < depth.cols; ++x)
+  //     if (ptr[x] > 0) valid.push_back(ptr[x]);
+  // }
+  // if (valid.empty()) return -1;
+  // size_t k = static_cast<size_t>(percentile * valid.size());
+  // std::nth_element(valid.begin(), valid.begin() + k, valid.end());
+  // return valid[k];
+  const int rows = depth.rows;
+  const int cols = depth.cols;
+
+  int num_threads = omp_get_max_threads();
+  std::vector<std::vector<uint16_t>> locals(num_threads);
+#pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    auto &buf = locals[tid];
+    buf.reserve(depth.total() / num_threads);
+#pragma omp for schedule(static)
+    for (int y = 0; y < rows; ++y) {
+      const uint16_t *ptr = depth.ptr<uint16_t>(y);
+      for (int x = 0; x < cols; ++x) {
+        if (ptr[x] > 0) buf.push_back(ptr[x]);
+      }
+    }
+  }
+
+  size_t total = 0;
+  for (auto &v : locals) total += v.size();
+  if (total == 0) return -1;
+
+  std::vector<uint16_t> valid;
+  valid.reserve(total);
+  for (auto &v : locals) valid.insert(valid.end(), v.begin(), v.end());
+
+  size_t k = static_cast<size_t>(percentile * valid.size());
+  std::nth_element(valid.begin(), valid.begin() + k, valid.end());
+  return valid[k];
+}
+
+/**
+ * @brief Extract center ROI from depth image
+ * @param depth The depth image
+ * @param cx The center x coordinate
+ * @param cy The center y coordinate
+ * @return The extracted ROI
+ */
+static RoiVec extract_center_roi(const cv::Mat &depth, int cx, int cy, int roi_size) {
+  RoiVec out;
+  if (depth.empty() || depth.type() != CV_16UC1) return out;
+
+  int x0 = cx - roi_size / 2;
+  int y0 = cy - roi_size / 2;
+
+  // clamp
+  x0 = std::max(0, std::min(x0, depth.cols - roi_size));
+  y0 = std::max(0, std::min(y0, depth.rows - roi_size));
+
+  out.reserve(roi_size * roi_size);
+  for (int r = 0; r < roi_size; ++r) {
+    const uint16_t *rowPtr = depth.ptr<uint16_t>(y0 + r);
+    for (int c = 0; c < roi_size; ++c) {
+      out.push_back(rowPtr[x0 + c]);
+    }
+  }
+  return out;
+}
+
+/**
+ * @brief Merge buffer frames into a single vector and filter out invalid (zero) depths
+ * @param buf The buffer frames
+ * @return The merged and filtered vector
+ */
+static std::vector<uint16_t> merge_and_filter_valid(const std::deque<RoiVec> &buf) {
+  size_t total = 0;
+  for (const auto &rv : buf) total += rv.size();
+  std::vector<uint16_t> merged;
+  merged.reserve(total);
+
+  for (const auto &rv : buf) {
+    for (uint16_t v : rv) {
+      if (v != 0) merged.push_back(v); // drop 0 as invalid
+    }
+  }
+  return merged;
+}
+
 void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_data) {
   if (visual_image_pub_->get_subscription_count() == 0) return;
   // ===================================== render visual image ==============================================
@@ -1174,6 +1274,65 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
         out_ptr[c] = cv::Vec3b(val, val, val);
       }
     }
+  } else if (render_type_.rfind("distance", 0) == 0) {
+    static double fb = camera_intrinsic_->baseline * camera_intrinsic_->fx;
+    static double z_near_ema_mm = -1;
+    static int frame_cnt = 0;
+    static int interval = use_local_image_flag_ ? 1 : 5;
+    if (++frame_cnt % interval == 0) {
+      double z_near = compute_near_depth_percentile(pub_data->depth, 0.02);
+      if (z_near > 0) {
+        if (z_near_ema_mm < 0)
+          z_near_ema_mm = z_near;
+        else
+          z_near_ema_mm = 0.05 * z_near + 0.95 * z_near_ema_mm;
+      }
+    }
+    double z_far = z_near_ema_mm + 3000.0;
+    int d_max = static_cast<int>(fb / (z_near_ema_mm / 1000.0) - camera_intrinsic_->doffs);
+    int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
+    // cv::Mat mask = (pub_data->disp >= d_min) & (pub_data->disp <= d_max);
+    // pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (d_max - d_min), -d_min * 255.0 / (d_max - d_min));
+    // visual_img.setTo(0, pub_data->disp < d_min);
+    // visual_img.setTo(255, pub_data->disp > d_max);
+    // cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
+
+    float32x4_t v_dmin = vdupq_n_f32(d_min);
+    float32x4_t v_zero = vdupq_n_f32(0.f);
+    float32x4_t v_255 = vdupq_n_f32(255.f);
+    const float scale = 255.0f / (d_max - d_min);
+    float32x4_t v_scale = vdupq_n_f32(scale);
+    visual_img.create(pub_data->disp.size(), CV_8UC1);
+
+#pragma omp parallel for schedule(static)
+    for (int y = 0; y < pub_data->disp.rows; ++y) {
+      const float *dptr = pub_data->disp.ptr<float>(y);
+      uchar *optr = visual_img.ptr<uchar>(y);
+      int x = 0;
+      for (; x <= pub_data->disp.cols - 4; x += 4) {
+        float32x4_t v = vld1q_f32(dptr + x);
+        v = vsubq_f32(v, v_dmin);
+        v = vmulq_f32(v, v_scale);
+        v = vmaxq_f32(v, v_zero);
+        v = vminq_f32(v, v_255);
+        uint8x8_t u8 = vqmovn_u16(vcombine_u16(vmovn_u32(vcvtq_u32_f32(v)), vdup_n_u16(0)));
+        vst1_u8(optr + x, u8);
+      }
+
+      // tail
+      for (; x < pub_data->disp.cols; ++x) {
+        float d = dptr[x];
+        uchar v;
+        if (d <= d_min)
+          v = 0;
+        else if (d >= d_max)
+          v = 255;
+        else
+          v = static_cast<uchar>((d - d_min) * scale);
+        optr[x] = v;
+      }
+    }
+    cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
   } else {
     // Convert to 8-bit scaled image
     pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / render_max_disp_);
@@ -1223,7 +1382,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                   font_scale, CV_RGB(255, 255, 255), 2);
       if (measure_mode_) {
         if (i == set_num / 2 && j == set_num / 2) {
-          RoiVec roi = extract_center_roi(pub_data->depth, x, y);
+          RoiVec roi = extract_center_roi(pub_data->depth, x, y, roi_size_);
           roi_buffer.push_back(roi);
           if (roi_buffer.size() > 10) roi_buffer.pop_front();
           std::vector<uint16_t> merged = merge_and_filter_valid(roi_buffer);
@@ -1355,7 +1514,7 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left.png");
   std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right.png");
   std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
-  std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.png");
+  std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.jpg");
   std::string origin_left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_L.png");
   std::string origin_right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_R.png");
 
@@ -1370,7 +1529,7 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   if (!pub_data->uncert.empty()) cv::imwrite(uncert_image_path, pub_data->uncert);
   cv::imwrite(left_image_path, left_bgr);
   cv::imwrite(right_image_path, right_bgr);
-  if (pub_data->pointcloud && !pub_data->pointcloud->points.empty())
+  if (save_pcd_flag_ && pub_data->pointcloud && !pub_data->pointcloud->points.empty())
     pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
   if (!pub_data->visual_img.empty()) cv::imwrite(visual_image_path, pub_data->visual_img);
   if (pub_data->origin_left_msg && use_local_image_flag_ == false) {
@@ -1493,41 +1652,6 @@ void StereoNetNode::infer_offline() {
 
   RCLCPP_WARN(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
               local_image_dir_.c_str());
-}
-
-RoiVec StereoNetNode::extract_center_roi(const cv::Mat &depth, int cx, int cy) {
-  RoiVec out;
-  if (depth.empty() || depth.type() != CV_16UC1) return out;
-
-  int x0 = cx - roi_size_ / 2;
-  int y0 = cy - roi_size_ / 2;
-
-  // clamp
-  x0 = std::max(0, std::min(x0, depth.cols - roi_size_));
-  y0 = std::max(0, std::min(y0, depth.rows - roi_size_));
-
-  out.reserve(roi_size_ * roi_size_);
-  for (int r = 0; r < roi_size_; ++r) {
-    const uint16_t *rowPtr = depth.ptr<uint16_t>(y0 + r);
-    for (int c = 0; c < roi_size_; ++c) {
-      out.push_back(rowPtr[x0 + c]);
-    }
-  }
-  return out;
-}
-
-std::vector<uint16_t> StereoNetNode::merge_and_filter_valid(const std::deque<RoiVec> &buf) {
-  size_t total = 0;
-  for (const auto &rv : buf) total += rv.size();
-  std::vector<uint16_t> merged;
-  merged.reserve(total);
-
-  for (const auto &rv : buf) {
-    for (uint16_t v : rv) {
-      if (v != 0) merged.push_back(v); // drop 0 as invalid
-    }
-  }
-  return merged;
 }
 
 std::tuple<double, double, double, size_t> StereoNetNode::compute_trimmed_stats(std::vector<uint16_t> &vals,

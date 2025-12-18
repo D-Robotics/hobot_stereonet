@@ -59,7 +59,7 @@ def generate_launch_description():
         {'name':'origin_right_image_topic', 'default_value':'/StereoNetNode/origin_right_image', 'description': 'origin_right_image_topic'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
-        {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse]'},
+        {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse, distance, distance-reverse]'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
         {'name':'depth_decimal_num', 'default_value':'2', 'description': 'depth_decimal_num'},
         {'name':'render_max_disp', 'default_value':'80', 'description': 'render_max_disp'},
@@ -84,6 +84,7 @@ def generate_launch_description():
         {'name':'save_dir', 'default_value':'./stereonet_result', 'description': 'save_dir'},
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
+        {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
 
         {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
         {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
