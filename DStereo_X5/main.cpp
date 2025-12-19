@@ -229,13 +229,13 @@ private:
           // infer
           uint8_t *left_img_nv12 = input_data->left_img_nv12.data();
           uint8_t *right_img_nv12 = input_data->right_img_nv12.data();
-          int idle_tensor_id = 0;
-          stereonet_process_->forward(left_img_nv12, right_img_nv12, idle_tensor_id);
-          postprocess_thread_pool_ptr_->detach_task([this, idle_tensor_id, input_data]() {
+          InferenceHandle handle;
+          stereonet_process_->forward(left_img_nv12, right_img_nv12, handle);
+          postprocess_thread_pool_ptr_->detach_task([this, handle, input_data]() {
             // postprocess
             cv ::Mat disp, uncert, depth;
-            stereonet_process_->postprocess_out_disp_depth(idle_tensor_id, uncertainty_th_, camera_intrinsic_, disp,
-                                                           uncert, depth);
+            stereonet_process_->postprocess_out_disp_depth(handle, uncertainty_th_, camera_intrinsic_, disp, uncert,
+                                                           depth);
 
             // enquque
             while (pub_data_queue_.size_approx() >= infer_thread_num_) {
@@ -285,8 +285,9 @@ private:
             cv::imwrite("./result/depth_" + std::to_string(pub_data->timestamp) + ".png", pub_data->depth);
             // save visual
             cv::Mat visual_img;
-            stereonet_process_->convert_visual_img(pub_data->left_img, pub_data->disp, pub_data->depth, visual_img);
-            cv::imwrite("./result/visual_" + std::to_string(pub_data->timestamp) + ".png", visual_img);
+            stereonet_process_->convert_visual_img(pub_data->left_img, pub_data->disp, pub_data->depth,
+                                                   camera_intrinsic_, visual_img);
+            cv::imwrite("./result/visual_" + std::to_string(pub_data->timestamp) + ".jpg", visual_img);
             // save pointcloud
             std::vector<stereonet::PointXYZRGB> pointcloud;
             stereonet_process_->depth_to_pointcloud_rgb(pub_data->depth, pub_data->left_img, camera_intrinsic_,

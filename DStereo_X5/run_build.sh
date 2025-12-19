@@ -20,8 +20,8 @@ mkdir -p ./3rdparty/lib_opencv4.5.4/
 cp -r ../3rdparty/lib_opencv4.5.4/ ./3rdparty/
 cp -r ../make_ln.sh ./
 mkdir result
-tar -cf StereoInfer.tar ./stereo_infer ./3rdparty ./model  ./img  ./make_ln.sh ./result
-echo "=> output file: StereoInfer.tar"
+tar -zcf StereoInfer.tar.gz ./stereo_infer ./3rdparty ./model  ./img  ./make_ln.sh ./result
+echo "=> output file: StereoInfer.tar.gz"
 
 echo "=> ================="
 md5sum ./stereo_infer

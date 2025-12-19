@@ -102,10 +102,10 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
   return ret_code;
 }
 
-int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, int &idle_tensor_id) {
+int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, InferenceHandle &handle) {
   int ret_code = 0;
 
-  idle_tensor_id = get_idle_tensor();
+  int idle_tensor_id = get_idle_tensor();
   {
     ScopeProcessTime t(logger_, "fill_img_to_input_tensor");
     if (idle_tensor_id == -1) {
@@ -136,6 +136,8 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, i
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
     }
   }
+
+  handle = idle_tensor_id;
 
   return ret_code;
 }
@@ -194,11 +196,11 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
 }
 #endif
 
-int StereonetProcess::postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp,
+int StereonetProcess::postprocess(const InferenceHandle &handle, const double &uncertainty_th, cv::Mat &disp,
                                   cv::Mat &uncert) {
-  int ret_code = 0;
-
   ScopeProcessTime t(logger_, "postprocess");
+  int ret_code = 0;
+  int idle_tensor_id = handle;
 
   // get shape info
   auto &outputs = batch_output_tensors_[idle_tensor_id];
@@ -929,15 +931,40 @@ void StereonetProcess::dump_pcd_file_rgb(const std::string &filename, const std:
   ofs.close();
 }
 
+static double compute_near_depth_percentile(const cv::Mat &depth, double percentile = 0.02) {
+  std::vector<double> valid;
+  valid.reserve(depth.total());
+
+  for (int y = 0; y < depth.rows; ++y) {
+    const uint16_t *ptr = depth.ptr<uint16_t>(y);
+    for (int x = 0; x < depth.cols; ++x)
+      if (ptr[x] > 0) valid.push_back(ptr[x]);
+  }
+  if (valid.empty()) return -1;
+  size_t k = static_cast<size_t>(percentile * valid.size());
+  std::nth_element(valid.begin(), valid.begin() + k, valid.end());
+  return valid[k];
+}
+
 void StereonetProcess::convert_visual_img(const cv::Mat &rgb, const cv::Mat &disp, const cv::Mat &depth,
-                                          cv::Mat &visual_img, int render_max_disp, int depth_decimal_num) {
+                                          const CameraIntrinsic &camera_intrinsic, cv::Mat &visual_img,
+                                          int depth_decimal_num) {
   if (depth_decimal_num < 2) depth_decimal_num = 2; // cm
   if (depth_decimal_num > 3) depth_decimal_num = 3; // mm
   CV_Assert(rgb.type() == CV_8UC3);
   CV_Assert(disp.type() == CV_32FC1);
   CV_Assert(depth.type() == CV_16UC1);
-  disp.convertTo(visual_img, CV_8UC1, 255.0 / render_max_disp);
+
+  double fb = camera_intrinsic.baseline * camera_intrinsic.fx;
+  double z_near = compute_near_depth_percentile(depth, 0.02);
+  double z_far = z_near + 3000.0;
+  int d_max = static_cast<int>(fb / (z_near / 1000.0) - camera_intrinsic.doffs);
+  int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic.doffs);
+  disp.convertTo(visual_img, CV_8UC1, 255.0 / (d_max - d_min), -d_min * 255.0 / (d_max - d_min));
+  visual_img.setTo(0, disp < d_min);
+  visual_img.setTo(255, disp > d_max);
   cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
+
   static cv::Mat lut;
   if (lut.empty()) {
     cv::Mat tmp(1, 256, CV_8UC1);

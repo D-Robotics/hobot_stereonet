@@ -44,7 +44,7 @@ bash run_build.sh
 ``` bash
 cd /userdata/
 mkdir StereoInfer
-tar -xvf StereoInfer.tar -C StereoInfer
+tar -zxvf StereoInfer.tar -C StereoInfer
 ```
 
 ## Run
@@ -91,7 +91,7 @@ The following files will be generated in the `result` directory:
   | -------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | depth_{timestamp}.png      | ![depth](docs/depth_1765459980707_visual.png)                  | ![depth](docs/depth_1765459116550_visual.png)                                                                   | Depth map aligned with the left image (unit: mm)                                                                                                                       |
   | disparity_{timestamp}.pfm  | ![disparity](docs/disp_1765459980707_visual.png)               | ![disparity](docs/disp_1765459116550_visual.png)                                                                | Disparity map aligned with the left image (unit:pixels)                                                                                                                |
-  | visual_{timestamp}.png     | ![visual](docs/visual_1765459980707.png)   no black empty hole | ![visual](docs/visual_1765459116550.png)   the black empty hole is the bad or edge area filtered by uncertainty | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
+  | visual_{timestamp}.png     | ![visual](docs/visual_1765459980707.jpg)   no black empty hole | ![visual](docs/visual_1765459116550.jpg)   the black empty hole is the bad or edge area filtered by uncertainty | Top: left image; Bottom: depth pseudo-color image. <br> Color gradient red → yellow → green → blue indicates distance from near to far. Numbers show grid point depths |
   | pointcloud_{timestamp}.pcd | ![pcd](docs/pointcloud_1765459980707_visual.png)               | ![pcd](docs/pointcloud_1765459116550_visual.png)                                                                | 3D point cloud generated from the left image                                                                                                                           |
 -   Disparity maps, depth maps, and visualization images: It is
     recommended to use

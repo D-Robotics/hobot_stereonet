@@ -1291,7 +1291,6 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     double z_far = z_near_ema_mm + 3000.0;
     int d_max = static_cast<int>(fb / (z_near_ema_mm / 1000.0) - camera_intrinsic_->doffs);
     int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
-    // cv::Mat mask = (pub_data->disp >= d_min) & (pub_data->disp <= d_max);
     // pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (d_max - d_min), -d_min * 255.0 / (d_max - d_min));
     // visual_img.setTo(0, pub_data->disp < d_min);
     // visual_img.setTo(255, pub_data->disp > d_max);

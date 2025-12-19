@@ -32,6 +32,8 @@
 #include "pub_data.h"
 #endif
 
+using InferenceHandle = int;
+
 namespace stereonet {
 // =================================================================================================================================
 #define HB_CHECK_SUCCESS(logger, ret_code, errmsg)                                                                     \
@@ -87,10 +89,10 @@ public:
    * @brief Perform forward inference using the StereoNet model asynchronously
    * @param left_img_data Pointer to the left image data in NV12 format
    * @param right_img_data Pointer to the right image data in NV12 format
-   * @param idle_tensor_id Output tensor id
+   * @param handle Output inference handle
    * @return 0 on success, -1 on failure
    */
-  int forward(uint8_t *left_img_data, uint8_t *right_img_data, int &idle_tensor_id);
+  int forward(uint8_t *left_img_data, uint8_t *right_img_data, InferenceHandle &handle);
 
   /**
    * @brief Perform forward inference using the StereoNet model
@@ -124,12 +126,12 @@ public:
 
   /**
    * @brief Postprocess the output tensors using convex upsampling
-   * @param idle_tensor_id Output tensor id
+   * @param handle inference handle from forward
    * @param uncertainty_th Uncertainty threshold for postprocessing
    * @param disp Output disparity map
    * @param uncert Output uncertainty map
    */
-  int postprocess(const int idle_tensor_id, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
+  int postprocess(const InferenceHandle &handle, const double &uncertainty_th, cv::Mat &disp, cv::Mat &uncert);
 
   /**
    * @brief Postprocess and output disparity map, uncertainty map and depth map
@@ -213,12 +215,13 @@ public:
    * @param rgb Input RGB image
    * @param disp Input disparity map
    * @param depth Input depth map
+   * @param camera_intrinsic Camera intrinsic parameters
    * @param visual_img Output visual image
-   * @param render_max_disp Maximum disparity value (unit: pixel)
    * @param depth_decimal_num Depth decimal number
    */
-  static void convert_visual_img(const cv::Mat &rgb, const cv::Mat &disp, const cv::Mat &depth, cv::Mat &visual_img,
-                                 int render_max_disp = 80, int depth_decimal_num = 2);
+  static void convert_visual_img(const cv::Mat &rgb, const cv::Mat &disp, const cv::Mat &depth,
+                                 const CameraIntrinsic &camera_intrinsic, cv::Mat &visual_img,
+                                 int depth_decimal_num = 2);
 
 private:
   // ===================================== member functions =======================================
