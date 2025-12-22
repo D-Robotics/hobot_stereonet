@@ -262,8 +262,13 @@ private:
   std::string save_dir_ = "./stereonet_result";
   int save_freq_ = 1;
   int save_total_ = -1;
-  int save_count_ = 0;
-  std::mutex save_mutex_;
+  bool save_stereo_flag_ = true;
+  bool save_origin_flag_ = false;
+  bool save_disp_flag_ = true;
+  bool save_uncert_flag_ = false;
+  bool save_depth_flag_ = true;
+  bool save_visual_flag_ = true;
+  bool save_pcd_flag_ = false;
 
   // calib params
   std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
@@ -294,7 +299,7 @@ private:
   uint64_t last_frame_timestamp_ = 0;
   std::unique_ptr<BS::thread_pool<>> save_thread_pool_ptr_ = nullptr;
   int save_thread_num_ = 4;
-  bool save_pcd_flag_ = false;
+  int max_save_task_ = 50;
   moodycamel::BlockingConcurrentQueue<std::shared_ptr<PreProcessData>> pre_process_queue_;
 };
 } // namespace stereonet

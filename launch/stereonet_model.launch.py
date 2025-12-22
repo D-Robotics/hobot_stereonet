@@ -84,6 +84,13 @@ def generate_launch_description():
         {'name':'save_dir', 'default_value':'./stereonet_result', 'description': 'save_dir'},
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
         {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
+        {'name':'save_stereo_flag', 'default_value':'True', 'description': 'save_stereo_flag'},
+        {'name':'save_origin_flag', 'default_value':'False', 'description': 'save_origin_flag'},
+        {'name':'save_disp_flag', 'default_value':'True', 'description': 'save_disp_flag'},
+        {'name':'save_uncert_flag', 'default_value':'False', 'description': 'save_uncert_flag'},
+        {'name':'save_depth_flag', 'default_value':'True', 'description': 'save_depth_flag'},
+        {'name':'save_visual_flag', 'default_value':'True', 'description': 'save_visual_flag'},
+        {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
         {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
 
         {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
@@ -107,6 +114,7 @@ def generate_launch_description():
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
+        {'name':'max_save_task', 'default_value':'50', 'description': 'max_save_task'},
     ]
 
     launch = declare_configurable_parameters(node_params)

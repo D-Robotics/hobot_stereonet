@@ -30,13 +30,15 @@ struct PubData {
   uint64_t timestamp;
   std_msgs::msg::Header header;
   sensor_msgs::msg::Image::SharedPtr origin_stereo_msg = nullptr;
-  sensor_msgs::msg::Image::SharedPtr origin_left_msg = nullptr;
-  sensor_msgs::msg::Image::SharedPtr origin_right_msg = nullptr;
   cv::Mat disp;
   cv::Mat depth;
   cv::Mat uncert;
   std::vector<uint8_t> rectify_left_img_data;  // nv12
   std::vector<uint8_t> rectify_right_img_data; // nv12
+  cv::Mat left_bgr;
+  cv::Mat right_bgr;
+  cv::Mat origin_left;
+  cv::Mat origin_right;
   double fps;
   int latency;
   int cpu_usage;
@@ -44,6 +46,8 @@ struct PubData {
 
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointcloud = nullptr;
   cv::Mat visual_img;
+
+  int count;
 };
 
 } // namespace stereonet

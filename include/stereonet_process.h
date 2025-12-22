@@ -27,6 +27,7 @@
 #include "dnn_platform.h"
 #include "timer_utils.h"
 #if HOBOT_HAS_RCLCPP
+#include "img_convert_utils.h"
 #include "order_blockqueue.hpp"
 #include "BS_thread_pool.hpp"
 #include "pub_data.h"

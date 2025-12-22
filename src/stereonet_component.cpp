@@ -117,10 +117,25 @@ void StereoNetNode::set_node_params() {
   infer_thread_num_ = this->get_parameter("infer_thread_num").as_int();
   this->declare_parameter<int>("save_thread_num", 4);
   save_thread_num_ = this->get_parameter("save_thread_num").as_int();
+  this->declare_parameter<int>("max_save_task", 50);
+  max_save_task_ = this->get_parameter("max_save_task").as_int();
   if (infer_thread_num_ <= 0) infer_thread_num_ = 1;
   if (infer_thread_num_ > 4) infer_thread_num_ = 4;
   if (save_thread_num_ <= 0) save_thread_num_ = 1;
   if (save_thread_num_ > 8) save_thread_num_ = 8;
+  if (max_save_task_ <= 20) max_save_task_ = 20;
+  this->declare_parameter<bool>("save_stereo_flag", true);
+  save_stereo_flag_ = this->get_parameter("save_stereo_flag").as_bool();
+  this->declare_parameter<bool>("save_origin_flag", false);
+  save_origin_flag_ = this->get_parameter("save_origin_flag").as_bool();
+  this->declare_parameter<bool>("save_disp_flag", true);
+  save_disp_flag_ = this->get_parameter("save_disp_flag").as_bool();
+  this->declare_parameter<bool>("save_depth_flag", true);
+  save_depth_flag_ = this->get_parameter("save_depth_flag").as_bool();
+  this->declare_parameter<bool>("save_uncert_flag", false);
+  save_uncert_flag_ = this->get_parameter("save_uncert_flag").as_bool();
+  this->declare_parameter<bool>("save_visual_flag", true);
+  save_visual_flag_ = this->get_parameter("save_visual_flag").as_bool();
   this->declare_parameter<bool>("save_pcd_flag", false);
   save_pcd_flag_ = this->get_parameter("save_pcd_flag").as_bool();
 
@@ -168,6 +183,14 @@ void StereoNetNode::set_node_params() {
       // when use local image, always save all results
       save_freq_ = 1;
       save_total_ = -1;
+      save_thread_num_ = 1;
+
+      save_stereo_flag_ = true;
+      save_origin_flag_ = false;
+      save_disp_flag_ = true;
+      save_depth_flag_ = true;
+      save_visual_flag_ = true;
+      save_pcd_flag_ = true;
     }
     if (image_sleep_ < 0) image_sleep_ = 0;
     infer_thread_num_ = 1;
@@ -252,8 +275,12 @@ void StereoNetNode::set_node_params() {
           << "(m), " << pointcloud_depth_max_ << "(m)]" << std::endl
           << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
           << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
-          << "[save_result_flag, save_dir, save_freq, save_total, save_pcd_flag]: [" << save_result_flag_ << ", "
-          << save_dir_ << ", " << save_freq_ << ", " << save_total_ << ", " << save_pcd_flag_ << "]" << std::endl
+          << "[save_result_flag, save_dir, save_freq, save_total, save_stereo_flag, save_origin_flag, save_disp_flag, "
+             "save_uncert_flag, "
+             "save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+          << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_ << ", " << save_total_ << ", "
+          << save_stereo_flag_ << ", " << save_origin_flag_ << ", " << save_disp_flag_ << ", " << save_uncert_flag_
+          << ", " << save_depth_flag_ << ", " << save_visual_flag_ << ", " << save_pcd_flag_ << "]" << std::endl
           << "[calib_method, stereo_calib_file_path]: [" << calib_method_ << ", " << stereo_calib_file_path_ << "]"
           << std::endl
           << "[speckle_filter_enable, max_speckle_size, max_disp_diff]: [" << speckle_filter_enable_ << ", "
@@ -265,7 +292,8 @@ void StereoNetNode::set_node_params() {
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
           << "(mm)]" << std::endl
-          << "[infer_thread_num, save_thread_num]: [" << infer_thread_num_ << ", " << save_thread_num_ << "]"
+          << "[infer_thread_num, save_thread_num, max_save_task]: [" << infer_thread_num_ << ", " << save_thread_num_
+          << ", " << max_save_task_ << "]" << std::endl
           << std::endl
           << "=> ==================================================================" << std::endl);
 
@@ -278,8 +306,9 @@ void StereoNetNode::set_node_params() {
         rclcpp::shutdown();
       }
     }
-    save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num_);
+    if (save_thread_num_ > 1) save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num_);
     if (save_freq_ <= 0) save_freq_ = 1;
+    render_perf_ = false;
   }
 }
 
@@ -508,11 +537,23 @@ void StereoNetNode::infer_function(const int &thread_id) {
 
         pub_data->rectify_left_img_data = rectify_left_img_data;
         pub_data->rectify_right_img_data = rectify_right_img_data;
+        cv::Mat left_bgr, right_bgr;
+        ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, pub_data->disp.cols,
+                                         pub_data->disp.rows);
+        ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_right_img_data.data(), right_bgr, pub_data->disp.cols,
+                                         pub_data->disp.rows);
+        pub_data->left_bgr = left_bgr;
+        pub_data->right_bgr = right_bgr;
 
-        if (pub_data_queue_.size() >= infer_thread_num_ && use_local_image_flag_ == false) {
+        if (!use_local_image_flag_ && pub_data_queue_.size() >= infer_thread_num_) {
+          // if not use local image, drop one message to avoid publish too many messages
           RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                                "\033[31m=> drop one message to avoid publish too many messages\033[0m");
           pub_data_queue_.pop_front();
+        }
+        while (use_local_image_flag_ && pub_data_queue_.size() >= 10) {
+          // if use local image, wait for 100ms to avoid publish too many messages
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         pub_data_queue_.put(pub_data->timestamp, pub_data);
       }
@@ -649,6 +690,7 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
 }
 
 void StereoNetNode::publish_function() {
+  int count = 0;
   while (rclcpp::ok()) {
     std::shared_ptr<PubData> pub_data;
     if (pub_data_queue_.get(pub_data, 100)) {
@@ -711,7 +753,16 @@ void StereoNetNode::publish_function() {
       }
       {
         // save result
-        if (save_result_flag_) save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result(pub_data); });
+        pub_data->count = count;
+        if (save_result_flag_ && save_thread_num_ == 1) {
+          save_result(pub_data);
+          count++;
+        } else if (save_result_flag_ && save_thread_num_ > 1) {
+          if (save_thread_pool_ptr_->get_tasks_total() < max_save_task_) {
+            save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result(pub_data); });
+            count++;
+          }
+        }
       }
     }
   }
@@ -897,6 +948,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
 
 void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {
   if (origin_left_image_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  cv::Mat origin_left;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
@@ -916,7 +968,9 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
                     pub_data->origin_stereo_msg->width * pub_data->origin_stereo_msg->height,
                 single_img_w * single_img_h / 2);
     origin_left_image_pub_->publish(*left_msg);
-    pub_data->origin_left_msg = left_msg;
+    if (save_origin_flag_) {
+      ImgConvertUtils::nv12_to_bgr_mat(left_msg->data.data(), pub_data->origin_left, left_msg->width, left_msg->height);
+    }
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
@@ -938,7 +992,12 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       cv::Mat left_rgb = stereo_rgb.rowRange(0, single_img_h).clone();
       std::memcpy(left_msg->data.data(), left_rgb.data, size);
       origin_left_image_pub_->publish(*left_msg);
-      pub_data->origin_left_msg = left_msg;
+
+      if (save_origin_flag_) {
+        cv::Mat rgb(left_msg->height, left_msg->width, CV_8UC3, const_cast<uint8_t *>(left_msg->data.data()),
+                    left_msg->step);
+        cv::cvtColor(rgb, origin_left, cv::COLOR_RGB2BGR);
+      }
     } else {
       left_msg->encoding = "bgr8";
       left_msg->step = single_img_w * 3; // BGR step
@@ -950,13 +1009,19 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       cv::Mat left_bgr = stereo_bgr.rowRange(0, single_img_h).clone();
       std::memcpy(left_msg->data.data(), left_bgr.data, size);
       origin_left_image_pub_->publish(*left_msg);
-      pub_data->origin_left_msg = left_msg;
+
+      if (save_origin_flag_) {
+        origin_left = cv::Mat(left_msg->height, left_msg->width, CV_8UC3, const_cast<uint8_t *>(left_msg->data.data()),
+                              left_msg->step)
+                          .clone();
+      }
     }
   }
 }
 
 void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &pub_data) {
   if (origin_right_image_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  cv::Mat origin_right;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
@@ -978,7 +1043,11 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
                     single_img_w * single_img_h / 2,
                 single_img_w * single_img_h / 2);
     origin_right_image_pub_->publish(*right_msg);
-    pub_data->origin_right_msg = right_msg;
+
+    if (save_origin_flag_) {
+      ImgConvertUtils::nv12_to_bgr_mat(right_msg->data.data(), pub_data->origin_right, right_msg->width,
+                                       right_msg->height);
+    }
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
@@ -1000,7 +1069,12 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       cv::Mat right_rgb = stereo_rgb.rowRange(single_img_h, pub_data->origin_stereo_msg->height).clone();
       std::memcpy(right_msg->data.data(), right_rgb.data, size);
       origin_right_image_pub_->publish(*right_msg);
-      pub_data->origin_right_msg = right_msg;
+
+      if (save_origin_flag_) {
+        cv::Mat rgb(right_msg->height, right_msg->width, CV_8UC3, const_cast<uint8_t *>(right_msg->data.data()),
+                    right_msg->step);
+        cv::cvtColor(rgb, pub_data->origin_right, cv::COLOR_RGB2BGR);
+      }
     } else {
       right_msg->encoding = "bgr8";
       right_msg->step = single_img_w * 3; // BGR step
@@ -1012,7 +1086,12 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, pub_data->origin_stereo_msg->height).clone();
       std::memcpy(right_msg->data.data(), right_bgr.data, size);
       origin_right_image_pub_->publish(*right_msg);
-      pub_data->origin_right_msg = right_msg;
+
+      if (save_origin_flag_) {
+        origin_right = cv::Mat(right_msg->height, right_msg->width, CV_8UC3,
+                               const_cast<uint8_t *>(right_msg->data.data()), right_msg->step)
+                           .clone();
+      }
     }
   }
 }
@@ -1279,7 +1358,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     static double z_near_ema_mm = -1;
     static int frame_cnt = 0;
     static int interval = use_local_image_flag_ ? 1 : 5;
-    if (++frame_cnt % interval == 0) {
+    if (frame_cnt++ % interval == 0) {
       double z_near = compute_near_depth_percentile(pub_data->depth, 0.02);
       if (z_near > 0) {
         if (z_near_ema_mm < 0)
@@ -1470,27 +1549,21 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
 }
 
 void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
-  if (rclcpp::ok() == false) return;
-  bool do_save = false;
-  int current_count = 0;
-  {
-    std::lock_guard<std::mutex> lock(save_mutex_);
-    if (!save_result_flag_) return;
-    if (save_total_ > 0 && save_count_ / save_freq_ >= save_total_) {
-      RCLCPP_WARN(this->get_logger(), "\033[32m=> save total %d images, stop saving\033[0m", save_total_);
-      save_result_flag_ = false;
-      return;
-    }
-    if (save_count_ % save_freq_ != 0) {
-      save_count_++;
-      return;
-    }
-    current_count = save_count_;
-    save_count_++;
-    do_save = true;
+  if (!rclcpp::ok()) return;
+  if (!save_result_flag_) return;
+  // save enough images
+  if (save_total_ > 0 && pub_data->count / save_freq_ >= save_total_) {
+    RCLCPP_WARN(this->get_logger(), "\033[32m=> save total %d images, stop saving\033[0m", save_total_);
+    save_result_flag_ = false;
+    return;
   }
+  // do save if count is divisible by save_freq
+  bool do_save = false;
+  if (pub_data->count % save_freq_ == 0) do_save = true;
   if (!do_save) return;
 
+  int current_count = pub_data->count / save_freq_;
+  // save camera intrinsic
   if (current_count == 0) {
     std::string intrinsic_path = fs::path(save_dir_) / fs::path("camera_intrinsic.txt");
     std::ofstream ofs(intrinsic_path);
@@ -1504,70 +1577,47 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
     }
   }
 
+  // save images & point cloud
   std::stringstream ss;
   ss << std::setw(6) << std::setfill('0') << current_count << "_";
 
-  std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth.png");
-  std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp.pfm");
-  std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
-  std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left.png");
-  std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right.png");
-  std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
-  std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.jpg");
-  std::string origin_left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_L.png");
-  std::string origin_right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_R.png");
+  if (save_stereo_flag_) {
+    std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left.png");
+    std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right.png");
+    cv::imwrite(left_image_path, pub_data->left_bgr);
+    cv::imwrite(right_image_path, pub_data->right_bgr);
+  }
+  if (save_disp_flag_) {
+    std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp.pfm");
+    cv::imwrite(disp_image_path, pub_data->disp);
+  }
+  if (save_uncert_flag_ && !pub_data->uncert.empty()) {
+    std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
 
-  cv::Mat left_bgr, right_bgr;
-  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, pub_data->disp.cols,
-                                   pub_data->disp.rows);
-  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_right_img_data.data(), right_bgr, pub_data->disp.cols,
-                                   pub_data->disp.rows);
+    cv::imwrite(uncert_image_path, pub_data->uncert);
+  }
+  if (save_depth_flag_) {
+    std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth.png");
+    cv::imwrite(depth_image_path, pub_data->depth);
+  }
+  if (save_visual_flag_) {
+    std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.jpg");
+    cv::imwrite(visual_image_path, pub_data->visual_img);
+  }
+  if (save_pcd_flag_ && pub_data->pointcloud && !pub_data->pointcloud->points.empty()) {
+    std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
 
-  cv::imwrite(depth_image_path, pub_data->depth);
-  cv::imwrite(disp_image_path, pub_data->disp);
-  if (!pub_data->uncert.empty()) cv::imwrite(uncert_image_path, pub_data->uncert);
-  cv::imwrite(left_image_path, left_bgr);
-  cv::imwrite(right_image_path, right_bgr);
-  if (save_pcd_flag_ && pub_data->pointcloud && !pub_data->pointcloud->points.empty())
     pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
-  if (!pub_data->visual_img.empty()) cv::imwrite(visual_image_path, pub_data->visual_img);
-  if (pub_data->origin_left_msg && use_local_image_flag_ == false) {
-    cv::Mat origin_left;
-    if (pub_data->origin_left_msg->encoding == "nv12") {
-      ImgConvertUtils::nv12_to_bgr_mat(pub_data->origin_left_msg->data.data(), origin_left,
-                                       pub_data->origin_left_msg->width, pub_data->origin_left_msg->height);
-    } else if (pub_data->origin_left_msg->encoding == "rgb8") {
-      cv::Mat rgb(pub_data->origin_left_msg->height, pub_data->origin_left_msg->width, CV_8UC3,
-                  const_cast<uint8_t *>(pub_data->origin_left_msg->data.data()), pub_data->origin_left_msg->step);
-      cv::cvtColor(rgb, origin_left, cv::COLOR_RGB2BGR);
-    } else if (pub_data->origin_left_msg->encoding == "bgr8") {
-      origin_left =
-          cv::Mat(pub_data->origin_left_msg->height, pub_data->origin_left_msg->width, CV_8UC3,
-                  const_cast<uint8_t *>(pub_data->origin_left_msg->data.data()), pub_data->origin_left_msg->step)
-              .clone();
-    }
-    if (!origin_left.empty()) cv::imwrite(origin_left_image_path, origin_left);
   }
-  if (pub_data->origin_right_msg && use_local_image_flag_ == false) {
-    cv::Mat origin_right;
-    if (pub_data->origin_right_msg->encoding == "nv12") {
-      ImgConvertUtils::nv12_to_bgr_mat(pub_data->origin_right_msg->data.data(), origin_right,
-                                       pub_data->origin_right_msg->width, pub_data->origin_right_msg->height);
-    } else if (pub_data->origin_right_msg->encoding == "rgb8") {
-      cv::Mat rgb(pub_data->origin_right_msg->height, pub_data->origin_right_msg->width, CV_8UC3,
-                  const_cast<uint8_t *>(pub_data->origin_right_msg->data.data()), pub_data->origin_right_msg->step);
-      cv::cvtColor(rgb, origin_right, cv::COLOR_RGB2BGR);
-    } else if (pub_data->origin_right_msg->encoding == "bgr8") {
-      origin_right =
-          cv::Mat(pub_data->origin_right_msg->height, pub_data->origin_right_msg->width, CV_8UC3,
-                  const_cast<uint8_t *>(pub_data->origin_right_msg->data.data()), pub_data->origin_right_msg->step)
-              .clone();
-    }
-    if (!origin_right.empty()) cv::imwrite(origin_right_image_path, origin_right);
+  if (save_origin_flag_ && !pub_data->origin_left.empty() && !pub_data->origin_right.empty()) {
+    std::string origin_left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_L.png");
+    std::string origin_right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_R.png");
+    cv::imwrite(origin_left_image_path, pub_data->origin_left);
+    cv::imwrite(origin_right_image_path, pub_data->origin_right);
   }
 
-  RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, save count: %d\033[0m", save_dir_.c_str(),
-              current_count);
+  RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, pub count: %d, save count: %d\033[0m",
+              save_dir_.c_str(), pub_data->count, current_count);
 }
 
 void StereoNetNode::infer_offline() {
@@ -1644,6 +1694,10 @@ void StereoNetNode::infer_offline() {
     size_t size = combine_img_bgr.cols * combine_img_bgr.rows * 3 / 2;
     stereo_msg->data.resize(size);
     std::memcpy(stereo_msg->data.data(), combine_img_nv12.data, size);
+    while (input_image_queue_.size_approx() >= 10) {
+      // if task is not finished, wait
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     input_image_queue_.enqueue(stereo_msg);
     std::this_thread::sleep_for(std::chrono::milliseconds(image_sleep_));
     cnt++;

@@ -186,6 +186,13 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
     pub_data->depth = depth;
     pub_data->rectify_left_img_data = left_img_data;
     pub_data->rectify_right_img_data = right_img_data;
+    cv::Mat left_bgr, right_bgr;
+    ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, pub_data->disp.cols,
+                                     pub_data->disp.rows);
+    ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_right_img_data.data(), right_bgr, pub_data->disp.cols,
+                                     pub_data->disp.rows);
+    pub_data->left_bgr = left_bgr;
+    pub_data->right_bgr = right_bgr;
     if (pub_data_queue.size() >= 1) {
       pub_data_queue.pop_front();
     }
