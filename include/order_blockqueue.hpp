@@ -87,7 +87,7 @@ template <class T> struct order_blockqueue {
     que.clear();
   }
 
-  uint size() {
+  unsigned int size() {
     std::lock_guard<std::mutex> lck(mtx);
     return que.size();
   }
