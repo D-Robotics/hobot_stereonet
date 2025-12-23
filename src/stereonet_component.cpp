@@ -88,11 +88,14 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<double>("camera_cx", 0.0);
   this->declare_parameter<double>("camera_cy", 0.0);
   this->declare_parameter<double>("baseline", 0.0);
+  this->declare_parameter<double>("doffs", 0.0);
   camera_intrinsic_->fx = this->get_parameter("camera_fx").as_double();
   camera_intrinsic_->fy = this->get_parameter("camera_fy").as_double();
   camera_intrinsic_->cx = this->get_parameter("camera_cx").as_double();
   camera_intrinsic_->cy = this->get_parameter("camera_cy").as_double();
   camera_intrinsic_->baseline = this->get_parameter("baseline").as_double();
+  camera_intrinsic_->doffs = this->get_parameter("doffs").as_double();
+  orignal_camera_intrinsic_ = std::make_shared<CameraIntrinsic>(*camera_intrinsic_);
 
   this->declare_parameter<int>("pointcloud_downsample_step", 2);
   this->declare_parameter<double>("pointcloud_height_min", -5.0);
@@ -267,9 +270,9 @@ void StereoNetNode::set_node_params() {
           << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
           << "visual_image_topic: " << visual_image_topic_ << std::endl
           << "uncertainty_th: " << uncertainty_th_ << std::endl
-          << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline]: [" << camera_intrinsic_->fx << ", "
+          << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline, doffs]: [" << camera_intrinsic_->fx << ", "
           << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy << ", "
-          << camera_intrinsic_->baseline << "(m)]" << std::endl
+          << camera_intrinsic_->baseline << "(m)" << camera_intrinsic_->doffs << "]" << std::endl
           << "[pointcloud_downsample_step, pointcloud_height_min, pointcloud_height_max, pointcloud_depth_max]: ["
           << pointcloud_downsample_step_ << ", " << pointcloud_height_min_ << "(m), " << pointcloud_height_max_
           << "(m), " << pointcloud_depth_max_ << "(m)]" << std::endl
@@ -300,7 +303,7 @@ void StereoNetNode::set_node_params() {
   if (save_result_flag_) {
     if (!fs::exists(save_dir_)) {
       if (fs::create_directories(save_dir_)) {
-        RCLCPP_INFO(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
+        RCLCPP_WARN(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
       } else {
         RCLCPP_ERROR(this->get_logger(), "\033[31m=> create save_dir: %s failed\033[0m", save_dir_.c_str());
         rclcpp::shutdown();
@@ -310,6 +313,32 @@ void StereoNetNode::set_node_params() {
     if (save_freq_ <= 0) save_freq_ = 1;
     render_perf_ = false;
   }
+
+  this->declare_parameter<bool>("save_result_once", false);
+  param_cb_handle_ = this->add_on_set_parameters_callback(
+      [this](const std::vector<rclcpp::Parameter> &params) -> rcl_interfaces::msg::SetParametersResult {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+
+        for (const auto &param : params) {
+          if (param.get_name() == "save_result_once") {
+            bool value = param.as_bool();
+
+            if (value) {
+              if (!save_thread_pool_ptr_) save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
+              if (!fs::exists(save_dir_)) {
+                if (fs::create_directories(save_dir_)) {
+                  RCLCPP_WARN(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
+                } else {
+                  RCLCPP_ERROR(this->get_logger(), "\033[31m=> create save_dir: %s failed\033[0m", save_dir_.c_str());
+                }
+              }
+              save_result_once_ = true;
+            }
+          }
+        }
+        return result;
+      });
 }
 
 void StereoNetNode::set_subscription_publisher() {
@@ -443,6 +472,7 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
   camera_intrinsic_->doffs = msg->p[11];
 
   if (camera_intrinsic_->baseline > 1) camera_intrinsic_->baseline *= 0.001f; // convert mm to m
+  orignal_camera_intrinsic_ = std::make_shared<CameraIntrinsic>(*camera_intrinsic_);
 
   RCLCPP_WARN(this->get_logger(),
               "\033[31m=> sub rectified [fx, fy, cx, cy, baseline(m), doffs] : [%f, %f, %f, %f, %f, %f]\033[0m",
@@ -599,10 +629,10 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
           camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / single_img_w;
           camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / single_img_h;
           RCLCPP_WARN(this->get_logger(),
-                      "\033[31m=> after resize, update camera intrinsic [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, "
-                      "%f, %f]\033[0m",
+                      "\033[31m=> after resize, update camera intrinsic [fx, fy, cx, cy, baseline(m), doffs] : [%f, "
+                      "%f, %f, %f, %f, %f]\033[0m",
                       camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                      camera_intrinsic_->baseline);
+                      camera_intrinsic_->baseline, camera_intrinsic_->doffs);
         }
         ImgConvertUtils::bgr_mat_to_nv12(left_bgr, left_img_data.data());
         ImgConvertUtils::bgr_mat_to_nv12(right_bgr, right_img_data.data());
@@ -666,10 +696,10 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
           camera_intrinsic_->fx = camera_intrinsic_->fx * model_input_w / single_img_w;
           camera_intrinsic_->fy = camera_intrinsic_->fy * model_input_h / single_img_h;
           RCLCPP_WARN(this->get_logger(),
-                      "\033[31m=> after resize, update camera intrinsic [fx, fy, cx, cy, baseline(m)] : [%f, %f, %f, "
-                      "%f, %f]\033[0m",
+                      "\033[31m=> after resize, update camera intrinsic [fx, fy, cx, cy, baseline(m), doffs] : [%f, "
+                      "%f, %f, %f, %f, %f]\033[0m",
                       camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                      camera_intrinsic_->baseline);
+                      camera_intrinsic_->baseline, camera_intrinsic_->doffs);
         }
       }
 
@@ -760,6 +790,12 @@ void StereoNetNode::publish_function() {
         } else if (save_result_flag_ && save_thread_num_ > 1) {
           if (save_thread_pool_ptr_->get_tasks_total() < max_save_task_) {
             save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result(pub_data); });
+            count++;
+          }
+        } else if (save_result_once_) {
+          save_result_once_ = false;
+          if (save_thread_pool_ptr_->get_tasks_total() < max_save_task_) {
+            save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result_once(pub_data); });
             count++;
           }
         }
@@ -873,7 +909,7 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
 }
 
 void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  if (pointcloud2_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
+  if (pointcloud2_pub_->get_subscription_count() == 0 && !save_result_flag_ && !save_result_once_) return;
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
@@ -934,10 +970,10 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
         PCLFilterUtils::gridBasedOutlierRemoval(pcl_cloud, grid_size_, grid_min_point_count_);
     pcl::toROSMsg(*filtered_cloud, *cloud_msg);
-    if (save_result_flag_) pub_data->pointcloud = filtered_cloud;
+    if (save_result_flag_ || save_result_once_) pub_data->pointcloud = filtered_cloud;
   } else {
     pcl::toROSMsg(*pcl_cloud, *cloud_msg);
-    if (save_result_flag_) pub_data->pointcloud = pcl_cloud;
+    if (save_result_flag_ || save_result_once_) pub_data->pointcloud = pcl_cloud;
   }
   cloud_msg->header = pub_data->header;
   cloud_msg->header.frame_id = "camera_link";
@@ -947,8 +983,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
 }
 
 void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {
-  if (origin_left_image_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
-  cv::Mat origin_left;
+  if (origin_left_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !save_result_once_) return;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
@@ -968,7 +1003,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
                     pub_data->origin_stereo_msg->width * pub_data->origin_stereo_msg->height,
                 single_img_w * single_img_h / 2);
     origin_left_image_pub_->publish(*left_msg);
-    if (save_origin_flag_) {
+    if (save_origin_flag_ || save_result_once_) {
       ImgConvertUtils::nv12_to_bgr_mat(left_msg->data.data(), pub_data->origin_left, left_msg->width, left_msg->height);
     }
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
@@ -993,10 +1028,10 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       std::memcpy(left_msg->data.data(), left_rgb.data, size);
       origin_left_image_pub_->publish(*left_msg);
 
-      if (save_origin_flag_) {
+      if (save_origin_flag_ || save_result_once_) {
         cv::Mat rgb(left_msg->height, left_msg->width, CV_8UC3, const_cast<uint8_t *>(left_msg->data.data()),
                     left_msg->step);
-        cv::cvtColor(rgb, origin_left, cv::COLOR_RGB2BGR);
+        cv::cvtColor(rgb, pub_data->origin_left, cv::COLOR_RGB2BGR);
       }
     } else {
       left_msg->encoding = "bgr8";
@@ -1010,18 +1045,17 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       std::memcpy(left_msg->data.data(), left_bgr.data, size);
       origin_left_image_pub_->publish(*left_msg);
 
-      if (save_origin_flag_) {
-        origin_left = cv::Mat(left_msg->height, left_msg->width, CV_8UC3, const_cast<uint8_t *>(left_msg->data.data()),
-                              left_msg->step)
-                          .clone();
+      if (save_origin_flag_ || save_result_once_) {
+        pub_data->origin_left = cv::Mat(left_msg->height, left_msg->width, CV_8UC3,
+                                        const_cast<uint8_t *>(left_msg->data.data()), left_msg->step)
+                                    .clone();
       }
     }
   }
 }
 
 void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &pub_data) {
-  if (origin_right_image_pub_->get_subscription_count() == 0 && save_result_flag_ == false) return;
-  cv::Mat origin_right;
+  if (origin_right_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !save_result_once_) return;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
@@ -1044,7 +1078,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
                 single_img_w * single_img_h / 2);
     origin_right_image_pub_->publish(*right_msg);
 
-    if (save_origin_flag_) {
+    if (save_origin_flag_ || save_result_once_) {
       ImgConvertUtils::nv12_to_bgr_mat(right_msg->data.data(), pub_data->origin_right, right_msg->width,
                                        right_msg->height);
     }
@@ -1070,7 +1104,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       std::memcpy(right_msg->data.data(), right_rgb.data, size);
       origin_right_image_pub_->publish(*right_msg);
 
-      if (save_origin_flag_) {
+      if (save_origin_flag_ || save_result_once_) {
         cv::Mat rgb(right_msg->height, right_msg->width, CV_8UC3, const_cast<uint8_t *>(right_msg->data.data()),
                     right_msg->step);
         cv::cvtColor(rgb, pub_data->origin_right, cv::COLOR_RGB2BGR);
@@ -1087,10 +1121,10 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       std::memcpy(right_msg->data.data(), right_bgr.data, size);
       origin_right_image_pub_->publish(*right_msg);
 
-      if (save_origin_flag_) {
-        origin_right = cv::Mat(right_msg->height, right_msg->width, CV_8UC3,
-                               const_cast<uint8_t *>(right_msg->data.data()), right_msg->step)
-                           .clone();
+      if (save_origin_flag_ || save_result_once_) {
+        pub_data->origin_right = cv::Mat(right_msg->height, right_msg->width, CV_8UC3,
+                                         const_cast<uint8_t *>(right_msg->data.data()), right_msg->step)
+                                     .clone();
       }
     }
   }
@@ -1192,6 +1226,54 @@ static std::vector<uint16_t> merge_and_filter_valid(const std::deque<RoiVec> &bu
     }
   }
   return merged;
+}
+
+/**
+ * @brief Compute trimmed mean and ranges after removing lowest k and highest k elements
+ * Returns tuple(mean_mm, neg_range_mm, pos_range_mm, trimmed_count)
+ * @param vals The vector of depth values
+ * @param trim_ratio The ratio of trimming
+ * @return The trimmed mean, negative range, positive range, and trimmed count
+ */
+static std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vector<uint16_t> &vals,
+                                                                        double trim_ratio) {
+  // Remove invalid early
+  if (vals.empty()) return {0.0, 0.0, 0.0, 0};
+
+  std::sort(vals.begin(), vals.end());
+  size_t N = vals.size();
+  size_t k = static_cast<size_t>(floor(N * trim_ratio));
+
+  // ensure we keep at least 1 element
+  if (N <= 2 * k) {
+    // reduce k so at least 1 element remains
+    if (N > 1)
+      k = (N - 1) / 2;
+    else
+      k = 0;
+  }
+
+  size_t start = k;
+  size_t end = N - k; // exclusive
+  if (start >= end) {
+    // fallback: use entire range
+    start = 0;
+    end = N;
+  }
+
+  // accumulate mean
+  double sum = 0.0;
+  for (size_t i = start; i < end; ++i) sum += static_cast<double>(vals[i]);
+  size_t count = end - start;
+  double mean = (count > 0) ? (sum / static_cast<double>(count)) : 0.0;
+
+  double min_trim = (count > 0) ? static_cast<double>(vals[start]) : 0.0;
+  double max_trim = (count > 0) ? static_cast<double>(vals[end - 1]) : 0.0;
+
+  double neg_range = mean - min_trim; // >=0
+  double pos_range = max_trim - mean; // >=0
+
+  return {mean, neg_range, pos_range, count};
 }
 
 void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_data) {
@@ -1575,6 +1657,19 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
       ofs.close();
       RCLCPP_WARN(this->get_logger(), "\033[32m=> save camera intrinsic to %s\033[0m", intrinsic_path.c_str());
     }
+    if (save_origin_flag_) {
+      std::string intrinsic_path = fs::path(save_dir_) / fs::path("origin_camera_intrinsic.txt");
+      std::ofstream ofs(intrinsic_path);
+      if (ofs.is_open()) {
+        ofs << std::fixed << std::setprecision(6);
+        ofs << "# fx fy cx cy baseline(m)" << std::endl;
+        ofs << orignal_camera_intrinsic_->fx << " " << orignal_camera_intrinsic_->fy << " "
+            << orignal_camera_intrinsic_->cx << " " << orignal_camera_intrinsic_->cy << " "
+            << orignal_camera_intrinsic_->baseline << std::endl;
+        ofs.close();
+        RCLCPP_WARN(this->get_logger(), "\033[32m=> save origin camera intrinsic to %s\033[0m", intrinsic_path.c_str());
+      }
+    }
   }
 
   // save images & point cloud
@@ -1593,7 +1688,6 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   }
   if (save_uncert_flag_ && !pub_data->uncert.empty()) {
     std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
-
     cv::imwrite(uncert_image_path, pub_data->uncert);
   }
   if (save_depth_flag_) {
@@ -1606,7 +1700,6 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   }
   if (save_pcd_flag_ && pub_data->pointcloud && !pub_data->pointcloud->points.empty()) {
     std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
-
     pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
   }
   if (save_origin_flag_ && !pub_data->origin_left.empty() && !pub_data->origin_right.empty()) {
@@ -1617,6 +1710,66 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   }
 
   RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, pub count: %d, save count: %d\033[0m",
+              save_dir_.c_str(), pub_data->count, current_count);
+}
+
+void StereoNetNode::save_result_once(const std::shared_ptr<PubData> &pub_data) {
+  int current_count = pub_data->count;
+  // save camera intrinsic
+  {
+    std::string intrinsic_path = fs::path(save_dir_) / fs::path("camera_intrinsic.txt");
+    std::ofstream ofs(intrinsic_path);
+    if (ofs.is_open()) {
+      ofs << std::fixed << std::setprecision(6);
+      ofs << "# fx fy cx cy baseline(m)" << std::endl;
+      ofs << camera_intrinsic_->fx << " " << camera_intrinsic_->fy << " " << camera_intrinsic_->cx << " "
+          << camera_intrinsic_->cy << " " << camera_intrinsic_->baseline << std::endl;
+      ofs.close();
+    }
+  }
+  {
+    std::string origin_camera_intrinsic_path = fs::path(save_dir_) / fs::path("origin_camera_intrinsic.txt");
+    std::ofstream ofs(origin_camera_intrinsic_path);
+    if (ofs.is_open()) {
+      ofs << std::fixed << std::setprecision(6);
+      ofs << "# fx fy cx cy baseline(m)" << std::endl;
+      ofs << orignal_camera_intrinsic_->fx << " " << orignal_camera_intrinsic_->fy << " "
+          << orignal_camera_intrinsic_->cx << " " << orignal_camera_intrinsic_->cy << " "
+          << orignal_camera_intrinsic_->baseline << std::endl;
+      ofs.close();
+    }
+  }
+
+  // save images & point cloud
+  std::stringstream ss;
+  ss << std::setw(6) << std::setfill('0') << current_count << "_";
+
+  std::string left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "left.png");
+  std::string right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "right.png");
+  cv::imwrite(left_image_path, pub_data->left_bgr);
+  cv::imwrite(right_image_path, pub_data->right_bgr);
+  std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp.pfm");
+  cv::imwrite(disp_image_path, pub_data->disp);
+  if (!pub_data->uncert.empty()) {
+    std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
+    cv::imwrite(uncert_image_path, pub_data->uncert);
+  }
+  std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth.png");
+  cv::imwrite(depth_image_path, pub_data->depth);
+  std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.jpg");
+  cv::imwrite(visual_image_path, pub_data->visual_img);
+  if (pub_data->pointcloud && !pub_data->pointcloud->points.empty()) {
+    std::string pointcloud_path = fs::path(save_dir_) / fs::path(ss.str() + "pointcloud.pcd");
+    pcl::io::savePCDFileBinary(pointcloud_path, *(pub_data->pointcloud));
+  }
+  if (!pub_data->origin_left.empty() && !pub_data->origin_right.empty()) {
+    std::string origin_left_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_L.png");
+    std::string origin_right_image_path = fs::path(save_dir_) / fs::path(ss.str() + "origin_R.png");
+    cv::imwrite(origin_left_image_path, pub_data->origin_left);
+    cv::imwrite(origin_right_image_path, pub_data->origin_right);
+  }
+
+  RCLCPP_WARN(this->get_logger(), "\033[32m=> save result to %s, pub count: %d, save count: %d\033[0m",
               save_dir_.c_str(), pub_data->count, current_count);
 }
 
@@ -1644,11 +1797,12 @@ void StereoNetNode::infer_offline() {
         rclcpp::shutdown();
       }
     } else if (camera_intrinsic_->is_valid()) {
-      RCLCPP_WARN_ONCE(this->get_logger(),
-                       "\033[31m=> use camera intrinsic from launch params, [fx, fy, cx, cy, baseline(m)] : [%f, %f, "
-                       "%f, %f, %f]\033[0m",
-                       camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
-                       camera_intrinsic_->baseline);
+      RCLCPP_WARN_ONCE(
+          this->get_logger(),
+          "\033[31m=> use camera intrinsic from launch params, [fx, fy, cx, cy, baseline(m), doffs] : [%f, %f, "
+          "%f, %f, %f, %f]\033[0m",
+          camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
+          camera_intrinsic_->baseline, camera_intrinsic_->doffs);
     } else {
       RCLCPP_ERROR(this->get_logger(),
                    "\033[31m=> camera intrinsic is not set, please provide camera_intrinsic.txt in %s or set the "
@@ -1705,47 +1859,6 @@ void StereoNetNode::infer_offline() {
 
   RCLCPP_WARN(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
               local_image_dir_.c_str());
-}
-
-std::tuple<double, double, double, size_t> StereoNetNode::compute_trimmed_stats(std::vector<uint16_t> &vals,
-                                                                                double trim_ratio) {
-  // Remove invalid early
-  if (vals.empty()) return {0.0, 0.0, 0.0, 0};
-
-  std::sort(vals.begin(), vals.end());
-  size_t N = vals.size();
-  size_t k = static_cast<size_t>(floor(N * trim_ratio));
-
-  // ensure we keep at least 1 element
-  if (N <= 2 * k) {
-    // reduce k so at least 1 element remains
-    if (N > 1)
-      k = (N - 1) / 2;
-    else
-      k = 0;
-  }
-
-  size_t start = k;
-  size_t end = N - k; // exclusive
-  if (start >= end) {
-    // fallback: use entire range
-    start = 0;
-    end = N;
-  }
-
-  // accumulate mean
-  double sum = 0.0;
-  for (size_t i = start; i < end; ++i) sum += static_cast<double>(vals[i]);
-  size_t count = end - start;
-  double mean = (count > 0) ? (sum / static_cast<double>(count)) : 0.0;
-
-  double min_trim = (count > 0) ? static_cast<double>(vals[start]) : 0.0;
-  double max_trim = (count > 0) ? static_cast<double>(vals[end - 1]) : 0.0;
-
-  double neg_range = mean - min_trim; // >=0
-  double pos_range = max_trim - mean; // >=0
-
-  return {mean, neg_range, pos_range, count};
 }
 
 } // namespace stereonet

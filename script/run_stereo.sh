@@ -89,6 +89,7 @@ camera_cy=0.0
 camera_fx=0.0
 camera_fy=0.0
 baseline=0.0
+doffs=0.0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -175,6 +176,7 @@ while [[ $# -gt 0 ]]; do
     --camera_fx) camera_fx=$2; shift 2 ;;
     --camera_fy) camera_fy=$2; shift 2 ;;
     --baseline) baseline=$2; shift 2 ;;
+    --doffs) doffs=$2; shift 2 ;;
 
     *) echo "unknown param: $1"; exit 1 ;;
   esac
@@ -203,4 +205,4 @@ save_result_flag:=$save_result_flag save_dir:=$save_dir save_freq:=$save_freq sa
 save_origin_flag:=$save_origin_flag save_disp_flag:=$save_disp_flag save_uncert_flag:=$save_uncert_flag save_depth_flag:=$save_depth_flag \
 save_visual_flag:=$save_visual_flag save_pcd_flag:=$save_pcd_flag \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
-camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline
+camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs

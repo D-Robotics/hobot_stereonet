@@ -191,13 +191,10 @@ private:
   void save_result(const std::shared_ptr<PubData> &pub_data);
 
   /**
-   * @brief Compute trimmed mean and ranges after removing lowest k and highest k elements
-   * Returns tuple(mean_mm, neg_range_mm, pos_range_mm, trimmed_count)
-   * @param vals The vector of depth values
-   * @param trim_ratio The ratio of trimming
-   * @return The trimmed mean, negative range, positive range, and trimmed count
+   * @brief save result to local dir once
+   * @param pub_data The processed data containing the disparity map and metadata
    */
-  std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vector<uint16_t> &vals, double trim_ratio);
+  void save_result_once(const std::shared_ptr<PubData> &pub_data);
 
   // ============================================ member variables ============================================
   // sub
@@ -269,8 +266,10 @@ private:
   bool save_depth_flag_ = true;
   bool save_visual_flag_ = true;
   bool save_pcd_flag_ = false;
+  bool save_result_once_ = false;
 
   // calib params
+  std::shared_ptr<CameraIntrinsic> orignal_camera_intrinsic_ = nullptr;
   std::shared_ptr<CameraIntrinsic> camera_intrinsic_ = nullptr;
   std::string calib_method_ = "none"; // none, custom
   std::string stereo_calib_file_path_ = "";
@@ -301,6 +300,9 @@ private:
   int save_thread_num_ = 4;
   int max_save_task_ = 50;
   moodycamel::BlockingConcurrentQueue<std::shared_ptr<PreProcessData>> pre_process_queue_;
+
+  // param callback
+  OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
 };
 } // namespace stereonet
 #endif // HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_

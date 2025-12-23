@@ -77,6 +77,7 @@ def generate_launch_description():
         {'name':'camera_fx', 'default_value':'0.0', 'description': 'rectified_camera_fx'},
         {'name':'camera_fy', 'default_value':'0.0', 'description': 'rectified_camera_fy'},
         {'name':'baseline', 'default_value':'0.0', 'description': 'baseline of stereo'},
+        {'name':'doffs', 'default_value':'0.0', 'description': 'doffs of stereo'},
 
         {'name':'uncertainty_th', 'default_value':'-0.10', 'description': 'uncertainty_th'},
 
