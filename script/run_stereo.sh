@@ -7,7 +7,7 @@ ros2 pkg prefix hobot_stereonet
 rm -rfv performance_*.txt
 
 # stereonet version
-stereonet_version=component_v2.4_int8
+stereonet_version=v2.4_int16
 
 # uncertainty
 uncertainty_th=-0.10
@@ -34,6 +34,7 @@ mipi_lpwm_enable=True
 mipi_rotation=90.0
 mipi_channel=2
 mipi_channel2=0
+mipi_frame_ts_type=realtime
 
 # calib
 calib_method=none
@@ -119,6 +120,7 @@ while [[ $# -gt 0 ]]; do
     --mipi_rotation) mipi_rotation=$2; shift 2 ;;
     --mipi_channel) mipi_channel=$2; shift 2 ;;
     --mipi_channel2) mipi_channel2=$2; shift 2 ;;
+    --mipi_frame_ts_type) mipi_frame_ts_type=$2; shift 2 ;;
 
     # calib
     --calib_method) calib_method=$2; shift 2 ;;
@@ -189,6 +191,7 @@ visual_image_topic:=$visual_image_topic \
 mipi_image_width:=$mipi_image_width mipi_image_height:=$mipi_image_height mipi_image_framerate:=$mipi_image_framerate \
 mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotation:=$mipi_rotation \
 mipi_channel:=$mipi_channel mipi_channel2:=$mipi_channel2 \
+mipi_frame_ts_type:=$mipi_frame_ts_type \
 calib_method:=$calib_method stereo_calib_file_path:=$stereo_calib_file_path \
 render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max_disp \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
