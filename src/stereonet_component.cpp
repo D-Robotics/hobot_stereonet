@@ -230,7 +230,7 @@ void StereoNetNode::set_node_params() {
   };
   if (!is_valid_render_type(render_type_)) {
     RCLCPP_ERROR(this->get_logger(), "\033[31m=> render_type parameter invalid, should be one of [indoor, outdoor, "
-                                     "indoor-reverse, outdoor-reverse]\033[0m");
+                                     "indoor-reverse, outdoor-reverse, distance, distance-reverse]\033[0m");
     rclcpp::shutdown();
   }
 
