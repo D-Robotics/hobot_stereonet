@@ -28,75 +28,94 @@ def set_configurable_parameters(parameters):
 
 def generate_launch_description():
 
-    stereo_calib_file_path =  os.path.join(
-        get_package_share_directory('hobot_stereonet'),
-        'config',
-        'stereo.yaml'
-    )
-
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
         'DStereoV2.0.bin'
     )
 
-    local_image_path =  os.path.join(
+    local_image_dir =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config'
     )
 
     node_params = [
+        {'name':'log_level', 'default_value':'info', 'description': 'log_level'},
+
+        {'name':'stereo_node_name', 'default_value':'StereoNetNode', 'description': 'stereo_node_name'},
+
+        {'name':'stereonet_model_file_path', 'default_value': stereonet_model_file_path, 'description': 'stereonet_model_file_path'},
+
         {'name':'stereo_image_topic', 'default_value':'/image_combine_raw', 'description': 'stereo_image_topic'},
         {'name':'camera_info_topic', 'default_value':'/image_right_raw/camera_info', 'description': 'camera_info_topic'},
-        {'name':'camera_cx', 'default_value':'659.710', 'description': 'rectified_camera_cx'},
-        {'name':'camera_cy', 'default_value':'360.584', 'description': 'rectified_camera_cy'},
-        {'name':'camera_fx', 'default_value':'527.1931', 'description': 'rectified_camera_fx'},
-        {'name':'camera_fy', 'default_value':'527.1931', 'description': 'rectified_camera_fy'},
-        {'name':'need_rectify', 'default_value':'True', 'description': 'whether need_rectify or not'},
-        {'name':'need_pcl_filter', 'default_value':'False', 'description': 'whether need_pcl_filter or not'},
-        {'name':'base_line', 'default_value':'0.119893', 'description': 'base_line of stereo'},
-        {'name':'height_min', 'default_value':'0.03', 'description': 'height_min'},
-        {'name':'height_max', 'default_value':'5.0', 'description': 'height_max'},
-        {'name':'save_image', 'default_value':'False', 'description': 'save_image'},
-        {'name':'save_dir', 'default_value':'./stereonet_images', 'description': 'save_dir'},
-        {'name':'save_image_all', 'default_value':'False', 'description': 'save_image_all'},
-        {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
+
+        {'name':'depth_image_topic', 'default_value':'/StereoNetNode/stereonet_depth', 'description': 'depth_topic'},
+        {'name':'depth_camera_info_topic', 'default_value':'/StereoNetNode/stereonet_depth/camera_info', 'description': 'depth_camera_info_topic'},
+        {'name':'pointcloud2_topic', 'default_value':'/StereoNetNode/stereonet_pointcloud2', 'description': 'pointcloud2_topic'},
+        {'name':'rectify_left_image_topic', 'default_value':'/StereoNetNode/rectify_left_image', 'description': 'rectify_left_image_topic'},
+        {'name':'rectify_right_image_topic', 'default_value':'/StereoNetNode/rectify_right_image', 'description': 'rectify_right_image_topic'},
+        {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
+        {'name':'origin_left_image_topic', 'default_value':'/StereoNetNode/origin_left_image', 'description': 'origin_left_image_topic'},
+        {'name':'origin_right_image_topic', 'default_value':'/StereoNetNode/origin_right_image', 'description': 'origin_right_image_topic'},
+        {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
+
+        {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse, distance, distance-reverse]'},
+        {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
+        {'name':'depth_decimal_num', 'default_value':'2', 'description': 'depth_decimal_num'},
+        {'name':'render_max_disp', 'default_value':'80', 'description': 'render_max_disp'},
+
+        {'name':'pointcloud_downsample_step', 'default_value':'2', 'description': 'pointcloud_downsample_step'},
+        {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},
+        {'name':'pointcloud_height_max', 'default_value':'5.0', 'description': 'pointcloud_height_max'},
+        {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
+
+        {'name':'calib_method', 'default_value':'none', 'description': '[none custom]'},
+        {'name':'stereo_calib_file_path', 'default_value': '', 'description': 'stereo_calib_file_path'},
+
+        {'name':'camera_cx', 'default_value':'0.0', 'description': 'rectified_camera_cx'},
+        {'name':'camera_cy', 'default_value':'0.0', 'description': 'rectified_camera_cy'},
+        {'name':'camera_fx', 'default_value':'0.0', 'description': 'rectified_camera_fx'},
+        {'name':'camera_fy', 'default_value':'0.0', 'description': 'rectified_camera_fy'},
+        {'name':'baseline', 'default_value':'0.0', 'description': 'baseline of stereo'},
+        {'name':'doffs', 'default_value':'0.0', 'description': 'doffs of stereo'},
+
+        {'name':'uncertainty_th', 'default_value':'-0.10', 'description': 'uncertainty_th'},
+
+        {'name':'save_result_flag', 'default_value':'False', 'description': 'save_result_flag'},
+        {'name':'save_dir', 'default_value':'./stereonet_result', 'description': 'save_dir'},
         {'name':'save_freq', 'default_value':'1', 'description': 'save_freq'},
-        {'name':'save_image_to_nv12', 'default_value':'False', 'description': 'save_image_to_nv12'},
-        {'name':'postprocess', 'default_value':'v2', 'description': 'postprocess'},
-        {'name':'use_local_image', 'default_value':'False', 'description': 'use_local_image'},
-        {'name':'use_usb_camera', 'default_value':'False', 'description': 'use_usb_camera'},
-        {'name':'stereo_combine_mode', 'default_value':'1', 'description': 'stereo_combine_mode'},
-        {'name':'stereo_calib_file_path', 'default_value': stereo_calib_file_path, 'description': 'stereo_calib_file_path'},
-        {'name':'stereonet_model_file_path', 'default_value': stereonet_model_file_path, 'description': 'stereonet_model_file_path'},
-        {'name':'local_image_path', 'default_value': local_image_path, 'description': 'local_image_path'},
-        {'name':'log_level', 'default_value':'info', 'description': 'log_level'},
-        {'name':'leaf_size', 'default_value':'0.05', 'description': 'leaf_size'},
-        {'name':'stdv', 'default_value':'0.01', 'description': 'stdv'},
-        {'name':'KMean', 'default_value':'10', 'description': 'KMean'},
-        {'name':'visual_alpha', 'default_value':'3', 'description': 'visual_alpha'},
-        {'name':'visual_beta', 'default_value':'0', 'description': 'visual_beta'},
-        {'name':'max_disp', 'default_value':'192', 'description': 'max_disp'},
-        {'name':'rectify_bgr', 'default_value':'False', 'description': 'rectify_bgr'},
-        {'name':'image_format', 'default_value':'png', 'description': 'image_format'},
-        {'name':'image_sleep', 'default_value':'1', 'description': 'image_sleep'},
-        {'name':'depth_compare', 'default_value':'False', 'description': 'depth_compare'},
-        {'name':'compare_depth_topic', 'default_value':'/camera/depth/image_rect_raw/compressedDepth', 'description': 'compare_depth_topic'},
-        {'name':'visual_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
-        {'name':'compare_image_topic', 'default_value':'/camera/infra1/image_rect_raw/compressed', 'description': 'compare_image_topic'},
-        {'name':'depth_type', 'default_value':'point',
-         'description': 'depth_type when publish visual image, if it is point the depth is point of grid corner,'
-                        'if it is region the depth is the average value of the rectangle region'},
-        {'name':'render_type', 'default_value':'0', 'description': 'render_type: 0-render disp, 1-render disp auto, 2-render depth auto'},
-        {'name':'render_need_filter', 'default_value':'True', 'description': 'render_need_filter'},
-        {'name':'render_max_depth', 'default_value':'10000', 'description': 'render_max_depth'},
-        {'name':'stereo_node_name', 'default_value':'StereoNetNode', 'description': 'stereo_node_name'},
-        {'name':'depth_need_filter', 'default_value':'True', 'description': 'depth_need_filter'},
-        {'name':'pc_max_depth', 'default_value':'6.0', 'description': 'pc_max_depth'},
-        {'name':'uncertainty_th', 'default_value':'-0.09', 'description': 'uncertainty_th'},
-        {'name':'resize_before_rectify', 'default_value':'False', 'description': 'resize_before_rectify'},
-        {'name':'load_rectify_param', 'default_value':'False', 'description': 'load rectify param whether need_rectify or not'},
-        {'name':'render_perf', 'default_value':'False', 'description': 'render_perf'},
+        {'name':'save_total', 'default_value':'-1', 'description': 'save_total'},
+        {'name':'save_stereo_flag', 'default_value':'True', 'description': 'save_stereo_flag'},
+        {'name':'save_origin_flag', 'default_value':'False', 'description': 'save_origin_flag'},
+        {'name':'save_disp_flag', 'default_value':'True', 'description': 'save_disp_flag'},
+        {'name':'save_uncert_flag', 'default_value':'False', 'description': 'save_uncert_flag'},
+        {'name':'save_depth_flag', 'default_value':'True', 'description': 'save_depth_flag'},
+        {'name':'save_visual_flag', 'default_value':'True', 'description': 'save_visual_flag'},
+        {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
+        {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
+
+        {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},
+        {'name':'local_image_dir', 'default_value': local_image_dir, 'description': 'local_image_dir'},
+        {'name':'image_sleep', 'default_value': "0", 'description': 'image_sleep ms'},
+
+        {'name':'speckle_filter_enable', 'default_value':'False', 'description': 'speckle_filter_enable'},
+        {'name':'max_speckle_size', 'default_value':'100', 'description': 'max_speckle_size'},
+        {'name':'max_disp_diff', 'default_value':'1.0', 'description': 'max_speckle_size'},
+        {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
+        # {'name':'voxel_leaf_size', 'default_value':'0.05', 'description': 'voxel_leaf_size'},
+        # {'name':'mean_k', 'default_value':'10', 'description': 'mean_k'},
+        # {'name':'std_thresh', 'default_value':'1.0', 'description': 'std_dev_mul_thresh'},
+        {'name':'grid_size', 'default_value':'0.10', 'description': 'grid_size'},
+        {'name':'grid_min_point_count', 'default_value':'5', 'description': 'grid_min_point_count'},
+
+        {'name':'left_img_mask_enable', 'default_value':'False', 'description': 'left_img_mask_enable'},
+        {'name':'measure_mode', 'default_value':'False', 'description': 'measure_mode'},
+        {'name':'roi_size', 'default_value':'10', 'description': 'roi_size'},
+        {'name':'gt_depth', 'default_value':'0.0', 'description': 'gt_depth'},
+
+        {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
+        {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
+        {'name':'max_save_task', 'default_value':'50', 'description': 'max_save_task'},
     ]
 
     launch = declare_configurable_parameters(node_params)
@@ -108,13 +127,5 @@ def generate_launch_description():
         parameters=[set_configurable_parameters(node_params)],
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')]
     ))
-
-    #boost = ExecuteProcess(
-    #    cmd=[[
-    #        'echo 1 > /sys/devices/system/cpu/cpufreq/boost '
-    #    ]],
-    #    shell=True
-    #)
-    #launch.append(boost)
 
     return LaunchDescription(launch)

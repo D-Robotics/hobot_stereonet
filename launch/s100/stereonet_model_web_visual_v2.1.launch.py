@@ -31,7 +31,7 @@ def generate_launch_description():
         'dstereo_s100_320_640_352_v2.1.hbm'
     )
 
-    # 双目深度估计模型
+    # stereonet node
     stereonet_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -41,7 +41,6 @@ def generate_launch_description():
         ),
         launch_arguments = {
             "stereonet_model_file_path": stereonet_model_file_path,
-            "postprocess": "v2.1",
         }.items(),
     )
 

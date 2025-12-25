@@ -38,13 +38,19 @@ def generate_launch_description():
         description="stereonet_pub_web, if not, we will disable websocket and codec of stereonet depth",
     )
 
+    use_mipi_cam_arg = DeclareLaunchArgument(
+        "use_mipi_cam",
+        default_value="True",
+        description="use_mipi_cam",
+    )
+
     target_container_name_arg = DeclareLaunchArgument(
         "target_container_name",
         default_value="stereonet_components_container",
         description="The name of the target container to load the component into.",
     )
 
-    # 零拷贝环境配置
+    # zero-copy env setting
     shared_mem_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -58,7 +64,7 @@ def generate_launch_description():
         "lib/mipi_cam/config/")
     print("config_file_path is ", config_file_path)
 
-    # 创建组件容器（关键步骤）
+    # create container
     container = ComposableNodeContainer(
         name="stereonet_components_container",
         namespace="",
@@ -77,7 +83,21 @@ def generate_launch_description():
         ),
     )
 
-    # mipi相机节点
+    # stereonet node
+    stereonet_model_component = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("hobot_stereonet"),
+                "launch/stereonet_model_component.launch.py",
+            )
+        ),
+        launch_arguments={
+            "log_level": "info",
+            "target_container": LaunchConfiguration("target_container_name"),
+        }.items(),
+    )
+
+    # mipi node
     mipi_cam_component = ComposableNode(
         package="mipi_cam",
         plugin="mipi_cam::MipiCamNode",
@@ -103,23 +123,12 @@ def generate_launch_description():
             {"gdc_enable": LaunchConfiguration('mipi_gdc_enable')},
             {"frame_id": LaunchConfiguration('frame_id')},
         ],
-        extra_arguments=[{"use_intra_process_comms": True}],
+        extra_arguments=[
+            {"use_intra_process_comms": True},
+        ],
     )
 
-    # 双目节点
-    stereonet_model_component = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("hobot_stereonet"),
-                "launch/stereonet_model_component.launch.py",
-            )
-        ),
-        launch_arguments={
-            "target_container": LaunchConfiguration("target_container_name"),
-        }.items(),
-    )
-
-    # 编码节点
+    # codec node
     codec_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -130,7 +139,6 @@ def generate_launch_description():
         launch_arguments={
             "codec_in_mode": "ros",
             "codec_out_mode": "ros",
-            # 左图和深度拼接后的图
             "codec_sub_topic": "/StereoNetNode/stereonet_visual",
             "codec_in_format": "bgr8",
             "codec_pub_topic": "/image_jpeg",
@@ -140,7 +148,7 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("stereonet_pub_web")),
     )
 
-    # web展示节点
+    # web node
     web_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -157,7 +165,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "mipi_config_path", 
+                "mipi_config_path",
                 default_value=TextSubstitution(text=str(config_file_path)),
                 description='mipi camera calibration file path'),
             DeclareLaunchArgument(
@@ -229,51 +237,29 @@ def generate_launch_description():
                 default_value='True',
                 description='mipi camera gdc enable'),
             DeclareLaunchArgument(
-                'log_level',
-                default_value='warn',
-                description='log level'),
+                'mipi_cal_rotation',
+                default_value='0.0',
+                description='mipi camera calibration rotation'),
 
-            DeclareLaunchArgument(
-                "mipi_image_width",
-                default_value="640",
-                description="mipi camera out image width",
-            ),
-            DeclareLaunchArgument(
-                "mipi_image_height",
-                default_value="352",
-                description="mipi camera out image height",
-            ),
-            DeclareLaunchArgument(
-                "mipi_image_framerate",
-                default_value="10.0",
-                description="mipi camera out image framerate",
-            ),
-            DeclareLaunchArgument(
-                "mipi_lpwm_enable",
-                default_value="False",
-                description="mipi dual camera lpwm enable",
-            ),
-            DeclareLaunchArgument(
-                "mipi_rotation",
-                default_value="0.0",
-                description="mipi camera out image rotation",
-            ),
-            DeclareLaunchArgument(
-                "mipi_gdc_enable",
-                default_value="True",
-                description="mipi camera gdc enable",
-            ),
             stereonet_pub_web_arg,
+            use_mipi_cam_arg,
             target_container_name_arg,
             shared_mem_node,
             container,
+            stereonet_model_component,
             LoadComposableNodes(
                 target_container=LaunchConfiguration("target_container_name"),
                 composable_node_descriptions=[
                     mipi_cam_component,
                 ],
+                condition=IfCondition(
+                    PythonExpression([
+                        LaunchConfiguration('use_mipi_cam'),
+                        ' and ',
+                        'not ', LaunchConfiguration('use_local_image_flag')
+                    ])
+                )
             ),
-            stereonet_model_component,
             codec_node,
             web_node,
         ]
