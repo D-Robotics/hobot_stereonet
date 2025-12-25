@@ -267,6 +267,7 @@ private:
   bool save_visual_flag_ = true;
   bool save_pcd_flag_ = false;
   bool save_result_once_ = false;
+  bool do_save_result_once_ = false;
 
   // calib params
   std::shared_ptr<CameraIntrinsic> orignal_camera_intrinsic_ = nullptr;

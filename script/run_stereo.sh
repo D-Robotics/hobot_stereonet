@@ -206,3 +206,6 @@ save_origin_flag:=$save_origin_flag save_disp_flag:=$save_disp_flag save_uncert_
 save_visual_flag:=$save_visual_flag save_pcd_flag:=$save_pcd_flag \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
 camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs
+
+# ros2 param set /StereoNetNode save_dir ./online_once
+# ros2 param set /StereoNetNode save_result_once true

@@ -336,6 +336,10 @@ void StereoNetNode::set_node_params() {
               save_result_once_ = true;
             }
           }
+          if (param.get_name() == "save_dir") {
+            save_dir_ = param.as_string();
+            RCLCPP_WARN(this->get_logger(), "\033[32m=> save_dir: %s\033[0m", save_dir_.c_str());
+          }
         }
         return result;
       });
@@ -722,6 +726,8 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
 void StereoNetNode::publish_function() {
   int count = 0;
   while (rclcpp::ok()) {
+    do_save_result_once_ = save_result_once_;
+
     std::shared_ptr<PubData> pub_data;
     if (pub_data_queue_.get(pub_data, 100)) {
       // check timestamp disorder
@@ -733,25 +739,19 @@ void StereoNetNode::publish_function() {
       }
       last_frame_timestamp_ = pub_data->timestamp;
 
-      if (render_perf_) {
-        auto now = this->get_clock()->now();
-        auto latency = (now - pub_data->header.stamp).seconds() * 1000;
-        // if latency > 1000ms, maybe the time stamp is not correct, set latency to 0
-        pub_data->latency = latency > 1000 ? 0 : latency;
-        performance_writer::Get()->record_performance(pub_data->latency);
-        pub_data->fps = performance_writer::Get()->get_fps();
-        pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
-        pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "=> fps: %.2f, cpu_usage: %d%%, bpu_usage: %d%%", pub_data->fps, pub_data->cpu_usage,
-                             pub_data->bpu_usage);
-      }
-
       auto now = this->get_clock()->now();
       auto latency = (now - pub_data->header.stamp).seconds() * 1000;
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                           "=> publish result, stamp: %u.%u, latency: %.2f ms", pub_data->header.stamp.sec,
-                           pub_data->header.stamp.nanosec, latency);
+      // if latency > 1000ms, maybe the time stamp is not correct, set latency to 0
+      pub_data->latency = latency > 1000 ? 0 : latency;
+      performance_writer::Get()->record_performance(pub_data->latency);
+      pub_data->fps = performance_writer::Get()->get_fps();
+      pub_data->cpu_usage = performance_writer::Get()->get_cpu_usage();
+      pub_data->bpu_usage = performance_writer::Get()->get_bpu_usage();
+      RCLCPP_WARN_THROTTLE(
+          this->get_logger(), *this->get_clock(), 5000,
+          "=> publish result, stamp: %u.%u, fps: %.2f, latency: %.2f ms, cpu_usage: %d%%, bpu_usage: %d%%",
+          pub_data->header.stamp.sec, pub_data->header.stamp.nanosec, pub_data->fps, latency, pub_data->cpu_usage,
+          pub_data->bpu_usage);
 
       // publish depth image
       {
@@ -792,8 +792,9 @@ void StereoNetNode::publish_function() {
             save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result(pub_data); });
             count++;
           }
-        } else if (save_result_once_) {
+        } else if (do_save_result_once_) {
           save_result_once_ = false;
+          do_save_result_once_ = false;
           if (save_thread_pool_ptr_->get_tasks_total() < max_save_task_) {
             save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result_once(pub_data); });
             count++;
@@ -909,7 +910,7 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
 }
 
 void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data) {
-  if (pointcloud2_pub_->get_subscription_count() == 0 && !save_result_flag_ && !save_result_once_) return;
+  if (pointcloud2_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
@@ -970,10 +971,10 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
         PCLFilterUtils::gridBasedOutlierRemoval(pcl_cloud, grid_size_, grid_min_point_count_);
     pcl::toROSMsg(*filtered_cloud, *cloud_msg);
-    if (save_result_flag_ || save_result_once_) pub_data->pointcloud = filtered_cloud;
+    if (save_pcd_flag_ || do_save_result_once_) pub_data->pointcloud = filtered_cloud;
   } else {
     pcl::toROSMsg(*pcl_cloud, *cloud_msg);
-    if (save_result_flag_ || save_result_once_) pub_data->pointcloud = pcl_cloud;
+    if (save_pcd_flag_ || do_save_result_once_) pub_data->pointcloud = pcl_cloud;
   }
   cloud_msg->header = pub_data->header;
   cloud_msg->header.frame_id = "camera_link";
@@ -983,7 +984,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
 }
 
 void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {
-  if (origin_left_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !save_result_once_) return;
+  if (origin_left_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
@@ -1003,7 +1004,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
                     pub_data->origin_stereo_msg->width * pub_data->origin_stereo_msg->height,
                 single_img_w * single_img_h / 2);
     origin_left_image_pub_->publish(*left_msg);
-    if (save_origin_flag_ || save_result_once_) {
+    if (save_origin_flag_ || do_save_result_once_) {
       ImgConvertUtils::nv12_to_bgr_mat(left_msg->data.data(), pub_data->origin_left, left_msg->width, left_msg->height);
     }
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
@@ -1028,7 +1029,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       std::memcpy(left_msg->data.data(), left_rgb.data, size);
       origin_left_image_pub_->publish(*left_msg);
 
-      if (save_origin_flag_ || save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_) {
         cv::Mat rgb(left_msg->height, left_msg->width, CV_8UC3, const_cast<uint8_t *>(left_msg->data.data()),
                     left_msg->step);
         cv::cvtColor(rgb, pub_data->origin_left, cv::COLOR_RGB2BGR);
@@ -1045,7 +1046,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       std::memcpy(left_msg->data.data(), left_bgr.data, size);
       origin_left_image_pub_->publish(*left_msg);
 
-      if (save_origin_flag_ || save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_) {
         pub_data->origin_left = cv::Mat(left_msg->height, left_msg->width, CV_8UC3,
                                         const_cast<uint8_t *>(left_msg->data.data()), left_msg->step)
                                     .clone();
@@ -1055,7 +1056,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
 }
 
 void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &pub_data) {
-  if (origin_right_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !save_result_once_) return;
+  if (origin_right_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
@@ -1078,7 +1079,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
                 single_img_w * single_img_h / 2);
     origin_right_image_pub_->publish(*right_msg);
 
-    if (save_origin_flag_ || save_result_once_) {
+    if (save_origin_flag_ || do_save_result_once_) {
       ImgConvertUtils::nv12_to_bgr_mat(right_msg->data.data(), pub_data->origin_right, right_msg->width,
                                        right_msg->height);
     }
@@ -1104,7 +1105,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       std::memcpy(right_msg->data.data(), right_rgb.data, size);
       origin_right_image_pub_->publish(*right_msg);
 
-      if (save_origin_flag_ || save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_) {
         cv::Mat rgb(right_msg->height, right_msg->width, CV_8UC3, const_cast<uint8_t *>(right_msg->data.data()),
                     right_msg->step);
         cv::cvtColor(rgb, pub_data->origin_right, cv::COLOR_RGB2BGR);
@@ -1121,7 +1122,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       std::memcpy(right_msg->data.data(), right_bgr.data, size);
       origin_right_image_pub_->publish(*right_msg);
 
-      if (save_origin_flag_ || save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_) {
         pub_data->origin_right = cv::Mat(right_msg->height, right_msg->width, CV_8UC3,
                                          const_cast<uint8_t *>(right_msg->data.data()), right_msg->step)
                                      .clone();
@@ -1598,7 +1599,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     }
   }
   // ===================================== render performance metrics =======================================
-  if (render_perf_) {
+  if (render_perf_ && !save_result_flag_ && !do_save_result_once_) {
     std::stringstream perf_text;
     perf_text << "FPS: " << std::fixed << std::setprecision(2) << pub_data->fps << " Latency: " << pub_data->latency
               << "ms CPU: " << pub_data->cpu_usage << "% BPU: " << pub_data->bpu_usage << "%";
