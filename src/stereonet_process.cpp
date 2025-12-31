@@ -76,7 +76,7 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
   // get model input size from input tensor[0]
   hbDNNTensorProperties properties;
   ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, 0);
-#ifdef PLATFORM_S100
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
   properties.quantizeAxis = 3;
 #endif
   hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
@@ -148,9 +148,9 @@ int StereonetProcess::forward_sync(std::vector<uint8_t> &left_img_data, std::vec
   // forward
   int idle_tensor_id = 0;
   ret_code = forward(left_img_data.data(), right_img_data.data(), idle_tensor_id);
+  if (ret_code != 0) return ret_code;
   // postprocess
   ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
-
   return ret_code;
 }
 
@@ -538,14 +538,14 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     }
 #endif
 
-#ifdef PLATFORM_S100
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
     if ((properties.tensorType != HB_DNN_TENSOR_TYPE_U8)) {
       LOG_ERROR(logger_, "=> input tensor type is not in [HB_DNN_TENSOR_TYPE_U8]");
       return -1;
     }
 #endif
 
-#ifdef PLATFORM_S100
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
     // properties.quantizeAxis = 3;
     properties.alignedByteSize = properties.validShape.dimensionSize[0] * properties.validShape.dimensionSize[1] *
                                  properties.validShape.dimensionSize[2] * properties.validShape.dimensionSize[3];
@@ -589,7 +589,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     }
 #endif
 
-#ifdef PLATFORM_S100
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
     if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem, properties.alignedByteSize);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
@@ -686,7 +686,7 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
   }
 #endif
 
-#ifdef PLATFORM_S100
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
   hbDNNTensor &left_input_y_tensor = input_tensors[0];
   hbDNNTensor &left_input_uv_tensor = input_tensors[1];
   hbDNNTensor &right_input_y_tensor = input_tensors[2];

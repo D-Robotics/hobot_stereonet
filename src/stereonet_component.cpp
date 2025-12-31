@@ -1278,7 +1278,7 @@ static std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vec
 }
 
 void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_data) {
-  if (visual_image_pub_->get_subscription_count() == 0) return;
+  if (visual_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
   // ===================================== render visual image ==============================================
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
@@ -1695,7 +1695,7 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
     std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth.png");
     cv::imwrite(depth_image_path, pub_data->depth);
   }
-  if (save_visual_flag_) {
+  if (save_visual_flag_ && !pub_data->visual_img.empty()) {
     std::string visual_image_path = fs::path(save_dir_) / fs::path(ss.str() + "visual.jpg");
     cv::imwrite(visual_image_path, pub_data->visual_img);
   }

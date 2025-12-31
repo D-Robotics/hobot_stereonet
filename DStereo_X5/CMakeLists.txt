@@ -17,30 +17,37 @@ set(OpenCV_DIR ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/lib_opencv4.5.4/lib/cmake/op
 find_package(OpenCV REQUIRED)
 
 # =================================== FetchContent ====================================
-include(FetchContent)
-set(FETCHCONTENT_QUIET OFF)
-FetchContent_Declare(
-    magic_enum
-    GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
-    GIT_TAG v0.9.7
-)
-FetchContent_Declare(
-    concurrentqueue
-    GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
-    GIT_TAG master
-)
-FetchContent_Declare(
-    bs_thread_pool
-    GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
-    GIT_TAG master
-)
-FetchContent_MakeAvailable(magic_enum concurrentqueue bs_thread_pool)
+# include(FetchContent)
+# set(FETCHCONTENT_QUIET OFF)
+# FetchContent_Declare(
+#     magic_enum
+#     GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
+#     GIT_TAG v0.9.7
+# )
+# FetchContent_Declare(
+#     concurrentqueue
+#     GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
+#     GIT_TAG master
+# )
+# FetchContent_Declare(
+#     bs_thread_pool
+#     GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
+#     GIT_TAG master
+# )
+# FetchContent_MakeAvailable(magic_enum concurrentqueue bs_thread_pool)
+
+set(concurrentqueue_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/concurrentqueue)
+set(magic_enum_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/magic_enum/include)
+set(bs_thread_pool_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/thread-pool/include)
 
 # =================================== set include & link dirs =========================
 include_directories(
     ../include
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/eigen3
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libdnn
+    ${concurrentqueue_DIR}
+    ${magic_enum_DIR}
+    ${bs_thread_pool_DIR}
 )
 link_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libdnn
@@ -54,8 +61,4 @@ add_executable(stereo_infer
     ../src/timer_utils.cpp
     ../src/img_convert_utils.cpp
 )
-target_include_directories(stereo_infer PUBLIC
-    ${concurrentqueue_SOURCE_DIR}
-    ${bs_thread_pool_SOURCE_DIR}/include
-)
-target_link_libraries(stereo_infer dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS} magic_enum::magic_enum)
+target_link_libraries(stereo_infer dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})

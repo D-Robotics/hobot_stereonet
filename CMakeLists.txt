@@ -18,24 +18,28 @@ find_package(pcl_conversions REQUIRED)
 find_package(OpenMP REQUIRED)
 
 # =================================== FetchContent ====================================
-include(FetchContent)
-set(FETCHCONTENT_QUIET OFF)
-FetchContent_Declare(
-  concurrentqueue
-  GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
-  GIT_TAG master
-)
-FetchContent_Declare(
-  magic_enum
-  GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
-  GIT_TAG v0.9.7
-)
-FetchContent_Declare(
-  bs_thread_pool
-  GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
-  GIT_TAG master
-)
-FetchContent_MakeAvailable(concurrentqueue magic_enum bs_thread_pool)
+# include(FetchContent)
+# set(FETCHCONTENT_QUIET OFF)
+# FetchContent_Declare(
+#   concurrentqueue
+#   GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
+#   GIT_TAG master
+# )
+# FetchContent_Declare(
+#   magic_enum
+#   GIT_REPOSITORY https://github.com/Neargye/magic_enum.git
+#   GIT_TAG v0.9.7
+# )
+# FetchContent_Declare(
+#   bs_thread_pool
+#   GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
+#   GIT_TAG master
+# )
+# FetchContent_MakeAvailable(concurrentqueue magic_enum bs_thread_pool)
+
+set(concurrentqueue_DIR ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/concurrentqueue)
+set(magic_enum_DIR ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/magic_enum/include)
+set(bs_thread_pool_DIR ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/thread-pool/include)
 
 # =================================== set include & link dirs =========================
 set(SYS_ROOT ${CMAKE_SYSROOT})
@@ -115,6 +119,9 @@ endif()
 
 include_directories(
   ${PCL_INCLUDE_DIRS}
+  ${concurrentqueue_DIR}
+  ${magic_enum_DIR}
+  ${bs_thread_pool_DIR}
 )
 
 link_directories(
@@ -139,8 +146,6 @@ target_compile_features(stereonet_model_component PUBLIC c_std_99 cxx_std_17) # 
 target_include_directories(stereonet_model_component PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${concurrentqueue_SOURCE_DIR}
-  ${bs_thread_pool_SOURCE_DIR}/include
 )
 ament_target_dependencies(stereonet_model_component
   rclcpp
@@ -162,7 +167,6 @@ target_link_libraries(stereonet_model_component
   ${DNN_LIBS}
   pthread
   ${PCL_LIBRARIES}
-  magic_enum::magic_enum
   OpenMP::OpenMP_CXX
 )
 
