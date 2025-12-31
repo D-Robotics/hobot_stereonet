@@ -14,7 +14,6 @@ find_package(cv_bridge REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(pcl_conversions REQUIRED)
 find_package(OpenMP REQUIRED)
 
 # =================================== FetchContent ====================================
@@ -78,25 +77,8 @@ set(PCL_INCLUDE_DIRS
 
 set(PCL_LIBRARIES
   pcl_common
-  pcl_kdtree
-  pcl_octree
-  pcl_search
-  pcl_sample_consensus
   pcl_filters
   pcl_io
-  pcl_features
-  pcl_ml
-  pcl_segmentation
-  pcl_visualization
-  pcl_surface
-  pcl_registration
-  pcl_keypoints
-  pcl_tracking
-  pcl_recognition
-  pcl_stereo
-  pcl_apps
-  pcl_outofcore
-  pcl_people
 )
 
 set(DNN_LIBS "")
@@ -156,7 +138,6 @@ ament_target_dependencies(stereonet_model_component
   message_filters
   tf2_ros
   geometry_msgs
-  pcl_conversions
 )
 target_link_libraries(stereonet_model_component
   ${rclcpp_LIBRARIES}
@@ -185,7 +166,6 @@ file(GLOB LAUNCH_FILES
   launch/${LAUNCH_DIR}/*launch.py
 )
 install(FILES ${LAUNCH_FILES} DESTINATION share/${PROJECT_NAME}/launch)
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY data DESTINATION share/${PROJECT_NAME})
 
 ament_package()
