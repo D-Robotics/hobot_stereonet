@@ -220,6 +220,7 @@ private:
   bool publish_rectify_bgr_ = false;
   std::string origin_left_image_topic_ = "~/origin_left_image";
   std::string origin_right_image_topic_ = "~/origin_right_image";
+  bool publish_origin_enable_ = true;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_left_image_pub_ = nullptr;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_right_image_pub_ = nullptr;
 

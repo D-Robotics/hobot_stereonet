@@ -68,6 +68,8 @@ void StereoNetNode::set_node_params() {
   origin_left_image_topic_ = this->get_parameter("origin_left_image_topic").as_string();
   this->declare_parameter<std::string>("origin_right_image_topic", "~/origin_right_image");
   origin_right_image_topic_ = this->get_parameter("origin_right_image_topic").as_string();
+  this->declare_parameter<bool>("publish_origin_enable", true);
+  publish_origin_enable_ = this->get_parameter("publish_origin_enable").as_bool();
   depth_camera_info_topic_ = this->get_parameter("depth_camera_info_topic").as_string();
   this->declare_parameter<std::string>("pointcloud2_topic", "~/stereonet_pointcloud2");
   pointcloud2_topic_ = this->get_parameter("pointcloud2_topic").as_string();
@@ -267,6 +269,7 @@ void StereoNetNode::set_node_params() {
           << "publish_rectify_bgr: " << publish_rectify_bgr_ << std::endl
           << "origin_left_image_topic: " << origin_left_image_topic_ << std::endl
           << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
+          << "publish_origin_enable: " << publish_origin_enable_ << std::endl
           << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
           << "visual_image_topic: " << visual_image_topic_ << std::endl
           << "uncertainty_th: " << uncertainty_th_ << std::endl
@@ -279,8 +282,7 @@ void StereoNetNode::set_node_params() {
           << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
           << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
           << "[save_result_flag, save_dir, save_freq, save_total, save_stereo_flag, save_origin_flag, save_disp_flag, "
-             "save_uncert_flag, "
-             "save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+             "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
           << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_ << ", " << save_total_ << ", "
           << save_stereo_flag_ << ", " << save_origin_flag_ << ", " << save_disp_flag_ << ", " << save_uncert_flag_
           << ", " << save_depth_flag_ << ", " << save_visual_flag_ << ", " << save_pcd_flag_ << "]" << std::endl
@@ -309,40 +311,166 @@ void StereoNetNode::set_node_params() {
         rclcpp::shutdown();
       }
     }
-    if (save_thread_num_ > 1) save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num_);
     if (save_freq_ <= 0) save_freq_ = 1;
     render_perf_ = false;
   }
 
   this->declare_parameter<bool>("save_result_once", false);
-  param_cb_handle_ = this->add_on_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> &params) -> rcl_interfaces::msg::SetParametersResult {
-        rcl_interfaces::msg::SetParametersResult result;
-        result.successful = true;
+  param_cb_handle_ = this->add_on_set_parameters_callback([this](const std::vector<rclcpp::Parameter> &params)
+                                                              -> rcl_interfaces::msg::SetParametersResult {
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = true;
 
-        for (const auto &param : params) {
-          if (param.get_name() == "save_result_once") {
-            bool value = param.as_bool();
-
-            if (value) {
-              if (!save_thread_pool_ptr_) save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(1);
-              if (!fs::exists(save_dir_)) {
-                if (fs::create_directories(save_dir_)) {
-                  RCLCPP_WARN(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
-                } else {
-                  RCLCPP_ERROR(this->get_logger(), "\033[31m=> create save_dir: %s failed\033[0m", save_dir_.c_str());
-                }
-              }
-              save_result_once_ = true;
+    for (const auto &param : params) {
+      if (param.get_name() == "save_result_once") {
+        save_result_once_ = param.as_bool();
+        if (save_result_once_) {
+          if (!fs::exists(save_dir_)) {
+            if (fs::create_directories(save_dir_)) {
+              RCLCPP_WARN(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
+            } else {
+              RCLCPP_ERROR(this->get_logger(), "\033[31m=> create save_dir: %s failed\033[0m", save_dir_.c_str());
             }
           }
-          if (param.get_name() == "save_dir") {
-            save_dir_ = param.as_string();
-            RCLCPP_WARN(this->get_logger(), "\033[32m=> save_dir: %s\033[0m", save_dir_.c_str());
+          if (save_total_ < 0)
+            save_total_ = 1;
+          else
+            save_total_ += 1;
+        }
+      }
+      if (param.get_name() == "save_result_flag") {
+        save_result_flag_ = param.as_bool();
+        if (save_result_flag_) {
+          if (!fs::exists(save_dir_)) {
+            if (fs::create_directories(save_dir_)) {
+              RCLCPP_WARN(this->get_logger(), "\033[32m=> create save_dir: %s\033[0m", save_dir_.c_str());
+            } else {
+              RCLCPP_ERROR(this->get_logger(), "\033[31m=> create save_dir: %s failed\033[0m", save_dir_.c_str());
+            }
           }
         }
-        return result;
-      });
+      }
+      if (param.get_name() == "save_dir") {
+        save_dir_ = param.as_string();
+        RCLCPP_WARN(this->get_logger(), "\033[32m=> save_dir: %s\033[0m", save_dir_.c_str());
+      }
+      if (param.get_name() == "save_freq") {
+        save_freq_ = param.as_int();
+        if (save_freq_ <= 0) save_freq_ = 1;
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_total") {
+        auto value = param.as_int();
+        if (value > 0) {
+          if (save_total_ < 0)
+            save_total_ = value;
+          else
+            save_total_ += value;
+        } else {
+          save_total_ = -1;
+        }
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_stereo_flag") {
+        save_stereo_flag_ = param.as_bool();
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_origin_flag") {
+        save_origin_flag_ = param.as_bool();
+        if (!publish_origin_enable_) save_origin_flag_ = false;
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_disp_flag") {
+        save_disp_flag_ = param.as_bool();
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_uncert_flag") {
+        save_uncert_flag_ = param.as_bool();
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_depth_flag") {
+        save_depth_flag_ = param.as_bool();
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_visual_flag") {
+        save_visual_flag_ = param.as_bool();
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "save_pcd_flag") {
+        save_pcd_flag_ = param.as_bool();
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
+                                               "save_stereo_flag, save_origin_flag, save_disp_flag, "
+                                               "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
+                                                   << save_result_flag_ << ", " << save_dir_ << ", " << save_freq_
+                                                   << ", " << save_total_ << ", " << save_stereo_flag_ << ", "
+                                                   << save_origin_flag_ << ", " << save_disp_flag_ << ", "
+                                                   << save_uncert_flag_ << ", " << save_depth_flag_ << ", "
+                                                   << save_visual_flag_ << ", " << save_pcd_flag_ << "]\033[0m");
+      }
+      if (param.get_name() == "max_save_task") {
+        max_save_task_ = param.as_int();
+        if (max_save_task_ <= 20) max_save_task_ = 20;
+        RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> max_save_task: " << max_save_task_ << "\033[0m");
+      }
+    }
+    return result;
+  });
 }
 
 void StereoNetNode::set_subscription_publisher() {
@@ -366,8 +494,10 @@ void StereoNetNode::set_subscription_publisher() {
   pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pointcloud2_topic_, 10);
   rectify_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(rectify_left_image_topic_, 10);
   rectify_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(rectify_right_image_topic_, 10);
-  origin_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_left_image_topic_, 10);
-  origin_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_right_image_topic_, 10);
+  if (publish_origin_enable_) {
+    origin_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_left_image_topic_, 10);
+    origin_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_right_image_topic_, 10);
+  }
 }
 
 void StereoNetNode::set_dnn_model() {
@@ -384,6 +514,7 @@ void StereoNetNode::set_worker_threads() {
     infer_threads_.emplace_back(&StereoNetNode::infer_function, this, i);
   }
   publish_thread_ = std::thread(&StereoNetNode::publish_function, this);
+  save_thread_pool_ptr_ = std::make_unique<BS::thread_pool<>>(save_thread_num_);
 }
 
 void StereoNetNode::publish_static_tf() {
@@ -437,13 +568,6 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     // ================================== Preprocess ==================================
     int model_input_w = 0, model_input_h = 0;
     stereonet_process_->get_model_input_size(model_input_w, model_input_h);
-    if (msg->encoding != "nv12" || msg->width != model_input_w || msg->height != model_input_h * 2) {
-      RCLCPP_ERROR(this->get_logger(),
-                   "\033[31m=> only support nv12 image with [width, height] = [%d, %d], but got [%d, %d]\033[0m",
-                   model_input_w, model_input_h, msg->width, msg->height);
-      rclcpp::shutdown();
-    }
-
     std::vector<uint8_t> rectify_left_img_data, rectify_right_img_data;
     {
       ScopeProcessTime t(this->get_logger(), "preprocess");
@@ -771,10 +895,12 @@ void StereoNetNode::publish_function() {
         publish_pointcloud2(pub_data);
       }
       {
-        // publish origin images
-        ScopeProcessTime t(this->get_logger(), "publish_origin_image");
-        publish_origin_left_image(pub_data);
-        publish_origin_right_image(pub_data);
+        if (publish_origin_enable_) {
+          // publish origin images
+          ScopeProcessTime t(this->get_logger(), "publish_origin_image");
+          publish_origin_left_image(pub_data);
+          publish_origin_right_image(pub_data);
+        }
       }
       // publish visual image
       {
@@ -789,6 +915,9 @@ void StereoNetNode::publish_function() {
           count++;
         } else if (save_result_flag_ && save_thread_num_ > 1) {
           if (save_thread_pool_ptr_->get_tasks_total() < max_save_task_) {
+            if (save_origin_flag_ && (pub_data->origin_left.empty() || pub_data->origin_right.empty())) continue;
+            if (save_pcd_flag_ && (!pub_data->pointcloud || pub_data->pointcloud->points.empty())) continue;
+            if (save_visual_flag_ && pub_data->visual_img.empty()) continue;
             save_thread_pool_ptr_->detach_task([this, pub_data]() { save_result(pub_data); });
             count++;
           }
@@ -1635,10 +1764,10 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
   if (!rclcpp::ok()) return;
   if (!save_result_flag_) return;
   // save enough images
-  if (save_total_ > 0 && pub_data->count / save_freq_ >= save_total_) {
+  if (save_total_ > 0 && pub_data->count / save_freq_ >= (save_total_ - 1)) {
+    // last one
     RCLCPP_WARN(this->get_logger(), "\033[32m=> save total %d images, stop saving\033[0m", save_total_);
     save_result_flag_ = false;
-    return;
   }
   // do save if count is divisible by save_freq
   bool do_save = false;
@@ -1710,7 +1839,7 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
     cv::imwrite(origin_right_image_path, pub_data->origin_right);
   }
 
-  RCLCPP_WARN(this->get_logger(), "\033[31m=> save result to %s, pub count: %d, save count: %d\033[0m",
+  RCLCPP_WARN(this->get_logger(), "\033[32m=> save result to %s, pub count: %d, save count: %d\033[0m",
               save_dir_.c_str(), pub_data->count, current_count);
 }
 

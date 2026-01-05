@@ -57,6 +57,7 @@ def generate_launch_description():
         {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
         {'name':'origin_left_image_topic', 'default_value':'/StereoNetNode/origin_left_image', 'description': 'origin_left_image_topic'},
         {'name':'origin_right_image_topic', 'default_value':'/StereoNetNode/origin_right_image', 'description': 'origin_right_image_topic'},
+        {'name':'publish_origin_enable', 'default_value':'True', 'description': 'publish_origin_enable'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
 
         {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse, distance, distance-reverse]'},
@@ -91,7 +92,6 @@ def generate_launch_description():
         {'name':'save_uncert_flag', 'default_value':'False', 'description': 'save_uncert_flag'},
         {'name':'save_depth_flag', 'default_value':'True', 'description': 'save_depth_flag'},
         {'name':'save_visual_flag', 'default_value':'True', 'description': 'save_visual_flag'},
-        {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
         {'name':'save_pcd_flag', 'default_value':'False', 'description': 'save_pcd_flag'},
 
         {'name':'use_local_image_flag', 'default_value':'False', 'description': 'use_local_image_flag'},

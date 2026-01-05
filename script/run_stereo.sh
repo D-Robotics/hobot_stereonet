@@ -23,6 +23,7 @@ rectify_right_image_topic=/StereoNetNode/rectify_right_image
 publish_rectify_bgr=False
 origin_left_image_topic=/StereoNetNode/origin_left_image
 origin_right_image_topic=/StereoNetNode/origin_right_image
+publish_origin_enable=True
 visual_image_topic=/StereoNetNode/stereonet_visual
 
 # mipi cam
@@ -91,6 +92,9 @@ camera_fy=0.0
 baseline=0.0
 doffs=0.0
 
+# mask
+left_img_mask_enable=False
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     # stereonet version
@@ -110,6 +114,7 @@ while [[ $# -gt 0 ]]; do
     --publish_rectify_bgr) publish_rectify_bgr=$2; shift 2 ;;
     --origin_left_image_topic) origin_left_image_topic=$2; shift 2 ;;
     --origin_right_image_topic) origin_right_image_topic=$2; shift 2 ;;
+    --publish_origin_enable) publish_origin_enable=$2; shift 2 ;;
     --visual_image_topic) visual_image_topic=$2; shift 2 ;;
 
     # mipi cam
@@ -178,6 +183,9 @@ while [[ $# -gt 0 ]]; do
     --baseline) baseline=$2; shift 2 ;;
     --doffs) doffs=$2; shift 2 ;;
 
+    # mask
+    --left_img_mask_enable) left_img_mask_enable=$2; shift 2 ;;
+
     *) echo "unknown param: $1"; exit 1 ;;
   esac
 done
@@ -189,7 +197,7 @@ depth_image_topic:=$depth_image_topic depth_camera_info_topic:=$depth_camera_inf
 pointcloud2_topic:=$pointcloud2_topic rectify_left_image_topic:=$rectify_left_image_topic \
 rectify_right_image_topic:=$rectify_right_image_topic publish_rectify_bgr:=$publish_rectify_bgr \
 origin_left_image_topic:=$origin_left_image_topic origin_right_image_topic:=$origin_right_image_topic \
-visual_image_topic:=$visual_image_topic \
+publish_origin_enable:=$publish_origin_enable visual_image_topic:=$visual_image_topic \
 mipi_image_width:=$mipi_image_width mipi_image_height:=$mipi_image_height mipi_image_framerate:=$mipi_image_framerate \
 mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotation:=$mipi_rotation \
 mipi_channel:=$mipi_channel mipi_channel2:=$mipi_channel2 \
@@ -205,7 +213,24 @@ save_result_flag:=$save_result_flag save_dir:=$save_dir save_freq:=$save_freq sa
 save_origin_flag:=$save_origin_flag save_disp_flag:=$save_disp_flag save_uncert_flag:=$save_uncert_flag save_depth_flag:=$save_depth_flag \
 save_visual_flag:=$save_visual_flag save_pcd_flag:=$save_pcd_flag \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
-camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs
+camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs \
+left_img_mask_enable:=$left_img_mask_enable
 
 # ros2 param set /StereoNetNode save_dir ./online_once
 # ros2 param set /StereoNetNode save_result_once true
+# ros2 param set /StereoNetNode save_total 10
+# ros2 param set /StereoNetNode save_freq 1
+# ros2 param set /StereoNetNode save_result_flag true
+# ros2 param set /StereoNetNode save_result_flag false
+
+# ros2 param set /StereoNetNode save_stereo_flag true
+# ros2 param set /StereoNetNode save_origin_flag true
+# ros2 param set /StereoNetNode save_disp_flag true
+# ros2 param set /StereoNetNode save_uncert_flag true
+# ros2 param set /StereoNetNode save_depth_flag true
+# ros2 param set /StereoNetNode save_visual_flag true
+# ros2 param set /StereoNetNode save_pcd_flag true
+
+# ros2 run hobot_stereonet_utils save_stereo_img --ros-args -p save_num:=1 -p dir:=/root/data/calib_lh230_0804/raw
+
+# bash run_stereo.sh --mipi_image_width 1280 --mipi_image_height 1088 --mipi_gdc_enable False --camera_info_topic /none/camera_info --camera_fx 600.0 --camera_fy 600.0 --camera_cx 640.0 --camera_cy 544.0 --baseline 0.10
