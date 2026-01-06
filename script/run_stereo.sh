@@ -216,12 +216,16 @@ use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir im
 camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs \
 left_img_mask_enable:=$left_img_mask_enable
 
+
+# ------------------------------------ save once ------------------------------------
 # ros2 param set /StereoNetNode save_dir ./online_once
 # ros2 param set /StereoNetNode save_result_once true
+# ------------------------------------ save once ------------------------------------
+
+# ------------------------------------ save batch -----------------------------------
+# ros2 param set /StereoNetNode save_dir ./online_batch
 # ros2 param set /StereoNetNode save_total 10
 # ros2 param set /StereoNetNode save_freq 1
-# ros2 param set /StereoNetNode save_result_flag true
-# ros2 param set /StereoNetNode save_result_flag false
 
 # ros2 param set /StereoNetNode save_stereo_flag true
 # ros2 param set /StereoNetNode save_origin_flag true
@@ -231,6 +235,20 @@ left_img_mask_enable:=$left_img_mask_enable
 # ros2 param set /StereoNetNode save_visual_flag true
 # ros2 param set /StereoNetNode save_pcd_flag true
 
-# ros2 run hobot_stereonet_utils save_stereo_img --ros-args -p save_num:=1 -p dir:=/root/data/calib_lh230_0804/raw
+# ros2 param set /StereoNetNode save_result_flag true
+# ros2 param set /StereoNetNode save_result_flag false
+# ------------------------------------ save batch -----------------------------------
 
+# ------------------------------------ save calib -----------------------------------
+# ros2 run hobot_stereonet_utils save_stereo_img --ros-args -p save_num:=1 -p dir:=/root/data/calib_lh230_0804/raw
+# ------------------------------------ save calib -----------------------------------
+
+# ------------------------------------ mipi -----------------------------------------
+# ros2 run mipi_cam mipi_cam --ros-args -p device_mode:="dual" -p image_width:=1280 -p image_height:=1088 -p rotation:=90.0 -p gdc_enable:=True --log-level INFO
+# ------------------------------------ mipi -----------------------------------------
+
+# ------------------------------------ other ----------------------------------------
+# bash run_stereo.sh --infer_thread_num 1 --mipi_image_width 1280 --mipi_image_height 1088
+# bash run_stereo.sh --mipi_image_width 1280 --mipi_image_height 1088
 # bash run_stereo.sh --mipi_image_width 1280 --mipi_image_height 1088 --mipi_gdc_enable False --camera_info_topic /none/camera_info --camera_fx 600.0 --camera_fy 600.0 --camera_cx 640.0 --camera_cy 544.0 --baseline 0.10
+# ------------------------------------ other ----------------------------------------

@@ -559,12 +559,17 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
   }
 
   if (infer_thread_num_ > 1) {
+    // ================================== Check camera_info ===========================
+    if (!camera_intrinsic_->is_valid()) return;
+    // ================================== Enqueue =====================================
     while (input_image_queue_.size_approx() >= 1) {
       sensor_msgs::msg::Image::SharedPtr drop;
       input_image_queue_.try_dequeue(drop);
     }
     input_image_queue_.enqueue(msg);
   } else {
+    // ================================== Check camera_info ===========================
+    if (!camera_intrinsic_->is_valid()) return;
     // ================================== Preprocess ==================================
     int model_input_w = 0, model_input_h = 0;
     stereonet_process_->get_model_input_size(model_input_w, model_input_h);
@@ -572,6 +577,7 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     {
       ScopeProcessTime t(this->get_logger(), "preprocess");
       preprocess(msg, model_input_w, model_input_h, rectify_left_img_data, rectify_right_img_data);
+      // ================================== Enqueue =====================================
       if (pre_process_queue_.size_approx() >= 1) {
         std::shared_ptr<PreProcessData> drop;
         pre_process_queue_.try_dequeue(drop);
