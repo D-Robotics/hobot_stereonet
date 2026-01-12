@@ -39,6 +39,26 @@ def generate_launch_description():
         default_value='True',
         description='use_mipi_cam'
     ))
+    node_list.append(DeclareLaunchArgument(
+        'codec_sub_topic',
+        default_value='/StereoNetNode/stereonet_visual',
+        description='codec_sub_topic'
+    ))
+    node_list.append(DeclareLaunchArgument(
+        'codec_in_format',
+        default_value='bgr8',
+        description='codec_in_format'
+    ))
+    node_list.append(DeclareLaunchArgument(
+        'codec_pub_topic',
+        default_value='/image_jpeg',
+        description='codec_pub_topic'
+    ))
+    node_list.append(DeclareLaunchArgument(
+        'websocket_image_topic',
+        default_value='/image_jpeg',
+        description='websocket_image_topic'
+    ))
 
     # stereonet node
     stereonet_node = IncludeLaunchDescription(
@@ -82,9 +102,9 @@ def generate_launch_description():
         launch_arguments={
             'codec_in_mode': 'ros',
             'codec_out_mode': 'ros',
-            'codec_sub_topic': '/StereoNetNode/stereonet_visual',
-            'codec_in_format': 'bgr8',
-            'codec_pub_topic': '/image_jpeg',
+            'codec_sub_topic': LaunchConfiguration('codec_sub_topic'),
+            'codec_in_format': LaunchConfiguration('codec_in_format'),
+            'codec_pub_topic': LaunchConfiguration('codec_pub_topic'),
             'codec_out_format': 'jpeg',
             'log_level': 'warn'
         }.items(),
@@ -99,7 +119,7 @@ def generate_launch_description():
                 get_package_share_directory('websocket'),
                 'launch/websocket.launch.py')),
         launch_arguments={
-            'websocket_image_topic': '/image_jpeg',
+            'websocket_image_topic': LaunchConfiguration('websocket_image_topic'),
             'websocket_only_show_image': 'true',
         }.items(),
         condition=IfCondition(LaunchConfiguration('stereonet_pub_web'))

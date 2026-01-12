@@ -130,7 +130,7 @@ def generate_launch_description():
                     package="hobot_stereonet",
                     namespace='',
                     plugin="stereonet::StereoNetNode",
-                    name="StereoNetNode",
+                    name=LaunchConfiguration("stereo_node_name"),
                     parameters=[set_configurable_parameters(node_params)],
                     extra_arguments=[{"use_intra_process_comms": True}],
                 )

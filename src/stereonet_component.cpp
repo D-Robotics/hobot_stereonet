@@ -558,9 +558,9 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     camera_info_updated_ = true;
   }
 
+  // ================================== Check camera_info ===========================
+  if (!camera_intrinsic_->is_valid()) return;
   if (infer_thread_num_ > 1) {
-    // ================================== Check camera_info ===========================
-    if (!camera_intrinsic_->is_valid()) return;
     // ================================== Enqueue =====================================
     while (input_image_queue_.size_approx() >= 1) {
       sensor_msgs::msg::Image::SharedPtr drop;
@@ -568,8 +568,6 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     }
     input_image_queue_.enqueue(msg);
   } else {
-    // ================================== Check camera_info ===========================
-    if (!camera_intrinsic_->is_valid()) return;
     // ================================== Preprocess ==================================
     int model_input_w = 0, model_input_h = 0;
     stereonet_process_->get_model_input_size(model_input_w, model_input_h);
@@ -602,7 +600,7 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
   camera_intrinsic_->fy = msg->p[5];
   camera_intrinsic_->cx = msg->p[2];
   camera_intrinsic_->cy = msg->p[6];
-  camera_intrinsic_->baseline = msg->p[3] / camera_intrinsic_->fx;
+  camera_intrinsic_->baseline = std::abs(msg->p[3] / camera_intrinsic_->fx);
   camera_intrinsic_->doffs = msg->p[11];
 
   if (camera_intrinsic_->baseline > 1) camera_intrinsic_->baseline *= 0.001f; // convert mm to m
@@ -687,6 +685,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
           cv::Mat mask;
           cv::inRange(left_bgr, cv::Scalar(0, 0, 0), cv::Scalar(2, 2, 2), mask);
           disp.setTo(0, mask);
+          depth.setTo(0, mask);
         }
 
         // ================================== Publish ====================================

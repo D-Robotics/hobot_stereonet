@@ -9,33 +9,37 @@ rm -rfv performance_*.txt
 # stereonet version
 stereonet_version=v2.4_int16
 
+# node name
+stereo_node_name=StereoNetNode
+
 # uncertainty
 uncertainty_th=-0.10
 
 # topic
 stereo_image_topic=/image_combine_raw
 camera_info_topic=/image_right_raw/camera_info
-depth_image_topic=/StereoNetNode/stereonet_depth
-depth_camera_info_topic=/StereoNetNode/stereonet_depth/camera_info
-pointcloud2_topic=/StereoNetNode/stereonet_pointcloud2
-rectify_left_image_topic=/StereoNetNode/rectify_left_image
-rectify_right_image_topic=/StereoNetNode/rectify_right_image
+depth_image_topic="~/stereonet_depth"
+depth_camera_info_topic="~/stereonet_depth/camera_info"
+pointcloud2_topic="~/stereonet_pointcloud2"
+rectify_left_image_topic="~/rectify_left_image"
+rectify_right_image_topic="~/rectify_right_image"
 publish_rectify_bgr=False
-origin_left_image_topic=/StereoNetNode/origin_left_image
-origin_right_image_topic=/StereoNetNode/origin_right_image
+origin_left_image_topic="~/origin_left_image"
+origin_right_image_topic="~/origin_right_image"
 publish_origin_enable=True
-visual_image_topic=/StereoNetNode/stereonet_visual
+visual_image_topic="~/stereonet_visual"
 
 # mipi cam
+use_mipi_cam=True
 mipi_image_width=640
 mipi_image_height=352
 mipi_image_framerate=30.0
+mipi_frame_ts_type=realtime
 mipi_gdc_enable=True
 mipi_lpwm_enable=True
 mipi_rotation=90.0
 mipi_channel=2
 mipi_channel2=0
-mipi_frame_ts_type=realtime
 
 # calib
 calib_method=none
@@ -95,10 +99,21 @@ doffs=0.0
 # mask
 left_img_mask_enable=False
 
+# web
+stereonet_pub_web=True
+codec_sub_topic=/StereoNetNode/stereonet_visual
+codec_in_format=bgr8
+codec_pub_topic=/image_jpeg
+websocket_image_topic=/image_jpeg
+websocket_channel=0
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     # stereonet version
     --stereonet_version) stereonet_version=$2; shift 2 ;;
+
+    # node name
+    --stereo_node_name) stereo_node_name=$2; shift 2 ;;
 
     # uncertainty
     --uncertainty_th) uncertainty_th=$2; shift 2 ;;
@@ -118,15 +133,16 @@ while [[ $# -gt 0 ]]; do
     --visual_image_topic) visual_image_topic=$2; shift 2 ;;
 
     # mipi cam
+    --use_mipi_cam) use_mipi_cam=$2; shift 2 ;;
     --mipi_image_width) mipi_image_width=$2; shift 2 ;;
     --mipi_image_height) mipi_image_height=$2; shift 2 ;;
     --mipi_image_framerate) mipi_image_framerate=$2; shift 2 ;;
+    --mipi_frame_ts_type) mipi_frame_ts_type=$2; shift 2 ;;
     --mipi_gdc_enable) mipi_gdc_enable=$2; shift 2 ;;
     --mipi_lpwm_enable) mipi_lpwm_enable=$2; shift 2 ;;
     --mipi_rotation) mipi_rotation=$2; shift 2 ;;
     --mipi_channel) mipi_channel=$2; shift 2 ;;
     --mipi_channel2) mipi_channel2=$2; shift 2 ;;
-    --mipi_frame_ts_type) mipi_frame_ts_type=$2; shift 2 ;;
 
     # calib
     --calib_method) calib_method=$2; shift 2 ;;
@@ -186,11 +202,20 @@ while [[ $# -gt 0 ]]; do
     # mask
     --left_img_mask_enable) left_img_mask_enable=$2; shift 2 ;;
 
+    # web
+    --stereonet_pub_web) stereonet_pub_web=$2; shift 2 ;;
+    --codec_sub_topic) codec_sub_topic=$2; shift 2 ;;
+    --codec_in_format) codec_in_format=$2; shift 2 ;;
+    --codec_pub_topic) codec_pub_topic=$2; shift 2 ;;
+    --websocket_image_topic) websocket_image_topic=$2; shift 2 ;;
+    --websocket_channel) websocket_channel=$2; shift 2 ;;
+
     *) echo "unknown param: $1"; exit 1 ;;
   esac
 done
 
 ros2 launch hobot_stereonet stereonet_model_web_visual_$stereonet_version.launch.py \
+stereo_node_name:=$stereo_node_name \
 uncertainty_th:=$uncertainty_th \
 stereo_image_topic:=$stereo_image_topic camera_info_topic:=$camera_info_topic \
 depth_image_topic:=$depth_image_topic depth_camera_info_topic:=$depth_camera_info_topic \
@@ -198,10 +223,10 @@ pointcloud2_topic:=$pointcloud2_topic rectify_left_image_topic:=$rectify_left_im
 rectify_right_image_topic:=$rectify_right_image_topic publish_rectify_bgr:=$publish_rectify_bgr \
 origin_left_image_topic:=$origin_left_image_topic origin_right_image_topic:=$origin_right_image_topic \
 publish_origin_enable:=$publish_origin_enable visual_image_topic:=$visual_image_topic \
-mipi_image_width:=$mipi_image_width mipi_image_height:=$mipi_image_height mipi_image_framerate:=$mipi_image_framerate \
+use_mipi_cam:=$use_mipi_cam mipi_image_width:=$mipi_image_width mipi_image_height:=$mipi_image_height \
+mipi_image_framerate:=$mipi_image_framerate mipi_frame_ts_type:=$mipi_frame_ts_type \
 mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotation:=$mipi_rotation \
 mipi_channel:=$mipi_channel mipi_channel2:=$mipi_channel2 \
-mipi_frame_ts_type:=$mipi_frame_ts_type \
 calib_method:=$calib_method stereo_calib_file_path:=$stereo_calib_file_path \
 render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max_disp \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
@@ -214,7 +239,9 @@ save_origin_flag:=$save_origin_flag save_disp_flag:=$save_disp_flag save_uncert_
 save_visual_flag:=$save_visual_flag save_pcd_flag:=$save_pcd_flag \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
 camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs \
-left_img_mask_enable:=$left_img_mask_enable
+left_img_mask_enable:=$left_img_mask_enable \
+stereonet_pub_web:=$stereonet_pub_web codec_sub_topic:=$codec_sub_topic codec_in_format:=$codec_in_format \
+codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic websocket_channel:=$websocket_channel
 
 
 # ------------------------------------ save once ------------------------------------
@@ -240,11 +267,12 @@ left_img_mask_enable:=$left_img_mask_enable
 # ------------------------------------ save batch -----------------------------------
 
 # ------------------------------------ save calib -----------------------------------
+# bash run_stereo.sh --codec_sub_topic /image_combine_raw --codec_in_format nv12
 # ros2 run hobot_stereonet_utils save_stereo_img --ros-args -p save_num:=1 -p dir:=/root/data/calib_lh230_0804/raw
 # ------------------------------------ save calib -----------------------------------
 
 # ------------------------------------ mipi -----------------------------------------
-# ros2 run mipi_cam mipi_cam --ros-args -p device_mode:="dual" -p image_width:=1280 -p image_height:=1088 -p rotation:=90.0 -p gdc_enable:=True --log-level INFO
+# ros2 run mipi_cam mipi_cam --ros-args -p device_mode:=dual -p image_width:=1280 -p image_height:=1088 -p rotation:=90.0 -p gdc_enable:=True --log-level INFO
 # ------------------------------------ mipi -----------------------------------------
 
 # ------------------------------------ other ----------------------------------------
@@ -252,3 +280,14 @@ left_img_mask_enable:=$left_img_mask_enable
 # bash run_stereo.sh --mipi_image_width 1280 --mipi_image_height 1088
 # bash run_stereo.sh --mipi_image_width 1280 --mipi_image_height 1088 --mipi_gdc_enable False --camera_info_topic /none/camera_info --camera_fx 600.0 --camera_fy 600.0 --camera_cx 640.0 --camera_cy 544.0 --baseline 0.10
 # ------------------------------------ other ----------------------------------------
+
+# ------------------------------------ mipi custom  gdc -----------------------------
+# ros2 run mipi_cam mipi_cam --ros-args -p device_mode:=dual -p dual_combine:=1 -p image_width:=640 -p image_height:=352 -p rotation:=90.0 -p cal_rotation:=90.0 -p framerate:=30.0 -p gdc_enable:=True -p frame_ts_type:=realtime -p camera_calibration_file_path:=/root/zhikang.zeng/SC132gs_dual_calibration.yaml -p channel:=2 -p channel2:=0 -p out_format:=nv12 --log-level ERROR
+# ------------------------------------ mipi custom  gdc -----------------------------
+
+# ------------------------------------ compare --------------------------------------
+# ros2 run mipi_cam mipi_cam --ros-args -p device_mode:=dual -p dual_combine:=1 -p image_width:=1280 -p image_height:=1088 -p rotation:=90.0 -p framerate:=30.0 -p gdc_enable:=True -p frame_ts_type:=realtime --log-level ERROR
+# bash run_stereo.sh --stereo_node_name StereoNetNode1 --stereonet_version v2.4_int16 --codec_sub_topic /StereoNetNode1/stereonet_visual --codec_pub_topic /image_jpeg1 --websocket_image_topic /image_jpeg1 --websocket_channel 0
+# bash run_stereo.sh --stereo_node_name StereoNetNode1 --stereonet_version v2.4_int16 --codec_sub_topic /StereoNetNode1/stereonet_visual --codec_pub_topic /image_jpeg1 --websocket_image_topic /image_jpeg1 --websocket_channel 0 --use_mipi_cam False
+# bash run_stereo.sh --stereo_node_name StereoNetNode2 --stereonet_version v2.4_int8  --codec_sub_topic /StereoNetNode2/stereonet_visual --codec_pub_topic /image_jpeg2 --websocket_image_topic /image_jpeg2 --websocket_channel 1 --use_mipi_cam False
+# ------------------------------------ compare --------------------------------------
