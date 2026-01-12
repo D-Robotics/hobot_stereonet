@@ -49,6 +49,8 @@ stereo_calib_file_path=calib.yaml
 render_type=distance
 render_perf=True
 render_max_disp=80
+render_z_near=-1.0
+render_z_range=3.0
 
 # speckle filter
 speckle_filter_enable=False
@@ -152,6 +154,8 @@ while [[ $# -gt 0 ]]; do
     --render_type) render_type=$2; shift 2 ;;
     --render_perf) render_perf=$2; shift 2 ;;
     --render_max_disp) render_max_disp=$2; shift 2 ;;
+    --render_z_near) render_z_near=$2; shift 2 ;;
+    --render_z_range) render_z_range=$2; shift 2 ;;
 
     # speckle filter
     --speckle_filter_enable) speckle_filter_enable=$2; shift 2 ;;
@@ -228,7 +232,7 @@ mipi_image_framerate:=$mipi_image_framerate mipi_frame_ts_type:=$mipi_frame_ts_t
 mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotation:=$mipi_rotation \
 mipi_channel:=$mipi_channel mipi_channel2:=$mipi_channel2 \
 calib_method:=$calib_method stereo_calib_file_path:=$stereo_calib_file_path \
-render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max_disp \
+render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max_disp render_z_near:=$render_z_near render_z_range:=$render_z_range \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=$pointcloud_height_min pointcloud_height_max:=$pointcloud_height_max pointcloud_depth_max:=$pointcloud_depth_max \
 pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
@@ -268,6 +272,7 @@ codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic 
 
 # ------------------------------------ save calib -----------------------------------
 # bash run_stereo.sh --codec_sub_topic /image_combine_raw --codec_in_format nv12
+# bash run_stereo.sh --codec_sub_topic /image_combine_raw --codec_in_format nv12 --mipi_image_width 1280 --mipi_image_height 1088 --mipi_gdc_enable False
 # ros2 run hobot_stereonet_utils save_stereo_img --ros-args -p save_num:=1 -p dir:=/root/data/calib_lh230_0804/raw
 # ------------------------------------ save calib -----------------------------------
 

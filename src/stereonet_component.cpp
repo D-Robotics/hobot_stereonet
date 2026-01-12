@@ -256,6 +256,12 @@ void StereoNetNode::set_node_params() {
   render_max_disp_ = this->get_parameter("render_max_disp").as_int();
   if (render_max_disp_ < 0) render_max_disp_ = 192;
 
+  this->declare_parameter<double>("render_z_near", -1.0);
+  render_z_near_ = this->get_parameter("render_z_near").as_double();
+  this->declare_parameter<double>("render_z_range", 3.0);
+  render_z_range_ = this->get_parameter("render_z_range").as_double();
+  if (render_z_range_ < 0.0) render_z_range_ = 3.0;
+
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -292,8 +298,9 @@ void StereoNetNode::set_node_params() {
           << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
           << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
           << ", " << grid_min_point_count_ << "]" << std::endl
-          << "[render_type, render_perf, depth_decimal_num, render_max_disp]: [" << render_type_ << ", " << render_perf_
-          << ", " << depth_decimal_num_ << ", " << render_max_disp_ << "]" << std::endl
+          << "[render_type, render_perf, depth_decimal_num, render_max_disp, render_z_near, render_z_range]: ["
+          << render_type_ << ", " << render_perf_ << ", " << depth_decimal_num_ << ", " << render_max_disp_ << ", "
+          << render_z_near_ << "(m), " << render_z_range_ << "(m)]" << std::endl
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
           << "(mm)]" << std::endl
@@ -1575,16 +1582,20 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     static double z_near_ema_mm = -1;
     static int frame_cnt = 0;
     static int interval = use_local_image_flag_ ? 1 : 5;
-    if (frame_cnt++ % interval == 0) {
-      double z_near = compute_near_depth_percentile(pub_data->depth, 0.02);
-      if (z_near > 0) {
-        if (z_near_ema_mm < 0)
-          z_near_ema_mm = z_near;
-        else
-          z_near_ema_mm = 0.05 * z_near + 0.95 * z_near_ema_mm;
+    if (render_z_near_ > 0.0) {
+      z_near_ema_mm = render_z_near_ * 1000.0;
+    } else {
+      if (frame_cnt++ % interval == 0) {
+        double z_near = compute_near_depth_percentile(pub_data->depth, 0.02);
+        if (z_near > 0) {
+          if (z_near_ema_mm < 0)
+            z_near_ema_mm = z_near;
+          else
+            z_near_ema_mm = 0.05 * z_near + 0.95 * z_near_ema_mm;
+        }
       }
     }
-    double z_far = z_near_ema_mm + 3000.0;
+    double z_far = z_near_ema_mm + render_z_range_ * 1000.0;
     int d_max = static_cast<int>(fb / (z_near_ema_mm / 1000.0) - camera_intrinsic_->doffs);
     int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
     // pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (d_max - d_min), -d_min * 255.0 / (d_max - d_min));

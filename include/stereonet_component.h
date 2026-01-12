@@ -284,6 +284,8 @@ private:
   bool render_perf_ = true;
   int depth_decimal_num_ = 2;
   int render_max_disp_ = 80;
+  double render_z_near_ = -1.0;
+  double render_z_range_ = 3.0;
 
   // measure mode
   bool measure_mode_ = false;

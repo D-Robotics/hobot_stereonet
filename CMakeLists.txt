@@ -167,5 +167,6 @@ file(GLOB LAUNCH_FILES
 )
 install(FILES ${LAUNCH_FILES} DESTINATION share/${PROJECT_NAME}/launch)
 install(DIRECTORY data DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY script DESTINATION share/${PROJECT_NAME})
 
 ament_package()
