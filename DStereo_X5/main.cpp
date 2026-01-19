@@ -86,14 +86,16 @@ public:
    * @brief Constructor
    * @param model_path Model path
    * @param infer_thread_num Inference thread number
+   * @param algo_fps Algorithm fps
    * @param uncertainty_th Uncertainty threshold
    * @param post_version Postprocess version
    * @return void
    */
-  StereoNetNode(const std::string &model_path, int infer_thread_num, float uncertainty_th = -0.10,
-                std::string post_version = "auto") {
+  StereoNetNode(const std::string &model_path, int infer_thread_num, double algo_fps = 30.0f,
+                float uncertainty_th = -0.10, std::string post_version = "auto") {
     // member variables
     infer_thread_num_ = infer_thread_num;
+    algo_fps_ = algo_fps;
     uncertainty_th_ = uncertainty_th;
     post_version_ = post_version;
 
@@ -192,7 +194,7 @@ private:
       std::shared_ptr<InputData> input_data =
           std::make_shared<InputData>(timestamp, left_img_resize, left_img_nv12, right_img_nv12);
       input_image_queue_.enqueue(input_data);
-      std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(1000.0 / algo_fps_)));
     }
   }
 
@@ -356,6 +358,9 @@ private:
   float uncertainty_th_ = -0.10;
   // postprocess version
   std::string post_version_ = "auto";
+
+  // algorithm fps
+  double algo_fps_ = 30.0f;
 };
 
 void print_help(const char *prog_name) {
@@ -366,6 +371,8 @@ Arguments:
                      default: ./model/DStereoV2.4_int16.bin
   infer_thread_num   Inference thread number
                      default: 1
+  algo_fps           Algorithm fps
+                     default: 30.0
   uncertainty_th     Uncertainty threshold
                      default: -0.10
   post_version       Postprocess version: auto | v2.0 | v2.1 | v2.2 | v2.3 | v2.4 | v2.4_uncert
@@ -394,10 +401,12 @@ int main(int argc, char **argv) {
   int infer_thread_num = 1;
   float uncertainty_th = -0.10;
   std::string post_version = "auto";
+  double algo_fps = 30.0f;
   if (argc > 1) model_path = argv[1];
   if (argc > 2) infer_thread_num = std::stoi(argv[2]);
-  if (argc > 3) uncertainty_th = std::stof(argv[3]);
-  if (argc > 4) post_version = argv[4];
+  if (argc > 3) algo_fps = std::stod(argv[3]);
+  if (argc > 4) uncertainty_th = std::stof(argv[4]);
+  if (argc > 5) post_version = argv[5];
 
   if (!std::filesystem::exists(model_path)) {
     LOG_ERROR(nullptr, "=> model file not exist: " << model_path);
@@ -405,7 +414,8 @@ int main(int argc, char **argv) {
   }
 
   // init StereoNetNode
-  auto stereonet_node = std::make_shared<StereoNetNode>(model_path, infer_thread_num, uncertainty_th, post_version);
+  auto stereonet_node =
+      std::make_shared<StereoNetNode>(model_path, infer_thread_num, algo_fps, uncertainty_th, post_version);
 
   // spin
   while (g_running) {
