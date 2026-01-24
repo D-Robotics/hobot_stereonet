@@ -262,6 +262,15 @@ void StereoNetNode::set_node_params() {
   render_z_range_ = this->get_parameter("render_z_range").as_double();
   if (render_z_range_ < 0.0) render_z_range_ = 3.0;
 
+  this->declare_parameter<bool>("epipolar_mode", false);
+  epipolar_mode_ = this->get_parameter("epipolar_mode").as_bool();
+  this->declare_parameter<int>("chessboard_per_rows", 20);
+  chessboard_per_rows_ = this->get_parameter("chessboard_per_rows").as_int();
+  this->declare_parameter<int>("chessboard_per_cols", 11);
+  chessboard_per_cols_ = this->get_parameter("chessboard_per_cols").as_int();
+  this->declare_parameter<double>("chessboard_square_size", 0.06);
+  chessboard_square_size_ = this->get_parameter("chessboard_square_size").as_double();
+
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -304,6 +313,9 @@ void StereoNetNode::set_node_params() {
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
           << "(mm)]" << std::endl
+          << "[epipolar_mode, chessboard_per_rows, chessboard_per_cols, chessboard_square_size]: [" << epipolar_mode_
+          << ", " << chessboard_per_rows_ << ", " << chessboard_per_cols_ << ", " << chessboard_square_size_ << "(m)]"
+          << std::endl
           << "[infer_thread_num, save_thread_num, max_save_task]: [" << infer_thread_num_ << ", " << save_thread_num_
           << ", " << max_save_task_ << "]" << std::endl
           << std::endl
@@ -602,6 +614,8 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
 
 void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
   if (sub_camera_info_flag_) return;
+  origin_camera_info_ = msg;
+
   // only subscribe once
   camera_intrinsic_->fx = msg->p[0];
   camera_intrinsic_->fy = msg->p[5];
@@ -906,6 +920,7 @@ void StereoNetNode::publish_function() {
         ScopeProcessTime t(this->get_logger(), "publish_pointcloud2");
         publish_pointcloud2(pub_data);
       }
+      // publish origin images
       {
         if (publish_origin_enable_) {
           // publish origin images
@@ -916,8 +931,17 @@ void StereoNetNode::publish_function() {
       }
       // publish visual image
       {
-        ScopeProcessTime t(this->get_logger(), "publish_visual_image");
-        publish_visual_image(pub_data);
+        if (!epipolar_mode_) {
+          ScopeProcessTime t(this->get_logger(), "publish_visual_image");
+          publish_visual_image(pub_data);
+        }
+      }
+      // publish epipolar image
+      {
+        if (epipolar_mode_) {
+          ScopeProcessTime t(this->get_logger(), "publish_epipolar_image", "warn");
+          publish_epipolar_image(pub_data);
+        }
       }
       {
         // save result
@@ -1125,7 +1149,9 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
 }
 
 void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {
-  if (origin_left_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
+  if (origin_left_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_ &&
+      !epipolar_mode_)
+    return;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
@@ -1145,7 +1171,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
                     pub_data->origin_stereo_msg->width * pub_data->origin_stereo_msg->height,
                 single_img_w * single_img_h / 2);
     origin_left_image_pub_->publish(*left_msg);
-    if (save_origin_flag_ || do_save_result_once_) {
+    if (save_origin_flag_ || do_save_result_once_ || epipolar_mode_) {
       ImgConvertUtils::nv12_to_bgr_mat(left_msg->data.data(), pub_data->origin_left, left_msg->width, left_msg->height);
     }
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
@@ -1170,7 +1196,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       std::memcpy(left_msg->data.data(), left_rgb.data, size);
       origin_left_image_pub_->publish(*left_msg);
 
-      if (save_origin_flag_ || do_save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_ || epipolar_mode_) {
         cv::Mat rgb(left_msg->height, left_msg->width, CV_8UC3, const_cast<uint8_t *>(left_msg->data.data()),
                     left_msg->step);
         cv::cvtColor(rgb, pub_data->origin_left, cv::COLOR_RGB2BGR);
@@ -1187,7 +1213,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
       std::memcpy(left_msg->data.data(), left_bgr.data, size);
       origin_left_image_pub_->publish(*left_msg);
 
-      if (save_origin_flag_ || do_save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_ || epipolar_mode_) {
         pub_data->origin_left = cv::Mat(left_msg->height, left_msg->width, CV_8UC3,
                                         const_cast<uint8_t *>(left_msg->data.data()), left_msg->step)
                                     .clone();
@@ -1197,7 +1223,9 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
 }
 
 void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &pub_data) {
-  if (origin_right_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
+  if (origin_right_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_ &&
+      !epipolar_mode_)
+    return;
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
@@ -1220,7 +1248,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
                 single_img_w * single_img_h / 2);
     origin_right_image_pub_->publish(*right_msg);
 
-    if (save_origin_flag_ || do_save_result_once_) {
+    if (save_origin_flag_ || do_save_result_once_ || epipolar_mode_) {
       ImgConvertUtils::nv12_to_bgr_mat(right_msg->data.data(), pub_data->origin_right, right_msg->width,
                                        right_msg->height);
     }
@@ -1246,7 +1274,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       std::memcpy(right_msg->data.data(), right_rgb.data, size);
       origin_right_image_pub_->publish(*right_msg);
 
-      if (save_origin_flag_ || do_save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_ || epipolar_mode_) {
         cv::Mat rgb(right_msg->height, right_msg->width, CV_8UC3, const_cast<uint8_t *>(right_msg->data.data()),
                     right_msg->step);
         cv::cvtColor(rgb, pub_data->origin_right, cv::COLOR_RGB2BGR);
@@ -1263,7 +1291,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
       std::memcpy(right_msg->data.data(), right_bgr.data, size);
       origin_right_image_pub_->publish(*right_msg);
 
-      if (save_origin_flag_ || do_save_result_once_) {
+      if (save_origin_flag_ || do_save_result_once_ || epipolar_mode_) {
         pub_data->origin_right = cv::Mat(right_msg->height, right_msg->width, CV_8UC3,
                                          const_cast<uint8_t *>(right_msg->data.data()), right_msg->step)
                                      .clone();
@@ -1758,6 +1786,35 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                 CV_RGB(0, 0, 255), 2);
   }
 
+  // ===================================== publish visual image ============================================
+  pub_data->visual_img = visual_img;
+  // Convert cv::Mat to sensor_msgs::msg::Image
+  auto visual_msg = std::make_shared<sensor_msgs::msg::Image>();
+  visual_msg->header = pub_data->header;
+  visual_msg->header.frame_id = "camera_link";
+  visual_msg->height = visual_img.rows;
+  visual_msg->width = visual_img.cols;
+  visual_msg->encoding = "bgr8";
+  visual_msg->is_bigendian = false;
+  visual_msg->step = visual_img.cols * visual_img.elemSize();
+  size_t size = visual_msg->step * visual_msg->height;
+  visual_msg->data.resize(size);
+  std::memcpy(visual_msg->data.data(), visual_img.data, size);
+
+  visual_image_pub_->publish(*visual_msg);
+}
+
+void StereoNetNode::publish_epipolar_image(const std::shared_ptr<PubData> &pub_data) {
+  cv::Mat origin_left_img = pub_data->origin_left.clone();
+  cv::Mat origin_right_img = pub_data->origin_right.clone();
+  if (origin_left_img.empty() || origin_right_img.empty()) {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[31m=> epipolar image is empty\033[0m");
+    return;
+  }
+  cv::Mat visual_img;
+  EpipolarAlign::check_epipolar_alignment(origin_left_img, origin_right_img,
+                                          cv::Size(chessboard_per_rows_, chessboard_per_cols_), chessboard_square_size_,
+                                          orignal_camera_intrinsic_, visual_img);
   // ===================================== publish visual image ============================================
   pub_data->visual_img = visual_img;
   // Convert cv::Mat to sensor_msgs::msg::Image

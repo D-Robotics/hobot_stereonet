@@ -45,6 +45,7 @@
 #include "pcl_filter.h"
 #include "camera_intrinsic.h"
 #include "pub_data.h"
+#include "epipolar_align.h"
 
 namespace fs = std::filesystem;
 
@@ -161,6 +162,12 @@ private:
    * @param pub_data The processed data containing the disparity map and metadata
    */
   void publish_visual_image(const std::shared_ptr<PubData> &pub_data);
+
+  /**
+   * @brief Publish the epipolar aligned image
+   * @param pub_data The processed data containing the disparity map and metadata
+   */
+  void publish_epipolar_image(const std::shared_ptr<PubData> &pub_data);
 
   /**
    * @brief Publish the original left and right images
@@ -292,6 +299,14 @@ private:
   int roi_size_ = 10;
   std::deque<RoiVec> roi_buffer;
   double gt_depth_ = 0.0;
+
+  // epipolar mode
+  bool epipolar_mode_ = false;
+  int chessboard_per_rows_ = 20;
+  int chessboard_per_cols_ = 11;
+  double chessboard_square_size_ = 0.06;
+
+  sensor_msgs::msg::CameraInfo::SharedPtr origin_camera_info_;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
