@@ -302,6 +302,7 @@ private:
 
   // epipolar mode
   bool epipolar_mode_ = false;
+  std::string epipolar_img_ = "origin";
   int chessboard_per_rows_ = 20;
   int chessboard_per_cols_ = 11;
   double chessboard_square_size_ = 0.06;

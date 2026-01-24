@@ -270,6 +270,8 @@ void StereoNetNode::set_node_params() {
   chessboard_per_cols_ = this->get_parameter("chessboard_per_cols").as_int();
   this->declare_parameter<double>("chessboard_square_size", 0.06);
   chessboard_square_size_ = this->get_parameter("chessboard_square_size").as_double();
+  this->declare_parameter<std::string>("epipolar_img", "origin");
+  epipolar_img_ = this->get_parameter("epipolar_img").as_string();
 
   RCLCPP_WARN_STREAM(
       this->get_logger(),
@@ -313,9 +315,9 @@ void StereoNetNode::set_node_params() {
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
           << "(mm)]" << std::endl
-          << "[epipolar_mode, chessboard_per_rows, chessboard_per_cols, chessboard_square_size]: [" << epipolar_mode_
-          << ", " << chessboard_per_rows_ << ", " << chessboard_per_cols_ << ", " << chessboard_square_size_ << "(m)]"
-          << std::endl
+          << "[epipolar_mode, epipolar_img, chessboard_per_rows, chessboard_per_cols, chessboard_square_size]: ["
+          << epipolar_mode_ << ", " << epipolar_img_ << ", " << chessboard_per_rows_ << ", " << chessboard_per_cols_
+          << ", " << chessboard_square_size_ << "(m)]" << std::endl
           << "[infer_thread_num, save_thread_num, max_save_task]: [" << infer_thread_num_ << ", " << save_thread_num_
           << ", " << max_save_task_ << "]" << std::endl
           << std::endl
@@ -1805,16 +1807,27 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
 }
 
 void StereoNetNode::publish_epipolar_image(const std::shared_ptr<PubData> &pub_data) {
-  cv::Mat origin_left_img = pub_data->origin_left.clone();
-  cv::Mat origin_right_img = pub_data->origin_right.clone();
-  if (origin_left_img.empty() || origin_right_img.empty()) {
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[31m=> epipolar image is empty\033[0m");
-    return;
-  }
   cv::Mat visual_img;
-  EpipolarAlign::check_epipolar_alignment(origin_left_img, origin_right_img,
-                                          cv::Size(chessboard_per_rows_, chessboard_per_cols_), chessboard_square_size_,
-                                          orignal_camera_intrinsic_, visual_img);
+  if (epipolar_img_ == "origin") {
+    cv::Mat origin_left_img = pub_data->origin_left.clone();
+    cv::Mat origin_right_img = pub_data->origin_right.clone();
+    if (origin_left_img.empty() || origin_right_img.empty()) {
+      RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[31m=> epipolar image is empty\033[0m");
+      return;
+    }
+    EpipolarAlign::check_epipolar_alignment(origin_left_img, origin_right_img,
+                                            cv::Size(chessboard_per_rows_, chessboard_per_cols_),
+                                            chessboard_square_size_, orignal_camera_intrinsic_, visual_img);
+  } else {
+    cv::Mat left_img = pub_data->left_bgr;
+    cv::Mat right_img = pub_data->right_bgr;
+    if (left_img.empty() || right_img.empty()) {
+      RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[31m=> epipolar image is empty\033[0m");
+      return;
+    }
+    EpipolarAlign::check_epipolar_alignment(left_img, right_img, cv::Size(chessboard_per_rows_, chessboard_per_cols_),
+                                            chessboard_square_size_, camera_intrinsic_, visual_img);
+  }
   // ===================================== publish visual image ============================================
   pub_data->visual_img = visual_img;
   // Convert cv::Mat to sensor_msgs::msg::Image

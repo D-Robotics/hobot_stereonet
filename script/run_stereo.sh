@@ -107,6 +107,7 @@ left_img_mask_enable=False
 
 # epipolar
 epipolar_mode=False
+epipolar_img=origin
 chessboard_per_rows=20
 chessboard_per_cols=11
 chessboard_square_size=0.06
@@ -219,6 +220,7 @@ while [[ $# -gt 0 ]]; do
 
     # epipolar
     --epipolar_mode) epipolar_mode=$2; shift 2 ;;
+    --epipolar_img) epipolar_img=$2; shift 2 ;;
     --chessboard_per_rows) chessboard_per_rows=$2; shift 2 ;;
     --chessboard_per_cols) chessboard_per_cols=$2; shift 2 ;;
     --chessboard_square_size) chessboard_square_size=$2; shift 2 ;;
@@ -261,7 +263,8 @@ save_visual_flag:=$save_visual_flag save_pcd_flag:=$save_pcd_flag \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
 camera_cx:=$camera_cx camera_cy:=$camera_cy camera_fx:=$camera_fx camera_fy:=$camera_fy baseline:=$baseline doffs:=$doffs \
 left_img_mask_enable:=$left_img_mask_enable \
-epipolar_mode:=$epipolar_mode chessboard_per_rows:=$chessboard_per_rows chessboard_per_cols:=$chessboard_per_cols chessboard_square_size:=$chessboard_square_size \
+epipolar_mode:=$epipolar_mode epipolar_img:=$epipolar_img \
+chessboard_per_rows:=$chessboard_per_rows chessboard_per_cols:=$chessboard_per_cols chessboard_square_size:=$chessboard_square_size \
 stereonet_pub_web:=$stereonet_pub_web codec_sub_topic:=$codec_sub_topic codec_in_format:=$codec_in_format \
 codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic websocket_channel:=$websocket_channel
 

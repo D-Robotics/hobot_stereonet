@@ -94,15 +94,16 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
     return 100.0 * cnt / abs_dy.size();
   };
 
-  // 5. reproject error
+  // === 5. reproject error ===
   std::vector<cv::Point3f> obj_pts = create_chessboard_points(pattern_size.width, pattern_size.height, square_size);
   // K, D
   cv::Mat K = (cv::Mat_<double>(3, 3) << cam->fx, 0, cam->cx, 0, cam->fy, cam->cy, 0, 0, 1);
-  cv::Mat D = cv::Mat::zeros(5, 1, CV_64F); // 假设已去畸变
+  cv::Mat D = cv::Mat::zeros(5, 1, CV_64F); // assume already distorted
   cv::Mat rvec, tvec;
   bool pnp_ok = cv::solvePnP(obj_pts, cornersL, K, D, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
   if (!pnp_ok) return;
 
+  // project to left image
   std::vector<cv::Point2f> proj_pts;
   cv::projectPoints(obj_pts, rvec, tvec, K, D, proj_pts);
 
@@ -114,21 +115,22 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
   double mean_reproj = std::accumulate(reproj_err.begin(), reproj_err.end(), 0.0) / reproj_err.size();
   double max_reproj = *std::max_element(reproj_err.begin(), reproj_err.end());
 
+  // project to right image
   std::vector<cv::Point2f> proj_pts_right;
   cv::Mat R;
   cv::Rodrigues(rvec, R);
   for (size_t i = 0; i < obj_pts.size(); ++i) {
-    // 世界点
+    // world coordinate
     cv::Mat Xw = (cv::Mat_<double>(3, 1) << obj_pts[i].x, obj_pts[i].y, obj_pts[i].z);
 
-    // 左目相机坐标
+    // left camera coordinate
     cv::Mat Xc_L = R * Xw + tvec;
 
-    // 右目相机坐标（baseline 沿 +X）
+    // right camera coordinate (baseline along +X)
     cv::Mat Xc_R = Xc_L.clone();
     Xc_R.at<double>(0) -= cam->baseline;
 
-    // 投影到右图
+    // project to right image
     double x = Xc_R.at<double>(0);
     double y = Xc_R.at<double>(1);
     double z = Xc_R.at<double>(2);
@@ -191,9 +193,11 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
 
   int x0 = 10;
   int y0 = 25;
-  int line_height = 22;
-  double font_scale = 0.8;
-  int thickness = 2;
+  double font_scale = std::min(visualize.cols, visualize.rows) / 720.0 * 0.6;
+  font_scale = std::clamp(font_scale, 0.4, 1.5);
+  int line_height = static_cast<int>(font_scale * 40);
+  int thickness = std::max(1, static_cast<int>(std::round(font_scale * 1.8)));
+  thickness = std::min(thickness, 3);
   for (size_t i = 0; i < info_lines.size(); ++i) {
     cv::putText(visualize, info_lines[i], cv::Point(x0, y0 + static_cast<int>(i) * line_height),
                 cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 0, 255), thickness, cv::LINE_AA);
