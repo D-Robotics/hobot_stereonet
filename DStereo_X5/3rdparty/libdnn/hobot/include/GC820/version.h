@@ -1,7 +1,0 @@
-#ifndef NANO2D_VERSION_MAJOR
-#define NANO2D_VERSION_MAJOR      2
-#endif
-
-#ifndef NANO2D_VERSION_MINOR
-#define NANO2D_VERSION_MINOR      0
-#endif

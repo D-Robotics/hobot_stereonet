@@ -1,0 +1,148 @@
+#!/bin/sh
+
+count=1
+index=1
+sleeptime=1
+usage="Usage: $0 [-n count] [-d second]"
+
+align_calculation() {
+	local align_value=$1
+	local source_data=$2
+	local result=$(( (source_data + align_value - 1) / align_value * align_value ))
+	echo $result
+}
+
+while getopts "n:d:h" opt
+do
+	case $opt in
+	n)
+		count=$OPTARG
+		;;
+	d)
+		sleeptime=$OPTARG
+		;;
+	h)
+		echo $usage
+		exit 0
+		;;
+	\?)
+		echo $usage
+		exit 1
+		;;
+	esac
+done
+
+if [ -d "/sys/devices/system/bpu/profiler_enable" ];then
+	echo 250 > /sys/devices/system/bpu/profiler_frequency
+	echo 1   > /sys/devices/system/bpu/profiler_enable
+fi
+while [ 1 -gt 0 ]
+do
+	if [ $count -gt 0 ] 2>/dev/null;then
+		echo "=====================$index====================="
+		index=$(($index+1))
+		count=$(($count-1))
+	else
+		break
+	fi
+
+	echo "temperature-->"
+	for temp in `find /sys/class/hwmon/* -name hwmon[0-9]*`
+	do
+		name=`cat $temp/name`
+		case $name in
+		pvt )
+			value=`cat $temp/temp1_input`
+			value=`awk 'BEGIN {print "'${value}'"/1000.0}'`
+			name="DDR"
+			printf "\t%-8s : %-3.1f (C)\n" $name $value
+
+			cat $temp/temp2_input 2>/dev/null
+			if [ $? -eq 0 ]; then
+				value=`cat $temp/temp2_input`
+			else
+				value=`cat $temp/temp3_input`
+			fi
+			value=`awk 'BEGIN {print "'${value}'"/1000.0}'`
+			name="BPU"
+			printf "\t%-8s : %-3.1f (C)\n" $name $value
+
+			value=`cat $temp/temp3_input`
+			value=`awk 'BEGIN {print "'${value}'"/1000.0}'`
+			name="CPU"
+			printf "\t%-8s : %-3.1f (C)\n" $name $value
+			;;
+		tmp75c)
+			name="BOARD"
+			printf "\t%-8s : %-3.1f (C)\n" $name $value
+			;;
+		*)
+			continue
+			;;
+		esac
+	done
+
+	echo "cpu frequency-->"
+	echo -e "\t      min(M)\tcur(M)\tmax(M)"
+	for temp in `find /sys/devices/system/cpu/cpu* -name cpu[0-9]*`
+	do
+		min=`cat $temp/cpufreq/cpuinfo_min_freq`
+		cur=`cat $temp/cpufreq/cpuinfo_cur_freq`
+		max=`cat $temp/cpufreq/cpuinfo_max_freq`
+		min=$((min / 1000))
+		cur=$((cur / 1000))
+		max=$((max / 1000))
+		echo -e "\t${temp##*/}: $min\t$cur\t$max"
+	done
+
+	echo "bpu status information---->"
+	echo -e "\t      min(M)\tcur(M)\tmax(M)\tratio"
+	for temp in `find /sys/devices/system/bpu/bpu* -name bpu[0-9]*`
+	do
+		if [ -d "$temp/bpufreq" ];then
+			min=`cat $temp/bpufreq/min_freq`
+			cur=`cat $temp/bpufreq/cur_freq`
+			max=`cat $temp/bpufreq/max_freq`
+		else
+			min=`cat $temp/devfreq/3a00*000.bpu/min_freq`
+			cur=`cat $temp/devfreq/3a00*000.bpu/cur_freq`
+			max=`cat $temp/devfreq/3a00*000.bpu/max_freq`
+		fi
+		min=$((min / 1000000))
+		cur=$((cur / 1000000))
+		max=$((max / 1000000))
+		min=$(align_calculation 100 $min)
+		cur=$(align_calculation 100 $cur)
+		max=$(align_calculation 100 $max)
+		ratio=`cat $temp/ratio`
+		echo -e "\t${temp##*/}: $min\t$cur\t$max\t$ratio"
+	done
+
+	if [ -d "/sys/class/devfreq/soc:ddrc-freq" ]; then
+		echo "ddr frequency information---->"
+		echo -e "\t      min(M)\tcur(M)\tmax(M)"
+		min=`cat /sys/class/devfreq/soc\:ddrc-freq/min_freq`
+		cur=`cat /sys/class/devfreq/soc\:ddrc-freq/cur_freq`
+		max=`cat /sys/class/devfreq/soc\:ddrc-freq/max_freq`
+		min=$((min / 1000000))
+		cur=$((cur / 1000000))
+		max=$((max / 1000000))
+		echo -e "\tddr:  $min\t$cur\t$max"
+	fi
+
+	if [ -d "/sys/class/devfreq/3c000000.gc8000" ]; then
+		echo "GPU gc8000 frequency information---->"
+		echo -e "\t      min(M)\tcur(M)\tmax(M)"
+		min=`cat /sys/class/devfreq/3c000000.gc8000/min_freq`
+		cur=`cat /sys/class/devfreq/3c000000.gc8000/cur_freq`
+		max=`cat /sys/class/devfreq/3c000000.gc8000/max_freq`
+		min=$((min / 1000000))
+		cur=$((cur / 1000000))
+		max=$((max / 1000000))
+		echo -e "\tgc8000:  $min\t$cur\t$max"
+	fi
+
+	if [ $count -gt 0 ];then
+		sleep $sleeptime
+	fi
+done

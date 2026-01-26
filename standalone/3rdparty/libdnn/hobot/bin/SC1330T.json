@@ -1,0 +1,20 @@
+{
+    "aeInfo":
+    {
+        "enable": 1,
+        "useCfg": 1,
+        "mode": 1, "//":"0: manual mode; 1: auto mode"
+    },
+    "awbInfo":
+    {
+        "enable": 1,
+        "useCfg": 1,
+        "mode": 1, "//":"0: manual mode; 1: auto mode"
+    },
+    "dgInfo":
+    {
+        "enable": 1,
+        "useCfg": 1,
+        "mode": 0, "//":"0: manual mode only"
+    }
+}

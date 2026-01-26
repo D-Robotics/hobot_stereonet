@@ -2,6 +2,6 @@ cmake-build-debug
 cmake-build-release
 tools/build
 platform_private
-DStereo_X5/build
+standalone/build
 src/*.dep
 src/*.obj
