@@ -543,7 +543,7 @@ void StereoNetNode::publish_static_tf() {
   geometry_msgs::msg::TransformStamped t;
   t.header.stamp = now();
   t.header.frame_id = "camera_link";
-  t.child_frame_id = "camera_depth_frame";
+  t.child_frame_id = "camera_optical_frame";
 
   t.transform.translation.x = 0.0;
   t.transform.translation.y = 0.0;
@@ -977,7 +977,7 @@ void StereoNetNode::publish_depth_image(const std::shared_ptr<PubData> &pub_data
 
   auto depth_msg = std::make_shared<sensor_msgs::msg::Image>();
   depth_msg->header = pub_data->header;
-  depth_msg->header.frame_id = "camera_depth_frame";
+  depth_msg->header.frame_id = "camera_link";
   depth_msg->height = pub_data->depth.rows;
   depth_msg->width = pub_data->depth.cols;
   depth_msg->encoding = "mono16"; // Use 16-bit unsigned integer for depth in millimeters
@@ -994,7 +994,7 @@ void StereoNetNode::publish_depth_camera_info(const std::shared_ptr<PubData> &pu
 
   auto depth_camera_info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
   depth_camera_info_msg->header = pub_data->header;
-  depth_camera_info_msg->header.frame_id = "camera_depth_frame";
+  depth_camera_info_msg->header.frame_id = "camera_link";
   depth_camera_info_msg->height = pub_data->depth.rows;
   depth_camera_info_msg->width = pub_data->depth.cols;
   depth_camera_info_msg->distortion_model = "plumb_bob";
@@ -1021,7 +1021,7 @@ void StereoNetNode::publish_rectified_left_image(const std::shared_ptr<PubData> 
   if (rectify_left_image_pub_->get_subscription_count() == 0) return;
   auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
   left_msg->header = pub_data->header;
-  left_msg->header.frame_id = "camera_depth_frame";
+  left_msg->header.frame_id = "camera_link";
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   left_msg->height = height;
@@ -1051,7 +1051,7 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
   if (rectify_right_image_pub_->get_subscription_count() == 0) return;
   auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
   right_msg->header = pub_data->header;
-  right_msg->header.frame_id = "camera_right_frame";
+  right_msg->header.frame_id = "camera_link";
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   right_msg->height = height;
@@ -1157,7 +1157,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
-    left_msg->header.frame_id = "camera_left_frame";
+    left_msg->header.frame_id = "camera_link";
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     left_msg->height = single_img_h;
@@ -1179,7 +1179,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
-    left_msg->header.frame_id = "camera_left_frame";
+    left_msg->header.frame_id = "camera_link";
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     left_msg->height = single_img_h;
@@ -1231,7 +1231,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
-    right_msg->header.frame_id = "camera_right_frame";
+    right_msg->header.frame_id = "camera_link";
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     right_msg->height = single_img_h;
@@ -1257,7 +1257,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
-    right_msg->header.frame_id = "camera_right_frame";
+    right_msg->header.frame_id = "camera_link";
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     right_msg->height = single_img_h;

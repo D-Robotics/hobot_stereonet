@@ -160,8 +160,8 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
 
     cv::circle(visualize, p2, 4, cv::Scalar(255, 0, 0), -1);
 
-    if (i % 8 == 0) {
-      cv::line(visualize, p1, p2, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+    if (i % (pattern_size.width + 1) == 0) {
+      cv::line(visualize, p1, p2, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
     }
   }
   for (size_t i = 0; i < proj_pts.size(); ++i) {
@@ -174,7 +174,7 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
   }
 
   std::vector<std::string> info_lines;
-  info_lines.emplace_back("===============================");
+  info_lines.emplace_back("=================");
   info_lines.emplace_back("Epipolar Alignment Error:");
   info_lines.emplace_back(cv::format("mean |dy| = %.4f px", mean_abs));
   info_lines.emplace_back(cv::format("RMSE       = %.4f px", rmse));
@@ -183,13 +183,13 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
   info_lines.emplace_back(cv::format("<= 0.5 px  = %.1f %%", ratio(0.5)));
   info_lines.emplace_back(cv::format("<= 1.0 px  = %.1f %%", ratio(1.0)));
   info_lines.emplace_back(cv::format("<= 2.0 px  = %.1f %%", ratio(2.0)));
-  info_lines.emplace_back("===============================");
+  info_lines.emplace_back("=================");
   info_lines.emplace_back("Reprojection Error:");
   info_lines.emplace_back(cv::format("left mean  = %.4f px", mean_reproj));
   info_lines.emplace_back(cv::format("left max   = %.4f px", max_reproj));
   info_lines.emplace_back(cv::format("right mean = %.4f px", mean_reproj_right));
   info_lines.emplace_back(cv::format("right max  = %.4f px", max_reproj_right));
-  info_lines.emplace_back("===============================");
+  info_lines.emplace_back("=================");
 
   int x0 = 10;
   int y0 = 25;
@@ -199,7 +199,13 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
   int thickness = std::max(1, static_cast<int>(std::round(font_scale * 1.8)));
   thickness = std::min(thickness, 3);
   for (size_t i = 0; i < info_lines.size(); ++i) {
+    // cv::putText(visualize, info_lines[i], cv::Point(x0, y0 + static_cast<int>(i) * line_height),
+    // cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(255, 0, 0), thickness);
+    // outline
     cv::putText(visualize, info_lines[i], cv::Point(x0, y0 + static_cast<int>(i) * line_height),
-                cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 0, 255), thickness, cv::LINE_AA);
+                cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 0, 0), thickness + 2);
+    // text
+    cv::putText(visualize, info_lines[i], cv::Point(x0, y0 + static_cast<int>(i) * line_height),
+                cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(255, 255, 255), thickness);
   }
 }
