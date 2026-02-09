@@ -16,6 +16,7 @@
 
 StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rclcpp::Logger &logger)
     : stereo_calib_file_path_(stereo_calib_file_path), logger_(logger) {
+  int i = 0;
   RCLCPP_WARN_STREAM(logger_, "=> -------- init StereoRectify------------------");
   cv::FileStorage fs(stereo_calib_file_path_, cv::FileStorage::READ);
   if (!fs.isOpened()) {
@@ -23,102 +24,106 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     return;
   }
 
-  int i = 0;
+  auto extract_parameters = [&]<typename T>(const T &stereo_node) {
+    // cam0
+    std::vector<double> cam0_intrinsics;
+    std::vector<double> cam0_distortion_coeffs;
+    std::vector<int> cam0_resolution;
+    std::string cam0_distortion_model;
+    stereo_node["cam0"]["intrinsics"] >> cam0_intrinsics;
+    stereo_node["cam0"]["distortion_coeffs"] >> cam0_distortion_coeffs;
+    stereo_node["cam0"]["resolution"] >> cam0_resolution;
+    stereo_node["cam0"]["distortion_model"] >> cam0_distortion_model;
+
+    // cam1
+    std::vector<double> cam1_intrinsics;
+    std::vector<double> cam1_distortion_coeffs;
+    std::vector<int> cam1_resolution;
+    std::string cam1_distortion_model;
+    stereo_node["cam1"]["intrinsics"] >> cam1_intrinsics;
+    stereo_node["cam1"]["distortion_coeffs"] >> cam1_distortion_coeffs;
+    stereo_node["cam1"]["resolution"] >> cam1_resolution;
+    stereo_node["cam1"]["distortion_model"] >> cam1_distortion_model;
+
+    // extrinsics
+    std::vector<std::vector<double>> cam1_T_cn_cnm1;
+    stereo_node["cam1"]["T_cn_cnm1"] >> cam1_T_cn_cnm1;
+
+    float fov_scale = 0.8f;
+    if (!stereo_node["cam1"]["fov_scale"].empty()) {
+      stereo_node["cam1"]["fov_scale"] >> fov_scale;
+    }
+
+    float alpha = 0.0f;
+    if (!stereo_node["cam1"]["alpha"].empty()) {
+      stereo_node["cam1"]["alpha"] >> alpha;
+    }
+
+    // cv::Mat
+    cv::Mat Kl = cv::Mat::zeros(3, 3, CV_64F);
+    Kl.at<double>(0, 0) = cam0_intrinsics[0];
+    Kl.at<double>(0, 2) = cam0_intrinsics[2];
+    Kl.at<double>(1, 1) = cam0_intrinsics[1];
+    Kl.at<double>(1, 2) = cam0_intrinsics[3];
+    Kl.at<double>(2, 2) = 1;
+    cv::Mat Dl = cv::Mat(1, cam0_distortion_coeffs.size(), CV_64F, cam0_distortion_coeffs.data()).clone();
+
+    cv::Mat Kr = cv::Mat::zeros(3, 3, CV_64F);
+    Kr.at<double>(0, 0) = cam1_intrinsics[0];
+    Kr.at<double>(0, 2) = cam1_intrinsics[2];
+    Kr.at<double>(1, 1) = cam1_intrinsics[1];
+    Kr.at<double>(1, 2) = cam1_intrinsics[3];
+    Kr.at<double>(2, 2) = 1;
+    cv::Mat Dr = cv::Mat(1, cam1_distortion_coeffs.size(), CV_64F, cam1_distortion_coeffs.data()).clone();
+
+    cv::Mat R_rl = cv::Mat::zeros(3, 3, CV_64F);
+    cv::Mat t_rl = cv::Mat::zeros(3, 1, CV_64F);
+    for (int r = 0; r < 3; r++) {
+      for (int c = 0; c < 3; c++) {
+        R_rl.at<double>(r, c) = cam1_T_cn_cnm1[r][c];
+      }
+      t_rl.at<double>(r, 0) = cam1_T_cn_cnm1[r][3];
+    }
+
+    // save
+    Kls_.push_back(Kl);
+    Krs_.push_back(Kr);
+    Dls_.push_back(Dl);
+    Drs_.push_back(Dr);
+    R_rls_.push_back(R_rl);
+    t_rls_.push_back(t_rl);
+    cam_resolutions_.push_back(cam0_resolution);
+    distortion_models_.push_back(cam0_distortion_model);
+    fov_scales_.push_back(fov_scale);
+    alphas_.push_back(alpha);
+
+    // print
+    RCLCPP_WARN_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
+    RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl);
+    RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl);
+    RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr);
+    RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr);
+    RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
+    RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
+    RCLCPP_WARN_STREAM(logger_,
+                       "=> cam0_resolution: " << "[" << cam0_resolution[0] << ", " << cam0_resolution[1] << "]");
+    RCLCPP_WARN_STREAM(logger_, "=> cam0_distortion_model: " << cam0_distortion_model);
+    if (cam0_distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
+    if (cam0_distortion_model == "radtan" || cam0_distortion_model == "rational_polynomial")
+      RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha);
+    RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
+  };
+
   while (true) {
     std::string stereo_no = "stereo" + std::to_string(i);
     if (!fs[stereo_no].empty()) {
       cv::FileNode stereo_node = fs[stereo_no];
-
-      // cam0
-      std::vector<double> cam0_intrinsics;
-      std::vector<double> cam0_distortion_coeffs;
-      std::vector<int> cam0_resolution;
-      std::string cam0_distortion_model;
-      stereo_node["cam0"]["intrinsics"] >> cam0_intrinsics;
-      stereo_node["cam0"]["distortion_coeffs"] >> cam0_distortion_coeffs;
-      stereo_node["cam0"]["resolution"] >> cam0_resolution;
-      stereo_node["cam0"]["distortion_model"] >> cam0_distortion_model;
-
-      // cam1
-      std::vector<double> cam1_intrinsics;
-      std::vector<double> cam1_distortion_coeffs;
-      std::vector<int> cam1_resolution;
-      std::string cam1_distortion_model;
-      stereo_node["cam1"]["intrinsics"] >> cam1_intrinsics;
-      stereo_node["cam1"]["distortion_coeffs"] >> cam1_distortion_coeffs;
-      stereo_node["cam1"]["resolution"] >> cam1_resolution;
-      stereo_node["cam1"]["distortion_model"] >> cam1_distortion_model;
-
-      // extrinsics
-      std::vector<std::vector<double>> cam1_T_cn_cnm1;
-      stereo_node["cam1"]["T_cn_cnm1"] >> cam1_T_cn_cnm1;
-
-      float fov_scale = 0.8f;
-      if (!stereo_node["cam1"]["fov_scale"].empty()) {
-        stereo_node["cam1"]["fov_scale"] >> fov_scale;
-      }
-
-      float alpha = 0.0f;
-      if (!stereo_node["cam1"]["alpha"].empty()) {
-        stereo_node["cam1"]["alpha"] >> alpha;
-      }
-
-      // cv::Mat
-      cv::Mat Kl = cv::Mat::zeros(3, 3, CV_64F);
-      Kl.at<double>(0, 0) = cam0_intrinsics[0];
-      Kl.at<double>(0, 2) = cam0_intrinsics[2];
-      Kl.at<double>(1, 1) = cam0_intrinsics[1];
-      Kl.at<double>(1, 2) = cam0_intrinsics[3];
-      Kl.at<double>(2, 2) = 1;
-      cv::Mat Dl = cv::Mat(1, cam0_distortion_coeffs.size(), CV_64F, cam0_distortion_coeffs.data()).clone();
-
-      cv::Mat Kr = cv::Mat::zeros(3, 3, CV_64F);
-      Kr.at<double>(0, 0) = cam1_intrinsics[0];
-      Kr.at<double>(0, 2) = cam1_intrinsics[2];
-      Kr.at<double>(1, 1) = cam1_intrinsics[1];
-      Kr.at<double>(1, 2) = cam1_intrinsics[3];
-      Kr.at<double>(2, 2) = 1;
-      cv::Mat Dr = cv::Mat(1, cam1_distortion_coeffs.size(), CV_64F, cam1_distortion_coeffs.data()).clone();
-
-      cv::Mat R_rl = cv::Mat::zeros(3, 3, CV_64F);
-      cv::Mat t_rl = cv::Mat::zeros(3, 1, CV_64F);
-      for (int r = 0; r < 3; r++) {
-        for (int c = 0; c < 3; c++) {
-          R_rl.at<double>(r, c) = cam1_T_cn_cnm1[r][c];
-        }
-        t_rl.at<double>(r, 0) = cam1_T_cn_cnm1[r][3];
-      }
-
-      // save
-      Kls_.push_back(Kl);
-      Krs_.push_back(Kr);
-      Dls_.push_back(Dl);
-      Drs_.push_back(Dr);
-      R_rls_.push_back(R_rl);
-      t_rls_.push_back(t_rl);
-      cam_resolutions_.push_back(cam0_resolution);
-      distortion_models_.push_back(cam0_distortion_model);
-      fov_scales_.push_back(fov_scale);
-      alphas_.push_back(alpha);
-
-      // print
-      RCLCPP_WARN_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
-      RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl);
-      RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl);
-      RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr);
-      RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr);
-      RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
-      RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
-      RCLCPP_WARN_STREAM(logger_,
-                         "=> cam0_resolution: " << "[" << cam0_resolution[0] << ", " << cam0_resolution[1] << "]");
-      RCLCPP_WARN_STREAM(logger_, "=> cam0_distortion_model: " << cam0_distortion_model);
-      if (cam0_distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
-      if (cam0_distortion_model == "radtan" || cam0_distortion_model == "rational_polynomial")
-        RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha);
-      RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
-
+      extract_parameters(stereo_node);
       i++;
     } else {
+      if (i == 0) {
+        extract_parameters(fs);
+      }
       break;
     }
   }
