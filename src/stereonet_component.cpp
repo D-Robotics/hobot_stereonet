@@ -58,6 +58,11 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<std::string>("depth_image_topic", "~/stereonet_depth");
   depth_image_topic_ = this->get_parameter("depth_image_topic").as_string();
   this->declare_parameter<std::string>("depth_camera_info_topic", "~/stereonet_depth/camera_info");
+  depth_camera_info_topic_ = this->get_parameter("depth_camera_info_topic").as_string();
+  this->declare_parameter<std::string>("rectify_left_camera_info_topic", "~/rectify_left_image/camera_info");
+  rectify_left_camera_info_topic_ = this->get_parameter("rectify_left_camera_info_topic").as_string();
+  this->declare_parameter<std::string>("rectify_right_camera_info_topic", "~/rectify_right_image/camera_info");
+  rectify_right_camera_info_topic_ = this->get_parameter("rectify_right_camera_info_topic").as_string();
   this->declare_parameter<std::string>("rectify_left_image_topic", "~/rectify_left_image");
   rectify_left_image_topic_ = this->get_parameter("rectify_left_image_topic").as_string();
   this->declare_parameter<std::string>("rectify_right_image_topic", "~/rectify_right_image");
@@ -70,11 +75,16 @@ void StereoNetNode::set_node_params() {
   origin_right_image_topic_ = this->get_parameter("origin_right_image_topic").as_string();
   this->declare_parameter<bool>("publish_origin_enable", true);
   publish_origin_enable_ = this->get_parameter("publish_origin_enable").as_bool();
-  depth_camera_info_topic_ = this->get_parameter("depth_camera_info_topic").as_string();
   this->declare_parameter<std::string>("pointcloud2_topic", "~/stereonet_pointcloud2");
   pointcloud2_topic_ = this->get_parameter("pointcloud2_topic").as_string();
+  this->declare_parameter<bool>("publish_pcd_enabled", true);
+  publish_pcd_enabled_ = this->get_parameter("publish_pcd_enabled").as_bool();
   this->declare_parameter<std::string>("visual_image_topic", "~/stereonet_visual");
   visual_image_topic_ = this->get_parameter("visual_image_topic").as_string();
+  this->declare_parameter<bool>("publish_visual_enabled", true);
+  publish_visual_enabled_ = this->get_parameter("publish_visual_enabled").as_bool();
+  this->declare_parameter<std::string>("stereonet_frame_id", "camera_link");
+  stereonet_frame_id_ = this->get_parameter("stereonet_frame_id").as_string();
   this->declare_parameter<bool>("render_perf", true);
   render_perf_ = this->get_parameter("render_perf").as_bool();
   if (render_perf_) {
@@ -284,11 +294,13 @@ void StereoNetNode::set_node_params() {
           << "rectify_left_image_topic: " << rectify_left_image_topic_ << std::endl
           << "rectify_right_image_topic: " << rectify_right_image_topic_ << std::endl
           << "publish_rectify_bgr: " << publish_rectify_bgr_ << std::endl
-          << "origin_left_image_topic: " << origin_left_image_topic_ << std::endl
-          << "origin_right_image_topic: " << origin_right_image_topic_ << std::endl
-          << "publish_origin_enable: " << publish_origin_enable_ << std::endl
-          << "pointcloud2_topic: " << pointcloud2_topic_ << std::endl
-          << "visual_image_topic: " << visual_image_topic_ << std::endl
+          << "[origin_left_image_topic, origin_right_image_topic, publish_origin_enable]: [" << origin_left_image_topic_
+          << ", " << origin_right_image_topic_ << ", " << publish_origin_enable_ << "]" << std::endl
+          << "[pointcloud2_topic, publish_pcd_enabled]: [" << pointcloud2_topic_ << ", " << publish_pcd_enabled_ << "]"
+          << std::endl
+          << "[visual_image_topic, publish_visual_enabled]: [" << visual_image_topic_ << ", " << publish_visual_enabled_
+          << "]" << std::endl
+          << "stereonet_frame_id: " << stereonet_frame_id_ << std::endl
           << "uncertainty_th: " << uncertainty_th_ << std::endl
           << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline, doffs]: [" << camera_intrinsic_->fx << ", "
           << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy << ", "
@@ -464,6 +476,7 @@ void StereoNetNode::set_node_params() {
       }
       if (param.get_name() == "save_visual_flag") {
         save_visual_flag_ = param.as_bool();
+        if (!publish_visual_enabled_) save_visual_flag_ = false;
         RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
                                                "save_stereo_flag, save_origin_flag, save_disp_flag, "
                                                "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
@@ -475,6 +488,7 @@ void StereoNetNode::set_node_params() {
       }
       if (param.get_name() == "save_pcd_flag") {
         save_pcd_flag_ = param.as_bool();
+        if (!publish_pcd_enabled_) save_pcd_flag_ = false;
         RCLCPP_WARN_STREAM(this->get_logger(), "\033[32m=> [save_result_flag, save_dir, save_freq, save_total, "
                                                "save_stereo_flag, save_origin_flag, save_disp_flag, "
                                                "save_uncert_flag, save_depth_flag, save_visual_flag, save_pcd_flag]: ["
@@ -509,10 +523,18 @@ void StereoNetNode::set_subscription_publisher() {
   }
 
   // Set up publishers
-  visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(visual_image_topic_, 10);
+  if (publish_visual_enabled_) {
+    visual_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(visual_image_topic_, 10);
+  }
   depth_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(depth_image_topic_, 10);
   depth_camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(depth_camera_info_topic_, 10);
-  pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pointcloud2_topic_, 10);
+  rectify_left_camera_info_pub_ =
+      this->create_publisher<sensor_msgs::msg::CameraInfo>(rectify_left_camera_info_topic_, 10);
+  rectify_right_camera_info_pub_ =
+      this->create_publisher<sensor_msgs::msg::CameraInfo>(rectify_right_camera_info_topic_, 10);
+  if (publish_pcd_enabled_) {
+    pointcloud2_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pointcloud2_topic_, 10);
+  }
   rectify_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(rectify_left_image_topic_, 10);
   rectify_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(rectify_right_image_topic_, 10);
   if (publish_origin_enable_) {
@@ -542,7 +564,7 @@ void StereoNetNode::publish_static_tf() {
   static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
   geometry_msgs::msg::TransformStamped t;
   t.header.stamp = now();
-  t.header.frame_id = "camera_link";
+  t.header.frame_id = stereonet_frame_id_;
   t.child_frame_id = "camera_optical_frame";
 
   t.transform.translation.x = 0.0;
@@ -910,6 +932,8 @@ void StereoNetNode::publish_function() {
         ScopeProcessTime t(this->get_logger(), "publish_depth_image");
         publish_depth_image(pub_data);
         publish_depth_camera_info(pub_data);
+        publish_rectify_left_camera_info(pub_data);
+        publish_rectify_right_camera_info(pub_data);
       }
       // pub rectified images
       {
@@ -919,8 +943,10 @@ void StereoNetNode::publish_function() {
       }
       // publish pointcloud2
       {
-        ScopeProcessTime t(this->get_logger(), "publish_pointcloud2");
-        publish_pointcloud2(pub_data);
+        if (publish_pcd_enabled_) {
+          ScopeProcessTime t(this->get_logger(), "publish_pointcloud2");
+          publish_pointcloud2(pub_data);
+        }
       }
       // publish origin images
       {
@@ -933,7 +959,7 @@ void StereoNetNode::publish_function() {
       }
       // publish visual image
       {
-        if (!epipolar_mode_) {
+        if (!epipolar_mode_ && publish_visual_enabled_) {
           ScopeProcessTime t(this->get_logger(), "publish_visual_image");
           publish_visual_image(pub_data);
         }
@@ -977,7 +1003,7 @@ void StereoNetNode::publish_depth_image(const std::shared_ptr<PubData> &pub_data
 
   auto depth_msg = std::make_shared<sensor_msgs::msg::Image>();
   depth_msg->header = pub_data->header;
-  depth_msg->header.frame_id = "camera_link";
+  depth_msg->header.frame_id = stereonet_frame_id_;
   depth_msg->height = pub_data->depth.rows;
   depth_msg->width = pub_data->depth.cols;
   depth_msg->encoding = "mono16"; // Use 16-bit unsigned integer for depth in millimeters
@@ -994,7 +1020,7 @@ void StereoNetNode::publish_depth_camera_info(const std::shared_ptr<PubData> &pu
 
   auto depth_camera_info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
   depth_camera_info_msg->header = pub_data->header;
-  depth_camera_info_msg->header.frame_id = "camera_link";
+  depth_camera_info_msg->header.frame_id = stereonet_frame_id_;
   depth_camera_info_msg->height = pub_data->depth.rows;
   depth_camera_info_msg->width = pub_data->depth.cols;
   depth_camera_info_msg->distortion_model = "plumb_bob";
@@ -1017,11 +1043,68 @@ void StereoNetNode::publish_depth_camera_info(const std::shared_ptr<PubData> &pu
   depth_camera_info_pub_->publish(*depth_camera_info_msg);
 }
 
+void StereoNetNode::publish_rectify_left_camera_info(const std::shared_ptr<PubData> &pub_data) {
+  if (rectify_left_camera_info_pub_->get_subscription_count() == 0) return;
+
+  auto left_camera_info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
+  left_camera_info_msg->header = pub_data->header;
+  left_camera_info_msg->header.frame_id = stereonet_frame_id_;
+  left_camera_info_msg->height = pub_data->depth.rows;
+  left_camera_info_msg->width = pub_data->depth.cols;
+  left_camera_info_msg->distortion_model = "plumb_bob";
+  left_camera_info_msg->d = {0.0, 0.0, 0.0, 0.0, 0.0};
+
+  // Set intrinsic parameters
+  left_camera_info_msg->k[0] = camera_intrinsic_->fx; // fx
+  left_camera_info_msg->k[2] = camera_intrinsic_->cx; // cx
+  left_camera_info_msg->k[4] = camera_intrinsic_->fy; // fy
+  left_camera_info_msg->k[5] = camera_intrinsic_->cy; // cy
+  left_camera_info_msg->k[8] = 1.0;
+
+  // Set projection matrix
+  left_camera_info_msg->p[0] = camera_intrinsic_->fx; // fx
+  left_camera_info_msg->p[2] = camera_intrinsic_->cx; // cx
+  left_camera_info_msg->p[5] = camera_intrinsic_->fy; // fy
+  left_camera_info_msg->p[6] = camera_intrinsic_->cy; // cy
+  left_camera_info_msg->p[10] = 1.0;
+
+  rectify_left_camera_info_pub_->publish(*left_camera_info_msg);
+}
+
+void StereoNetNode::publish_rectify_right_camera_info(const std::shared_ptr<PubData> &pub_data) {
+  if (rectify_right_camera_info_pub_->get_subscription_count() == 0) return;
+
+  auto right_camera_info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
+  right_camera_info_msg->header = pub_data->header;
+  right_camera_info_msg->header.frame_id = stereonet_frame_id_;
+  right_camera_info_msg->height = pub_data->depth.rows;
+  right_camera_info_msg->width = pub_data->depth.cols;
+  right_camera_info_msg->distortion_model = "plumb_bob";
+  right_camera_info_msg->d = {0.0, 0.0, 0.0, 0.0, 0.0};
+
+  // Set intrinsic parameters
+  right_camera_info_msg->k[0] = camera_intrinsic_->fx; // fx
+  right_camera_info_msg->k[2] = camera_intrinsic_->cx; // cx
+  right_camera_info_msg->k[4] = camera_intrinsic_->fy; // fy
+  right_camera_info_msg->k[5] = camera_intrinsic_->cy; // cy
+  right_camera_info_msg->k[8] = 1.0;
+
+  // Set projection matrix
+  right_camera_info_msg->p[0] = camera_intrinsic_->fx;                                // fx
+  right_camera_info_msg->p[2] = camera_intrinsic_->cx;                                // cx
+  right_camera_info_msg->p[3] = -camera_intrinsic_->baseline * camera_intrinsic_->fx; // -b*fx
+  right_camera_info_msg->p[5] = camera_intrinsic_->fy;                                // fy
+  right_camera_info_msg->p[6] = camera_intrinsic_->cy;                                // cy
+  right_camera_info_msg->p[10] = 1.0;
+
+  rectify_right_camera_info_pub_->publish(*right_camera_info_msg);
+}
+
 void StereoNetNode::publish_rectified_left_image(const std::shared_ptr<PubData> &pub_data) {
   if (rectify_left_image_pub_->get_subscription_count() == 0) return;
   auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
   left_msg->header = pub_data->header;
-  left_msg->header.frame_id = "camera_link";
+  left_msg->header.frame_id = stereonet_frame_id_;
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   left_msg->height = height;
@@ -1051,7 +1134,7 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
   if (rectify_right_image_pub_->get_subscription_count() == 0) return;
   auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
   right_msg->header = pub_data->header;
-  right_msg->header.frame_id = "camera_link";
+  right_msg->header.frame_id = stereonet_frame_id_;
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   right_msg->height = height;
@@ -1144,7 +1227,7 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
     if (save_pcd_flag_ || do_save_result_once_) pub_data->pointcloud = pcl_cloud;
   }
   cloud_msg->header = pub_data->header;
-  cloud_msg->header.frame_id = "camera_link";
+  cloud_msg->header.frame_id = stereonet_frame_id_;
   cloud_msg->is_dense = false;
   cloud_msg->is_bigendian = false;
   pointcloud2_pub_->publish(*cloud_msg);
@@ -1157,7 +1240,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
-    left_msg->header.frame_id = "camera_link";
+    left_msg->header.frame_id = stereonet_frame_id_;
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     left_msg->height = single_img_h;
@@ -1179,7 +1262,7 @@ void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pu
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
     left_msg->header = pub_data->header;
-    left_msg->header.frame_id = "camera_link";
+    left_msg->header.frame_id = stereonet_frame_id_;
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     left_msg->height = single_img_h;
@@ -1231,7 +1314,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
-    right_msg->header.frame_id = "camera_link";
+    right_msg->header.frame_id = stereonet_frame_id_;
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     right_msg->height = single_img_h;
@@ -1257,7 +1340,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
-    right_msg->header.frame_id = "camera_link";
+    right_msg->header.frame_id = stereonet_frame_id_;
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     right_msg->height = single_img_h;
@@ -1793,7 +1876,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   // Convert cv::Mat to sensor_msgs::msg::Image
   auto visual_msg = std::make_shared<sensor_msgs::msg::Image>();
   visual_msg->header = pub_data->header;
-  visual_msg->header.frame_id = "camera_link";
+  visual_msg->header.frame_id = stereonet_frame_id_;
   visual_msg->height = visual_img.rows;
   visual_msg->width = visual_img.cols;
   visual_msg->encoding = "bgr8";
@@ -1833,7 +1916,7 @@ void StereoNetNode::publish_epipolar_image(const std::shared_ptr<PubData> &pub_d
   // Convert cv::Mat to sensor_msgs::msg::Image
   auto visual_msg = std::make_shared<sensor_msgs::msg::Image>();
   visual_msg->header = pub_data->header;
-  visual_msg->header.frame_id = "camera_link";
+  visual_msg->header.frame_id = stereonet_frame_id_;
   visual_msg->height = visual_img.rows;
   visual_msg->width = visual_img.cols;
   visual_msg->encoding = "bgr8";
@@ -2055,7 +2138,7 @@ void StereoNetNode::infer_offline() {
 
     auto stereo_msg = std::make_shared<sensor_msgs::msg::Image>();
     stereo_msg->header.stamp = this->get_clock()->now();
-    stereo_msg->header.frame_id = "camera_link";
+    stereo_msg->header.frame_id = stereonet_frame_id_;
     stereo_msg->height = combine_img_bgr.rows;
     stereo_msg->width = combine_img_bgr.cols;
     stereo_msg->encoding = "nv12";

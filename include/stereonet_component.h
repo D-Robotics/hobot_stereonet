@@ -138,9 +138,17 @@ private:
    */
   void publish_depth_image(const std::shared_ptr<PubData> &pub_data);
   /**
-   * @brief Publish the depth camera info based on the original camera info
+   * @brief Publish the depth camera info
    */
   void publish_depth_camera_info(const std::shared_ptr<PubData> &pub_data);
+  /**
+   * @brief Publish the rectify left camera info
+   */
+  void publish_rectify_left_camera_info(const std::shared_ptr<PubData> &pub_data);
+  /**
+   * @brief Publish the rectify right camera info
+   */
+  void publish_rectify_right_camera_info(const std::shared_ptr<PubData> &pub_data);
   /**
    * @brief Publish the rectified left image
    */
@@ -212,13 +220,19 @@ private:
 
   // pub
   std::string visual_image_topic_ = "~/stereonet_visual";
+  bool publish_visual_enabled_ = true;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr visual_image_pub_ = nullptr;
   std::string depth_image_topic_ = "~/stereonet_depth";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_image_pub_ = nullptr;
   std::string depth_camera_info_topic_ = "~/stereonet_depth/camera_info";
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub_ = nullptr;
+  std::string rectify_left_camera_info_topic_ = "~/rectify_left_image/camera_info";
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr rectify_left_camera_info_pub_ = nullptr;
+  std::string rectify_right_camera_info_topic_ = "~/rectify_right_image/camera_info";
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr rectify_right_camera_info_pub_ = nullptr;
   bool sub_camera_info_flag_ = false;
   std::string pointcloud2_topic_ = "~/stereonet_pointcloud2";
+  bool publish_pcd_enabled_ = true;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_pub_ = nullptr;
   std::string rectify_left_image_topic_ = "~/rectify_left_image";
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rectify_left_image_pub_ = nullptr;
@@ -230,6 +244,7 @@ private:
   bool publish_origin_enable_ = true;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_left_image_pub_ = nullptr;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_right_image_pub_ = nullptr;
+  std::string stereonet_frame_id_ = "camera_link";
 
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_ = nullptr;
 

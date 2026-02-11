@@ -23,7 +23,10 @@ stereo_image_topic=/image_combine_raw
 camera_info_topic=/image_right_raw/camera_info
 depth_image_topic="~/stereonet_depth"
 depth_camera_info_topic="~/stereonet_depth/camera_info"
+rectify_left_camera_info_topic="~/rectify_left_image/camera_info"
+rectify_right_camera_info_topic="~/rectify_right_image/camera_info"
 pointcloud2_topic="~/stereonet_pointcloud2"
+publish_pcd_enabled=True
 rectify_left_image_topic="~/rectify_left_image"
 rectify_right_image_topic="~/rectify_right_image"
 publish_rectify_bgr=False
@@ -31,6 +34,8 @@ origin_left_image_topic="~/origin_left_image"
 origin_right_image_topic="~/origin_right_image"
 publish_origin_enable=True
 visual_image_topic="~/stereonet_visual"
+publish_visual_enabled=True
+stereonet_frame_id="camera_link"
 
 # mipi cam
 use_mipi_cam=True
@@ -135,8 +140,11 @@ while [[ $# -gt 0 ]]; do
     --stereo_image_topic) stereo_image_topic=$2; shift 2 ;;
     --camera_info_topic) camera_info_topic=$2; shift 2 ;;
     --depth_image_topic) depth_image_topic=$2; shift 2 ;;
+    --rectify_left_camera_info_topic) rectify_left_camera_info_topic=$2; shift 2 ;;
+    --rectify_right_camera_info_topic) rectify_right_camera_info_topic=$2; shift 2 ;;
     --depth_camera_info_topic) depth_camera_info_topic=$2; shift 2 ;;
     --pointcloud2_topic) pointcloud2_topic=$2; shift 2 ;;
+    --publish_pcd_enabled) publish_pcd_enabled=$2; shift 2 ;;
     --rectify_left_image_topic) rectify_left_image_topic=$2; shift 2 ;;
     --rectify_right_image_topic) rectify_right_image_topic=$2; shift 2 ;;
     --publish_rectify_bgr) publish_rectify_bgr=$2; shift 2 ;;
@@ -144,6 +152,8 @@ while [[ $# -gt 0 ]]; do
     --origin_right_image_topic) origin_right_image_topic=$2; shift 2 ;;
     --publish_origin_enable) publish_origin_enable=$2; shift 2 ;;
     --visual_image_topic) visual_image_topic=$2; shift 2 ;;
+    --publish_visual_enabled) publish_visual_enabled=$2; shift 2 ;;
+    --stereonet_frame_id) stereonet_frame_id=$2; shift 2 ;;
 
     # mipi cam
     --use_mipi_cam) use_mipi_cam=$2; shift 2 ;;
@@ -242,10 +252,11 @@ stereo_node_name:=$stereo_node_name \
 uncertainty_th:=$uncertainty_th \
 stereo_image_topic:=$stereo_image_topic camera_info_topic:=$camera_info_topic \
 depth_image_topic:=$depth_image_topic depth_camera_info_topic:=$depth_camera_info_topic \
-pointcloud2_topic:=$pointcloud2_topic rectify_left_image_topic:=$rectify_left_image_topic \
-rectify_right_image_topic:=$rectify_right_image_topic publish_rectify_bgr:=$publish_rectify_bgr \
-origin_left_image_topic:=$origin_left_image_topic origin_right_image_topic:=$origin_right_image_topic \
-publish_origin_enable:=$publish_origin_enable visual_image_topic:=$visual_image_topic \
+rectify_left_camera_info_topic:=$rectify_left_camera_info_topic rectify_right_camera_info_topic:=$rectify_right_camera_info_topic \
+pointcloud2_topic:=$pointcloud2_topic publish_pcd_enabled:=$publish_pcd_enabled \
+rectify_left_image_topic:=$rectify_left_image_topic rectify_right_image_topic:=$rectify_right_image_topic publish_rectify_bgr:=$publish_rectify_bgr \
+origin_left_image_topic:=$origin_left_image_topic origin_right_image_topic:=$origin_right_image_topic publish_origin_enable:=$publish_origin_enable \
+visual_image_topic:=$visual_image_topic publish_visual_enabled:=$publish_visual_enabled \
 use_mipi_cam:=$use_mipi_cam mipi_image_width:=$mipi_image_width mipi_image_height:=$mipi_image_height \
 mipi_image_framerate:=$mipi_image_framerate mipi_frame_ts_type:=$mipi_frame_ts_type \
 mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotation:=$mipi_rotation \

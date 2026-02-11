@@ -54,7 +54,10 @@ def generate_launch_description():
 
         {'name':'depth_image_topic', 'default_value':'/StereoNetNode/stereonet_depth', 'description': 'depth_topic'},
         {'name':'depth_camera_info_topic', 'default_value':'/StereoNetNode/stereonet_depth/camera_info', 'description': 'depth_camera_info_topic'},
+        {'name':'rectify_left_camera_info_topic', 'default_value':'/StereoNetNode/rectify_left_image/camera_info', 'description': 'rectify_left_camera_info_topic'},
+        {'name':'rectify_right_camera_info_topic', 'default_value':'/StereoNetNode/rectify_right_image/camera_info', 'description': 'rectify_right_camera_info_topic'},
         {'name':'pointcloud2_topic', 'default_value':'/StereoNetNode/stereonet_pointcloud2', 'description': 'pointcloud2_topic'},
+        {'name':'publish_pcd_enabled', 'default_value':'True', 'description': 'publish_pcd_enabled'},
         {'name':'rectify_left_image_topic', 'default_value':'/StereoNetNode/rectify_left_image', 'description': 'rectify_left_image_topic'},
         {'name':'rectify_right_image_topic', 'default_value':'/StereoNetNode/rectify_right_image', 'description': 'rectify_right_image_topic'},
         {'name':'publish_rectify_bgr', 'default_value':'False', 'description': 'publish_rectify_bgr'},
@@ -62,6 +65,8 @@ def generate_launch_description():
         {'name':'origin_right_image_topic', 'default_value':'/StereoNetNode/origin_right_image', 'description': 'origin_right_image_topic'},
         {'name':'publish_origin_enable', 'default_value':'True', 'description': 'publish_origin_enable'},
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
+        {'name':'publish_visual_enabled', 'default_value':'True', 'description': 'publish_visual_enabled'},
+        {'name':'stereonet_frame_id', 'default_value':'camera_link', 'description': 'stereonet_frame_id'},
 
         {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse, distance, distance-reverse]'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
