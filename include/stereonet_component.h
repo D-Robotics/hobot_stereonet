@@ -245,6 +245,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_left_image_pub_ = nullptr;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr origin_right_image_pub_ = nullptr;
   std::string stereonet_frame_id_ = "camera_link";
+  std::string stereonet_frame_id_right_ = "camera_link_right";
 
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_ = nullptr;
 

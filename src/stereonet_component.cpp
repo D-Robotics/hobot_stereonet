@@ -85,6 +85,8 @@ void StereoNetNode::set_node_params() {
   publish_visual_enabled_ = this->get_parameter("publish_visual_enabled").as_bool();
   this->declare_parameter<std::string>("stereonet_frame_id", "camera_link");
   stereonet_frame_id_ = this->get_parameter("stereonet_frame_id").as_string();
+  this->declare_parameter<std::string>("stereonet_frame_id_right", "camera_link_right");
+  stereonet_frame_id_right_ = this->get_parameter("stereonet_frame_id_right").as_string();
   this->declare_parameter<bool>("render_perf", true);
   render_perf_ = this->get_parameter("render_perf").as_bool();
   if (render_perf_) {
@@ -300,7 +302,8 @@ void StereoNetNode::set_node_params() {
           << std::endl
           << "[visual_image_topic, publish_visual_enabled]: [" << visual_image_topic_ << ", " << publish_visual_enabled_
           << "]" << std::endl
-          << "stereonet_frame_id: " << stereonet_frame_id_ << std::endl
+          << "[stereonet_frame_id, stereonet_frame_id_right]: [" << stereonet_frame_id_ << ", "
+          << stereonet_frame_id_right_ << "]" << std::endl
           << "uncertainty_th: " << uncertainty_th_ << std::endl
           << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline, doffs]: [" << camera_intrinsic_->fx << ", "
           << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy << ", "
@@ -1076,7 +1079,7 @@ void StereoNetNode::publish_rectify_right_camera_info(const std::shared_ptr<PubD
 
   auto right_camera_info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
   right_camera_info_msg->header = pub_data->header;
-  right_camera_info_msg->header.frame_id = stereonet_frame_id_;
+  right_camera_info_msg->header.frame_id = stereonet_frame_id_right_;
   right_camera_info_msg->height = pub_data->depth.rows;
   right_camera_info_msg->width = pub_data->depth.cols;
   right_camera_info_msg->distortion_model = "plumb_bob";
@@ -1134,7 +1137,7 @@ void StereoNetNode::publish_rectified_right_image(const std::shared_ptr<PubData>
   if (rectify_right_image_pub_->get_subscription_count() == 0) return;
   auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
   right_msg->header = pub_data->header;
-  right_msg->header.frame_id = stereonet_frame_id_;
+  right_msg->header.frame_id = stereonet_frame_id_right_;
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   right_msg->height = height;
@@ -1314,7 +1317,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   if (pub_data->origin_stereo_msg->encoding == "nv12") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
-    right_msg->header.frame_id = stereonet_frame_id_;
+    right_msg->header.frame_id = stereonet_frame_id_right_;
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     right_msg->height = single_img_h;
@@ -1340,7 +1343,7 @@ void StereoNetNode::publish_origin_right_image(const std::shared_ptr<PubData> &p
   } else if (pub_data->origin_stereo_msg->encoding == "rgb8" || pub_data->origin_stereo_msg->encoding == "bgr8") {
     auto right_msg = std::make_shared<sensor_msgs::msg::Image>();
     right_msg->header = pub_data->header;
-    right_msg->header.frame_id = stereonet_frame_id_;
+    right_msg->header.frame_id = stereonet_frame_id_right_;
     int single_img_w = pub_data->origin_stereo_msg->width;
     int single_img_h = pub_data->origin_stereo_msg->height / 2;
     right_msg->height = single_img_h;

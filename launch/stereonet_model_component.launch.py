@@ -67,6 +67,7 @@ def generate_launch_description():
         {'name':'visual_image_topic', 'default_value':'/StereoNetNode/stereonet_visual', 'description': 'visual_topic'},
         {'name':'publish_visual_enabled', 'default_value':'True', 'description': 'publish_visual_enabled'},
         {'name':'stereonet_frame_id', 'default_value':'camera_link', 'description': 'stereonet_frame_id'},
+        {'name':'stereonet_frame_id_right', 'default_value':'camera_link_right', 'description': 'stereonet_frame_id_right'},
 
         {'name':'render_type', 'default_value':'indoor', 'description': 'render_type: [indoor, outdoor, indoor-reverse, outdoor-reverse, distance, distance-reverse]'},
         {'name':'render_perf', 'default_value':'True', 'description': 'render_perf'},
