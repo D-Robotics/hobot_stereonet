@@ -159,8 +159,8 @@ struct StereoRectify {
                const cv::Mat &right_image,
                cv::Mat &rectified_left_image,
                cv::Mat &rectified_right_image) {
-    cv::remap(left_image, rectified_left_image, undistmap1l, undistmap2l, cv::INTER_LINEAR);
-    cv::remap(right_image, rectified_right_image, undistmap1r, undistmap2r, cv::INTER_LINEAR);
+    cv::remap(left_image, rectified_left_image, undistmap1l, undistmap2l, cv::INTER_AREA);
+    cv::remap(right_image, rectified_right_image, undistmap1r, undistmap2r, cv::INTER_AREA);
   }
 
   void GetIntrinsic(float &cx, float &cy, float &fx, float &fy, float &bl) {
