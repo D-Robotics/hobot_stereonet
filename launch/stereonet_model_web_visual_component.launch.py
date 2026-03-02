@@ -142,6 +142,7 @@ def generate_launch_description():
             {"rotation": LaunchConfiguration('mipi_rotation')},
             {"gdc_enable": LaunchConfiguration('mipi_gdc_enable')},
             {"frame_id": LaunchConfiguration('frame_id')},
+            {"cal_alpha": LaunchConfiguration('mipi_cal_alpha')},
         ],
         extra_arguments=[
             {"use_intra_process_comms": True},
@@ -260,7 +261,10 @@ def generate_launch_description():
                 'mipi_cal_rotation',
                 default_value='0.0',
                 description='mipi camera calibration rotation'),
-
+            DeclareLaunchArgument(
+                'mipi_cal_alpha',
+                default_value='0.0',
+                description='mipi camera param of alpha for stereoRectify'),
             stereonet_pub_web_arg,
             use_mipi_cam_arg,
             target_container_name_arg,
