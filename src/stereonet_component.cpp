@@ -1711,7 +1711,7 @@ void StereoNetNode::camera_info_cb(const sensor_msgs::msg::CameraInfo::ConstShar
   camera_fy = camera_info_msg->p[5];
   camera_cx = camera_info_msg->p[2];
   camera_cy = camera_info_msg->p[6];
-  base_line = camera_info_msg->p[3] / camera_fx;
+  base_line = std::abs(camera_info_msg->p[3] / camera_fx);
 
   if (base_line > 1) base_line *= 0.001f; // convert mm to m
 
