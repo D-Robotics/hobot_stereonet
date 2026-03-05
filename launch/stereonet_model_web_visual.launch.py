@@ -109,6 +109,7 @@ def generate_launch_description():
         launch_arguments={
             'websocket_image_topic': '/image_jpeg',
             'websocket_only_show_image': 'true',
+            'websocket_channel': '2',
             # 'websocket_smart_topic': '/detect_depth_result'
         }.items(),
         condition=IfCondition(LaunchConfiguration('stereonet_pub_web'))
