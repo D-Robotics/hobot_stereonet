@@ -46,6 +46,7 @@
 #include "camera_intrinsic.h"
 #include "pub_data.h"
 #include "epipolar_align.h"
+#include "feature_epipolar_align.h"
 
 namespace fs = std::filesystem;
 
@@ -176,6 +177,12 @@ private:
    * @param pub_data The processed data containing the disparity map and metadata
    */
   void publish_epipolar_image(const std::shared_ptr<PubData> &pub_data);
+
+  /**
+   * @brief Publish the feature epipolar aligned image
+   * @param pub_data The processed data containing the disparity map and metadata
+   */
+  void publish_feature_epipolar_image(const std::shared_ptr<PubData> &pub_data);
 
   /**
    * @brief Publish the original left and right images
@@ -322,6 +329,7 @@ private:
   int chessboard_per_rows_ = 20;
   int chessboard_per_cols_ = 11;
   double chessboard_square_size_ = 0.06;
+  bool feature_epipolar_mode_ = false;
 
   sensor_msgs::msg::CameraInfo::SharedPtr origin_camera_info_;
 

@@ -124,6 +124,7 @@ add_library(stereonet_model_component SHARED
   src/stereo_rectify.cpp
   src/pcl_filter.cpp
   src/epipolar_align.cpp
+  src/feature_epipolar_align.cpp
 )
 target_compile_features(stereonet_model_component PUBLIC c_std_99 cxx_std_17) # Require C99 and C++17
 target_include_directories(stereonet_model_component PUBLIC

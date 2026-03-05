@@ -129,6 +129,7 @@ def generate_launch_description():
         {'name':'chessboard_per_rows', 'default_value':'20', 'description': 'chessboard_per_rows'},
         {'name':'chessboard_per_cols', 'default_value':'11', 'description': 'chessboard_per_cols'},
         {'name':'chessboard_square_size', 'default_value':'0.06', 'description': 'chessboard_square_size'},
+        {'name':'feature_epipolar_mode', 'default_value':'False', 'description': 'feature_epipolar_mode'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
