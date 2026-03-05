@@ -112,7 +112,7 @@ left_img_mask_enable=False
 
 # epipolar
 epipolar_mode=False
-epipolar_img=origin
+epipolar_img=rect
 chessboard_per_rows=20
 chessboard_per_cols=11
 chessboard_square_size=0.06

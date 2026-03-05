@@ -282,8 +282,9 @@ void StereoNetNode::set_node_params() {
   chessboard_per_cols_ = this->get_parameter("chessboard_per_cols").as_int();
   this->declare_parameter<double>("chessboard_square_size", 0.06);
   chessboard_square_size_ = this->get_parameter("chessboard_square_size").as_double();
-  this->declare_parameter<std::string>("epipolar_img", "origin");
+  this->declare_parameter<std::string>("epipolar_img", "rect");
   epipolar_img_ = this->get_parameter("epipolar_img").as_string();
+  if (epipolar_img_ != "rect" && epipolar_img_ != "origin") epipolar_img_ = "rect";
 
   RCLCPP_WARN_STREAM(
       this->get_logger(),
