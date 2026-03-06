@@ -732,13 +732,26 @@ void StereoNetNode::infer_function(const int &thread_id) {
         if (left_img_mask_enable_) {
           ScopeProcessTime t(this->get_logger(), "left_img_mask");
           cv::Mat left_bgr;
-          int width = disp.cols;
-          int height = disp.rows;
-          ImgConvertUtils::nv12_to_bgr_mat(rectify_left_img_data.data(), left_bgr, width, height);
+          ImgConvertUtils::nv12_to_bgr_mat(rectify_left_img_data.data(), left_bgr, disp.cols, disp.rows);
           cv::Mat mask;
-          cv::inRange(left_bgr, cv::Scalar(0, 0, 0), cv::Scalar(2, 2, 2), mask);
-          disp.setTo(0, mask);
-          depth.setTo(0, mask);
+          cv::inRange(left_bgr, cv::Scalar(0, 0, 0), cv::Scalar(1, 1, 1), mask);
+          cv::Mat labels, stats, centroids;
+          int num_labels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
+          cv::Mat filtered_mask = cv::Mat::zeros(mask.size(), CV_8UC1);
+          for (int i = 1; i < num_labels; i++) {
+            int left = stats.at<int>(i, cv::CC_STAT_LEFT);
+            int top = stats.at<int>(i, cv::CC_STAT_TOP);
+            int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+            int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+            int right = left + w;
+            int bottom = top + h;
+            bool touch_border = (left == 0) || (top == 0) || (right >= mask.cols) || (bottom >= mask.rows);
+            if (touch_border) {
+              filtered_mask.setTo(1, labels == i);
+            }
+          }
+          disp.setTo(0, filtered_mask);
+          depth.setTo(0, filtered_mask);
         }
 
         // ================================== Publish ====================================
