@@ -20,7 +20,7 @@ uncertainty_th=-0.10
 
 # topic
 stereo_image_topic=/image_combine_raw
-camera_info_topic=/image_right_raw/camera_info
+camera_info_topic=/image_combine_raw/right/camera_info
 depth_image_topic="~/stereonet_depth"
 depth_camera_info_topic="~/stereonet_depth/camera_info"
 rectify_left_camera_info_topic="~/rectify_left_image/camera_info"
