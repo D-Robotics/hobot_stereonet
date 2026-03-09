@@ -52,7 +52,7 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<std::string>("stereo_image_topic", "/image_combine_raw");
   stereo_image_topic_ = this->get_parameter("stereo_image_topic").as_string();
-  this->declare_parameter<std::string>("camera_info_topic", "/image_right_raw/camera_info");
+  this->declare_parameter<std::string>("camera_info_topic", "/image_combine_raw/right/camera_info");
   camera_info_topic_ = this->get_parameter("camera_info_topic").as_string();
 
   this->declare_parameter<std::string>("depth_image_topic", "~/stereonet_depth");
@@ -288,6 +288,9 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<bool>("feature_epipolar_mode", false);
   feature_epipolar_mode_ = this->get_parameter("feature_epipolar_mode").as_bool();
 
+  this->declare_parameter<std::string>("post_version", "auto");
+  post_version_ = this->get_parameter("post_version").as_string();
+
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -338,6 +341,7 @@ void StereoNetNode::set_node_params() {
           << epipolar_mode_ << ", " << feature_epipolar_mode_ << ", " << epipolar_img_ << ", " << chessboard_per_rows_
           << ", " << chessboard_per_cols_ << ", " << chessboard_square_size_ << "(m)]" << std::endl
           << "feature_epipolar_mode: " << feature_epipolar_mode_ << std::endl
+          << "post_version: " << post_version_ << std::endl
           << "[infer_thread_num, save_thread_num, max_save_task]: [" << infer_thread_num_ << ", " << save_thread_num_
           << ", " << max_save_task_ << "]" << std::endl
           << std::endl
@@ -553,7 +557,7 @@ void StereoNetNode::set_subscription_publisher() {
 
 void StereoNetNode::set_dnn_model() {
   stereonet_process_ = std::make_shared<StereonetProcess>(this->get_logger());
-  int ret_code = stereonet_process_->init(stereonet_model_file_path_);
+  int ret_code = stereonet_process_->init(stereonet_model_file_path_, post_version_);
   if (ret_code != 0) {
     RCLCPP_ERROR(this->get_logger(), "=> StereonetProcess init failed");
     rclcpp::shutdown();

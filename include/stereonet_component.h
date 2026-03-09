@@ -222,7 +222,7 @@ private:
   // sub
   std::string stereo_image_topic_ = "/image_combine_raw";
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_ = nullptr;
-  std::string camera_info_topic_ = "/image_right_raw/camera_info";
+  std::string camera_info_topic_ = "/image_combine_raw/right/camera_info";
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_ = nullptr;
 
   // pub
@@ -344,6 +344,8 @@ private:
   int save_thread_num_ = 4;
   int max_save_task_ = 50;
   moodycamel::BlockingConcurrentQueue<std::shared_ptr<PreProcessData>> pre_process_queue_;
+
+  std::string post_version_ = "auto";
 
   // param callback
   OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;

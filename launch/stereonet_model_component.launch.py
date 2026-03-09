@@ -50,7 +50,7 @@ def generate_launch_description():
         {'name':'stereonet_model_file_path', 'default_value': stereonet_model_file_path, 'description': 'stereonet_model_file_path'},
 
         {'name':'stereo_image_topic', 'default_value':'/image_combine_raw', 'description': 'stereo_image_topic'},
-        {'name':'camera_info_topic', 'default_value':'/image_right_raw/camera_info', 'description': 'camera_info_topic'},
+        {'name':'camera_info_topic', 'default_value':'/image_combine_raw/right/camera_info', 'description': 'camera_info_topic'},
 
         {'name':'depth_image_topic', 'default_value':'/StereoNetNode/stereonet_depth', 'description': 'depth_topic'},
         {'name':'depth_camera_info_topic', 'default_value':'/StereoNetNode/stereonet_depth/camera_info', 'description': 'depth_camera_info_topic'},
@@ -134,6 +134,8 @@ def generate_launch_description():
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
         {'name':'max_save_task', 'default_value':'50', 'description': 'max_save_task'},
+
+        {'name':'post_version', 'default_value':'auto', 'description': 'post_version'},
     ]
 
     launch = declare_configurable_parameters(node_params)
