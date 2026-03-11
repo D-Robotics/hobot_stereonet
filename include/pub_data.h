@@ -52,4 +52,4 @@ struct PubData {
 
 } // namespace stereonet
 
-#endif // HOBOT_STEREONET_INCLUDE_CAMERA_INTRINSIC_H_
+#endif // HOBOT_STEREONET_INCLUDE_PUB_DATA_H_

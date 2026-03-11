@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef HOBOT_STEREONET_INCLUDE_IMAGE_CONVERSION_H_
-#define HOBOT_STEREONET_INCLUDE_IMAGE_CONVERSION_H_
+#ifndef HOBOT_STEREONET_INCLUDE_IMAGE_CONVERT_UTILS_H_
+#define HOBOT_STEREONET_INCLUDE_IMAGE_CONVERT_UTILS_H_
 
 #include <opencv2/opencv.hpp>
 #include <arm_neon.h>
@@ -31,4 +31,4 @@ public:
   static void bgr_mat_to_nv12(const cv::Mat &bgr, uint8_t *nv12);
 };
 
-#endif // HOBOT_STEREONET_INCLUDE_IMAGE_CONVERSION_H_
+#endif // HOBOT_STEREONET_INCLUDE_IMAGE_CONVERT_UTILS_H_
