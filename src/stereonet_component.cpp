@@ -2056,7 +2056,7 @@ void StereoNetNode::save_result(const std::shared_ptr<PubData> &pub_data) {
     cv::imwrite(disp_image_path, pub_data->disp);
   }
   if (save_uncert_flag_ && !pub_data->uncert.empty()) {
-    std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
+    std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.pfm");
     cv::imwrite(uncert_image_path, pub_data->uncert);
   }
   if (save_depth_flag_) {
@@ -2120,7 +2120,7 @@ void StereoNetNode::save_result_once(const std::shared_ptr<PubData> &pub_data) {
   std::string disp_image_path = fs::path(save_dir_) / fs::path(ss.str() + "disp.pfm");
   cv::imwrite(disp_image_path, pub_data->disp);
   if (!pub_data->uncert.empty()) {
-    std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.png");
+    std::string uncert_image_path = fs::path(save_dir_) / fs::path(ss.str() + "uncert.pfm");
     cv::imwrite(uncert_image_path, pub_data->uncert);
   }
   std::string depth_image_path = fs::path(save_dir_) / fs::path(ss.str() + "depth.png");
