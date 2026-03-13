@@ -642,7 +642,7 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     if (!calc_fov_flag_) {
       float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
       float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
-      RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+      RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°\033[0m");
       calc_fov_flag_ = true;
     }
   }
@@ -692,7 +692,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
         if (!calc_fov_flag_) {
           float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
           float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
-          RCLCPP_WARN_STREAM(this->get_logger(), "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+          RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°\033[0m");
           calc_fov_flag_ = true;
         }
 

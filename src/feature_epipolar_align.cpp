@@ -39,8 +39,47 @@ void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, con
   int use_match = std::min(100, (int)matches.size());
   std::vector<cv::DMatch> good_matches(matches.begin(), matches.begin() + use_match);
 
-  // === 4. calculate epipolar alignment error ===
-  cv::drawMatches(left_img, kp1, right_img, kp2, good_matches, visualize, cv::Scalar::all(-1), cv::Scalar::all(-1),
+  // === 4. calculate epipolar alignment error & reprojection error ===
+  cv::Mat right_with_proj = right_img.clone();
+  double total_reproj_error = 0.0;
+
+  for (const auto &m : good_matches) {
+    const auto &kpL = kp1[m.queryIdx];
+    const auto &kpR = kp2[m.trainIdx];
+
+    float xL = kpL.pt.x;
+    float yL = kpL.pt.y;
+    float xR = kpR.pt.x;
+    float yR = kpR.pt.y;
+
+    float disparity = xL - xR;
+    if (disparity <= 0.1f) continue; // avoid divide by zero
+
+    // depth
+    float Z = cam->fx * cam->baseline / disparity;
+
+    // backproject to 3D
+    float X = (xL - cam->cx) * Z / cam->fx;
+    float Y = (yL - cam->cy) * Z / cam->fy;
+
+    // transform to right camera
+    float Xr = X - cam->baseline;
+
+    // project
+    float xR_proj = cam->fx * Xr / Z + cam->cx;
+    float yR_proj = cam->fy * Y / Z + cam->cy;
+
+    // calculate reprojection error
+    float err = std::sqrt((xR_proj - xR) * (xR_proj - xR) + (yR_proj - yR) * (yR_proj - yR));
+    total_reproj_error += err;
+
+    // draw reprojection point
+    cv::circle(right_with_proj, cv::Point2f(xR_proj, yR_proj), 5, cv::Scalar(255, 0, 0), -1);
+  }
+  double mean_reproj_error = total_reproj_error / good_matches.size();
+
+  // === 4. show ===
+  cv::drawMatches(left_img, kp1, right_with_proj, kp2, good_matches, visualize, cv::Scalar::all(-1), cv::Scalar::all(-1),
                   std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
   if (good_matches.empty()) return;
 
@@ -74,6 +113,8 @@ void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, con
   info_lines.emplace_back(cv::format("<= 1.0 px  = %.1f %%", ratio(1.0)));
   info_lines.emplace_back(cv::format("<= 2.0 px  = %.1f %%", ratio(2.0)));
   info_lines.emplace_back(cv::format("<= 3.0 px  = %.1f %%", ratio(3.0)));
+  info_lines.emplace_back("=================");
+  info_lines.emplace_back(cv::format("mean reproj error = %.4f px", mean_reproj_error));
   info_lines.emplace_back("=================");
 
   int x0 = 10;
