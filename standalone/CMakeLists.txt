@@ -77,16 +77,39 @@ elseif(PLATFORM_S100)
 endif()
 
 # =================================== build executable ================================
-add_executable(${PROJECT_NAME}
-    main.cpp
+add_executable(test_perf
+    test_perf.cpp
     ../src/stereonet_process.cpp
     ../src/timer_utils.cpp
     ../src/img_convert_utils.cpp
 )
 if(PLATFORM_X5)
-    target_link_libraries(${PROJECT_NAME} dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})
+    target_link_libraries(test_perf dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})
 elseif(PLATFORM_S100)
-    target_link_libraries(${PROJECT_NAME} dnn hbucp ${OpenCV_LIBS}
+    target_link_libraries(test_perf dnn hbucp ${OpenCV_LIBS}
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libalog.so.1.2.2
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libbpu.so.2
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libcjson.so.1.7.15
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libhbipcfhal.so.1.0.0
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libhbmem.so.1.0.0
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libvdsp.so.1.0.0
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libjsoncpp.so.1.9.5
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libjsoncpp.so.1.9.0
+    )
+endif()
+
+add_executable(infer
+    infer.cpp
+    ../src/stereonet_process.cpp
+    ../src/timer_utils.cpp
+    ../src/img_convert_utils.cpp
+    ../src/file_utils.cpp
+    ../src/feature_epipolar_align.cpp
+)
+if(PLATFORM_X5)
+    target_link_libraries(infer dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})
+elseif(PLATFORM_S100)
+    target_link_libraries(infer dnn hbucp ${OpenCV_LIBS}
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libalog.so.1.2.2
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libbpu.so.2
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libcjson.so.1.7.15

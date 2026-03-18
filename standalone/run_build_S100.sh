@@ -23,9 +23,12 @@ mkdir -p ./3rdparty/lib_opencv4.5.4/
 cp -r ../3rdparty/lib_opencv4.5.4/ ./3rdparty/
 cp -r ../make_ln.sh ./
 mkdir result
-tar -zcf StereoInfer_S100.tar.gz ./StereoInfer ./3rdparty ./model  ./img  ./make_ln.sh ./result
+tar -zcf StereoInfer_S100.tar.gz \
+--transform 's,^,StereoInfer/,' \
+./test_perf ./infer ./3rdparty ./model  ./img  ./make_ln.sh ./result
 echo "=> output file: StereoInfer_S100.tar.gz"
 
 echo "=> ================="
-md5sum ./StereoInfer
+md5sum ./test_perf
+md5sum ./infer
 echo "=> ================="

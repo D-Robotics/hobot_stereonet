@@ -28,7 +28,8 @@ std::vector<std::pair<std::string, std::string>> FileUtils::find_pairs(const std
     std::string filename = path.filename().string();
     std::string extension = path.extension().string();
 
-    if ((extension == ".png" || extension == ".jpg") && filename.find("left") != std::string::npos) {
+    if ((extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp") &&
+        filename.find("left") != std::string::npos) {
       std::string right_filename = filename;
       size_t pos = right_filename.find("left");
       right_filename.replace(pos, 4, "right");

@@ -160,7 +160,13 @@ rclcpp_components_register_node(stereonet_model_component
 )
 
 # =================================== install files ===================================
-install(TARGETS stereonet_model_component RUNTIME DESTINATION lib/${PROJECT_NAME})
+# install(TARGETS stereonet_model_component RUNTIME DESTINATION lib/${PROJECT_NAME})
+install(
+  TARGETS stereonet_model_component
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 install(TARGETS stereonet_model_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 file(GLOB LAUNCH_FILES
