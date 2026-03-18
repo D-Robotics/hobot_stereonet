@@ -110,6 +110,12 @@ private:
   void camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
 
   /**
+   * @brief Callback function for left camera info subscription
+   * @param msg The received left camera info message
+   */
+  void left_camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
+
+  /**
    * @brief Inference function to process stereo images and generate disparity maps
    * This function runs in a separate thread and continuously processes images from the input queue.
    * @param thread_id The ID of the thread for logging purposes
@@ -224,6 +230,10 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr stereo_image_sub_ = nullptr;
   std::string camera_info_topic_ = "/image_combine_raw/right/camera_info";
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_ = nullptr;
+  std::string left_camera_info_topic_ = "/image_combine_raw/left/camera_info";
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr left_camera_info_sub_ = nullptr;
+  sensor_msgs::msg::CameraInfo::SharedPtr origin_camera_info_ = nullptr;
+  sensor_msgs::msg::CameraInfo::SharedPtr origin_left_camera_info_ = nullptr;
 
   // pub
   std::string visual_image_topic_ = "~/stereonet_visual";
@@ -237,7 +247,6 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr rectify_left_camera_info_pub_ = nullptr;
   std::string rectify_right_camera_info_topic_ = "~/rectify_right_image/camera_info";
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr rectify_right_camera_info_pub_ = nullptr;
-  bool sub_camera_info_flag_ = false;
   std::string pointcloud2_topic_ = "~/stereonet_pointcloud2";
   bool publish_pcd_enabled_ = true;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_pub_ = nullptr;
@@ -330,8 +339,6 @@ private:
   int chessboard_per_cols_ = 11;
   double chessboard_square_size_ = 0.06;
   bool feature_epipolar_mode_ = false;
-
-  sensor_msgs::msg::CameraInfo::SharedPtr origin_camera_info_;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;

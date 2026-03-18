@@ -48,6 +48,7 @@ def generate_launch_description():
 
         {'name':'stereo_image_topic', 'default_value':'/image_combine_raw', 'description': 'stereo_image_topic'},
         {'name':'camera_info_topic', 'default_value':'/image_combine_raw/right/camera_info', 'description': 'camera_info_topic'},
+        {'name':'left_camera_info_topic', 'default_value':'/image_combine_raw/left/camera_info', 'description': 'left_camera_info_topic'},
 
         {'name':'depth_image_topic', 'default_value':'/StereoNetNode/stereonet_depth', 'description': 'depth_topic'},
         {'name':'depth_camera_info_topic', 'default_value':'/StereoNetNode/stereonet_depth/camera_info', 'description': 'depth_camera_info_topic'},

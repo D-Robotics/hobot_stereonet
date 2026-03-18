@@ -21,6 +21,7 @@ uncertainty_th=-0.10
 # topic
 stereo_image_topic=/image_combine_raw
 camera_info_topic=/image_combine_raw/right/camera_info
+left_camera_info_topic=/image_combine_raw/left/camera_info
 depth_image_topic="~/stereonet_depth"
 depth_camera_info_topic="~/stereonet_depth/camera_info"
 rectify_left_camera_info_topic="~/rectify_left_image/camera_info"
@@ -140,6 +141,7 @@ while [[ $# -gt 0 ]]; do
     # topic
     --stereo_image_topic) stereo_image_topic=$2; shift 2 ;;
     --camera_info_topic) camera_info_topic=$2; shift 2 ;;
+    --left_camera_info_topic) left_camera_info_topic=$2; shift 2 ;;
     --depth_image_topic) depth_image_topic=$2; shift 2 ;;
     --rectify_left_camera_info_topic) rectify_left_camera_info_topic=$2; shift 2 ;;
     --rectify_right_camera_info_topic) rectify_right_camera_info_topic=$2; shift 2 ;;
@@ -252,7 +254,7 @@ done
 ros2 launch hobot_stereonet stereonet_model_web_visual_$stereonet_version.launch.py \
 stereo_node_name:=$stereo_node_name \
 uncertainty_th:=$uncertainty_th \
-stereo_image_topic:=$stereo_image_topic camera_info_topic:=$camera_info_topic \
+stereo_image_topic:=$stereo_image_topic camera_info_topic:=$camera_info_topic left_camera_info_topic:=$left_camera_info_topic \
 depth_image_topic:=$depth_image_topic depth_camera_info_topic:=$depth_camera_info_topic \
 rectify_left_camera_info_topic:=$rectify_left_camera_info_topic rectify_right_camera_info_topic:=$rectify_right_camera_info_topic \
 pointcloud2_topic:=$pointcloud2_topic publish_pcd_enabled:=$publish_pcd_enabled \

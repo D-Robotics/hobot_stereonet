@@ -54,6 +54,8 @@ void StereoNetNode::set_node_params() {
   stereo_image_topic_ = this->get_parameter("stereo_image_topic").as_string();
   this->declare_parameter<std::string>("camera_info_topic", "/image_combine_raw/right/camera_info");
   camera_info_topic_ = this->get_parameter("camera_info_topic").as_string();
+  this->declare_parameter<std::string>("left_camera_info_topic", "/image_combine_raw/left/camera_info");
+  left_camera_info_topic_ = this->get_parameter("left_camera_info_topic").as_string();
 
   this->declare_parameter<std::string>("depth_image_topic", "~/stereonet_depth");
   depth_image_topic_ = this->get_parameter("depth_image_topic").as_string();
@@ -532,6 +534,8 @@ void StereoNetNode::set_subscription_publisher() {
         stereo_image_topic_, 1, std::bind(&StereoNetNode::stereo_image_callback, this, std::placeholders::_1));
     camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
         camera_info_topic_, 10, std::bind(&StereoNetNode::camera_info_callback, this, std::placeholders::_1));
+    left_camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+        left_camera_info_topic_, 10, std::bind(&StereoNetNode::left_camera_info_callback, this, std::placeholders::_1));
   }
 
   // Set up publishers
@@ -649,7 +653,6 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
 }
 
 void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
-  if (sub_camera_info_flag_) return;
   origin_camera_info_ = msg;
 
   // only subscribe once
@@ -667,7 +670,15 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
               "\033[31m=> sub rectified [fx, fy, cx, cy, baseline(m), doffs] : [%f, %f, %f, %f, %f, %f]\033[0m",
               camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
               camera_intrinsic_->baseline, camera_intrinsic_->doffs);
-  sub_camera_info_flag_ = true;
+  // only subscribe once
+  camera_info_sub_.reset();
+}
+
+void StereoNetNode::left_camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
+  origin_left_camera_info_ = msg;
+  RCLCPP_WARN(this->get_logger(), "=> receive left camera info");
+  // only subscribe once
+  left_camera_info_sub_.reset();
 }
 
 void StereoNetNode::infer_function(const int &thread_id) {
@@ -1065,6 +1076,9 @@ void StereoNetNode::publish_depth_camera_info(const std::shared_ptr<PubData> &pu
   depth_camera_info_msg->k[5] = camera_intrinsic_->cy; // cy
   depth_camera_info_msg->k[8] = 1.0;
 
+  // Set R
+  depth_camera_info_msg->r = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+
   // Set projection matrix
   depth_camera_info_msg->p[0] = camera_intrinsic_->fx; // fx
   depth_camera_info_msg->p[2] = camera_intrinsic_->cx; // cx
@@ -1093,6 +1107,12 @@ void StereoNetNode::publish_rectify_left_camera_info(const std::shared_ptr<PubDa
   left_camera_info_msg->k[5] = camera_intrinsic_->cy; // cy
   left_camera_info_msg->k[8] = 1.0;
 
+  // Set R
+  if (origin_left_camera_info_ != nullptr)
+    left_camera_info_msg->r = origin_left_camera_info_->r;
+  else
+    left_camera_info_msg->r = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+
   // Set projection matrix
   left_camera_info_msg->p[0] = camera_intrinsic_->fx; // fx
   left_camera_info_msg->p[2] = camera_intrinsic_->cx; // cx
@@ -1120,6 +1140,12 @@ void StereoNetNode::publish_rectify_right_camera_info(const std::shared_ptr<PubD
   right_camera_info_msg->k[4] = camera_intrinsic_->fy; // fy
   right_camera_info_msg->k[5] = camera_intrinsic_->cy; // cy
   right_camera_info_msg->k[8] = 1.0;
+
+  // Set R
+  if (origin_camera_info_ != nullptr)
+    right_camera_info_msg->r = origin_camera_info_->r;
+  else
+    right_camera_info_msg->r = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
 
   // Set projection matrix
   right_camera_info_msg->p[0] = camera_intrinsic_->fx;                                // fx
