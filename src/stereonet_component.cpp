@@ -655,12 +655,20 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
 void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
   origin_camera_info_ = msg;
 
+  int model_input_w = 0, model_input_h = 0;
+  double scale_w = 1.0, scale_h = 1.0;
+  stereonet_process_->get_model_input_size(model_input_w, model_input_h);
+  if (model_input_w != msg->width || model_input_h != msg->height) {
+    scale_w = model_input_w / static_cast<double>(msg->width);
+    scale_h = model_input_h / static_cast<double>(msg->height);
+  }
+
   // only subscribe once
-  camera_intrinsic_->fx = msg->p[0];
-  camera_intrinsic_->fy = msg->p[5];
-  camera_intrinsic_->cx = msg->p[2];
-  camera_intrinsic_->cy = msg->p[6];
-  camera_intrinsic_->baseline = std::abs(msg->p[3] / camera_intrinsic_->fx);
+  camera_intrinsic_->fx = msg->p[0] * scale_w;
+  camera_intrinsic_->fy = msg->p[5] * scale_h;
+  camera_intrinsic_->cx = msg->p[2] * scale_w;
+  camera_intrinsic_->cy = msg->p[6] * scale_h;
+  camera_intrinsic_->baseline = std::abs(msg->p[3] / msg->p[0]);
   camera_intrinsic_->doffs = msg->p[11];
 
   if (camera_intrinsic_->baseline > 1) camera_intrinsic_->baseline *= 0.001f; // convert mm to m
