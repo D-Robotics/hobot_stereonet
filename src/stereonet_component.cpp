@@ -1054,7 +1054,7 @@ void StereoNetNode::publish_depth_image(const std::shared_ptr<PubData> &pub_data
 
   auto depth_msg = std::make_shared<sensor_msgs::msg::Image>();
   depth_msg->header = pub_data->header;
-  depth_msg->header.frame_id = stereonet_frame_id_;
+  depth_msg->header.frame_id = "camera_optical_frame";
   depth_msg->height = pub_data->depth.rows;
   depth_msg->width = pub_data->depth.cols;
   depth_msg->encoding = "mono16"; // Use 16-bit unsigned integer for depth in millimeters
@@ -1071,7 +1071,7 @@ void StereoNetNode::publish_depth_camera_info(const std::shared_ptr<PubData> &pu
 
   auto depth_camera_info_msg = std::make_shared<sensor_msgs::msg::CameraInfo>();
   depth_camera_info_msg->header = pub_data->header;
-  depth_camera_info_msg->header.frame_id = stereonet_frame_id_;
+  depth_camera_info_msg->header.frame_id = "camera_optical_frame";
   depth_camera_info_msg->height = pub_data->depth.rows;
   depth_camera_info_msg->width = pub_data->depth.cols;
   depth_camera_info_msg->distortion_model = "plumb_bob";
@@ -1170,7 +1170,7 @@ void StereoNetNode::publish_rectified_left_image(const std::shared_ptr<PubData> 
   if (rectify_left_image_pub_->get_subscription_count() == 0) return;
   auto left_msg = std::make_shared<sensor_msgs::msg::Image>();
   left_msg->header = pub_data->header;
-  left_msg->header.frame_id = stereonet_frame_id_;
+  left_msg->header.frame_id = "camera_optical_frame";
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   left_msg->height = height;
