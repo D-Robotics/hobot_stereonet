@@ -557,6 +557,16 @@ void StereoNetNode::set_subscription_publisher() {
     origin_left_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_left_image_topic_, 10);
     origin_right_image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(origin_right_image_topic_, 10);
   }
+
+  // Set monitor timer
+  monitor_timer_ = this->create_wall_timer(std::chrono::milliseconds(5000), [this]() {
+    if (!camera_intrinsic_->is_valid()) {
+      RCLCPP_ERROR(this->get_logger(), "\033[31m=> Haven't received any camera info from topic %s\033[0m",
+                   camera_info_topic_.c_str());
+    } else {
+      monitor_timer_->cancel();
+    }
+  });
 }
 
 void StereoNetNode::set_dnn_model() {
@@ -605,6 +615,7 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
   RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                        "=> receive stereo image, format: %s, stamp: %u.%u, latency: %.2f ms", msg->encoding.c_str(),
                        msg->header.stamp.sec, msg->header.stamp.nanosec, latency);
+  if (global_frame_cnt_ < 5) global_frame_cnt_++;
 
   if (calib_method_ == "custom" && camera_info_updated_ == false) {
     int model_input_w = 0, model_input_h = 0;
@@ -939,6 +950,13 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
   } else {
     RCLCPP_ERROR(this->get_logger(), "=> unsupported image encoding: %s", stereo_msg->encoding.c_str());
   }
+  if (global_frame_cnt_ == 5) {
+    cv::Mat top_bgr, bottom_bgr;
+    ImgConvertUtils::nv12_to_bgr_mat(left_img_data.data(), top_bgr, model_input_w, model_input_h);
+    ImgConvertUtils::nv12_to_bgr_mat(right_img_data.data(), bottom_bgr, model_input_w, model_input_h);
+    top_is_left_ = judge_top_is_left_by_ORB(top_bgr, bottom_bgr);
+    global_frame_cnt_++;
+  }
 }
 
 void StereoNetNode::publish_function() {
@@ -970,6 +988,13 @@ void StereoNetNode::publish_function() {
           "=> publish result, stamp: %u.%u, fps: %.2f, latency: %.2f ms, cpu_usage: %d%%, bpu_usage: %d%%",
           pub_data->header.stamp.sec, pub_data->header.stamp.nanosec, pub_data->fps, latency, pub_data->cpu_usage,
           pub_data->bpu_usage);
+
+      if (!top_is_left_) {
+        RCLCPP_ERROR_THROTTLE(
+            this->get_logger(), *this->get_clock(), 5000,
+            "\033[31m=> top is not left image, please swap the mipi cables, or set the mipi_channel and "
+            "mipi_channel2 parameters.\033[0m");
+      }
 
       // publish depth image
       {
@@ -1935,6 +1960,14 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     }
     cv::putText(visual_img, perf_text.str(), cv::Point(10, text_height), cv::FONT_HERSHEY_SIMPLEX, font_scale,
                 CV_RGB(0, 0, 255), 2);
+    if (!top_is_left_) {
+      cv::putText(visual_img, "top is not left image,", cv::Point(10, text_height * 2), cv::FONT_HERSHEY_SIMPLEX,
+                  font_scale, CV_RGB(0, 0, 255), 2);
+      cv::putText(visual_img, "please swap the mipi cables,", cv::Point(10, text_height * 3), cv::FONT_HERSHEY_SIMPLEX,
+                  font_scale, CV_RGB(0, 0, 255), 2);
+      cv::putText(visual_img, "or set the mipi_channel and mipi_channel2 parameters.", cv::Point(10, text_height * 4),
+                  cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 0, 255), 2);
+    }
   }
 
   // ===================================== publish visual image ============================================
@@ -2262,6 +2295,50 @@ void StereoNetNode::infer_offline() {
 
   RCLCPP_WARN(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,
               local_image_dir_.c_str());
+}
+
+bool StereoNetNode::judge_top_is_left_by_ORB(const cv::Mat &top_bgr, const cv::Mat &bottom_bgr) {
+  // convert to gray
+  cv::Mat top_gray, bottom_gray;
+  if (top_bgr.channels() == 3) {
+    cv::cvtColor(top_bgr, top_gray, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(bottom_bgr, bottom_gray, cv::COLOR_BGR2GRAY);
+  } else {
+    top_gray = top_bgr;
+    bottom_gray = bottom_bgr;
+  }
+  // orb detect
+  cv::Ptr<cv::ORB> orb = cv::ORB::create(1000);
+  std::vector<cv::KeyPoint> kp_top, kp_bottom;
+  cv::Mat des_top, des_bottom;
+  orb->detectAndCompute(top_gray, cv::Mat(), kp_top, des_top);
+  orb->detectAndCompute(bottom_gray, cv::Mat(), kp_bottom, des_bottom);
+  if (des_top.empty() || des_bottom.empty()) {
+    // orb detect failed
+    return true;
+  }
+  cv::BFMatcher matcher(cv::NORM_HAMMING);
+  std::vector<cv::DMatch> matches;
+  matcher.match(des_top, des_bottom, matches);
+
+  // calculate positive and negative disparity
+  int positive_disp = 0;
+  int negative_disp = 0;
+  for (const auto &m : matches) {
+    const auto &pt_top = kp_top[m.queryIdx].pt;
+    const auto &pt_bottom = kp_bottom[m.trainIdx].pt;
+    float disparity = pt_top.x - pt_bottom.x;
+    if (disparity > 1.0)
+      positive_disp++;
+    else if (disparity < -1.0)
+      negative_disp++;
+  }
+
+  // judge: positive disparity > negative disparity → top is left image
+  if (positive_disp > negative_disp)
+    return true;
+  else
+    return false;
 }
 
 } // namespace stereonet

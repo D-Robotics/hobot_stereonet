@@ -224,6 +224,14 @@ private:
    */
   void save_result_once(const std::shared_ptr<PubData> &pub_data);
 
+  /**
+   * @brief judge top is left by ORB
+   * @param top_bgr top image
+   * @param bottom_bgr bottom image
+   * @return true if top is left
+   */
+  bool judge_top_is_left_by_ORB(const cv::Mat& top_bgr, const cv::Mat& bottom_bgr);
+
   // ============================================ member variables ============================================
   // sub
   std::string stereo_image_topic_ = "/image_combine_raw";
@@ -264,6 +272,13 @@ private:
   std::string stereonet_frame_id_right_ = "camera_link_right";
 
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_ = nullptr;
+
+  // judge top is left
+  int global_frame_cnt_ = 0;
+  bool top_is_left_ = true;
+
+  // judge camera info
+  rclcpp::TimerBase::SharedPtr monitor_timer_;
 
   // model params
   std::shared_ptr<StereonetProcess> stereonet_process_ = nullptr;
