@@ -143,6 +143,10 @@ def generate_launch_description():
             {"gdc_enable": LaunchConfiguration('mipi_gdc_enable')},
             {"frame_id": LaunchConfiguration('frame_id')},
             {"cal_alpha": LaunchConfiguration('mipi_cal_alpha')},
+            {"stream_mode": LaunchConfiguration('mipi_stream_mode')},
+            {"sub_stream_enable": LaunchConfiguration('mipi_sub_stream_enable')},
+            {"sub_image_width": LaunchConfiguration('mipi_sub_image_width')},
+            {"sub_image_height": LaunchConfiguration('mipi_sub_image_height')},
         ],
         extra_arguments=[
             {"use_intra_process_comms": True},
@@ -265,6 +269,22 @@ def generate_launch_description():
                 'mipi_cal_alpha',
                 default_value='0.0',
                 description='mipi camera param of alpha for stereoRectify'),
+            DeclareLaunchArgument(
+                'mipi_stream_mode',
+                default_value='0',
+                description='mipi camera stream_mode'),
+            DeclareLaunchArgument(
+                'mipi_sub_stream_enable',
+                default_value='False',
+                description='mipi camera sub_stream_enable'),
+            DeclareLaunchArgument(
+                'mipi_sub_image_width',
+                default_value='1280',
+                description='mipi camera sub stream image width'),
+            DeclareLaunchArgument(
+                'mipi_sub_image_height',
+                default_value='1088',
+                description='mipi camera sub stream image height'),
             stereonet_pub_web_arg,
             use_mipi_cam_arg,
             target_container_name_arg,
