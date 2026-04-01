@@ -224,6 +224,18 @@ public:
                                  const CameraIntrinsic &camera_intrinsic, cv::Mat &visual_img,
                                  int depth_decimal_num = 2);
 
+  /**
+   * @brief Render disparity or depth map
+   * @param input Input disparity or depth map
+   * @param min_disp Minimum disparity value
+   * @param max_disp Maximum disparity value
+   * @param min_depth Minimum depth value
+   * @param max_depth Maximum depth value
+   * @return Rendered disparity or depth map
+   */
+  static cv::Mat render_disp_or_depth(const cv::Mat &input, float min_disp = 0.0f, float max_disp = 192.0f,
+                                      float min_depth = 0.0f, float max_depth = 10000.0f);
+
 private:
   // ===================================== member functions =======================================
   /**

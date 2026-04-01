@@ -153,20 +153,24 @@ int main(int argc, char **argv) {
     std::string file2 = sub_dir + "/K.txt";
     if (std::filesystem::exists(file1)) {
       intrinsic_file = file1;
+      if (readCameraIntrinsicFromFile(intrinsic_file, camera_intrinsic)) {
+        LOG_INFO(nullptr, "=> cam intrinsic [fx,fy,cx,cy,baseline]: "
+                              << camera_intrinsic.fx << ", " << camera_intrinsic.fy << ", " << camera_intrinsic.cx
+                              << ", " << camera_intrinsic.cy << ", " << camera_intrinsic.baseline);
+        saveCameraIntrinsic(result_dir, camera_intrinsic);
+      }
     } else if (std::filesystem::exists(file2)) {
       intrinsic_file = file2;
+      if (readCameraIntrinsicFromFile(intrinsic_file, camera_intrinsic)) {
+        LOG_INFO(nullptr, "=> cam intrinsic [fx,fy,cx,cy,baseline]: "
+                              << camera_intrinsic.fx << ", " << camera_intrinsic.fy << ", " << camera_intrinsic.cx
+                              << ", " << camera_intrinsic.cy << ", " << camera_intrinsic.baseline);
+        saveCameraIntrinsic(result_dir, camera_intrinsic);
+      }
     } else {
-      LOG_ERROR(nullptr, "=> no intrinsic file found in " << sub_dir);
-      continue;
+      LOG_WARN(nullptr, "=> no intrinsic file found in " << sub_dir);
     }
-    if (!readCameraIntrinsicFromFile(intrinsic_file, camera_intrinsic)) {
-      LOG_ERROR(nullptr, "=> read intrinsic failed: " << intrinsic_file);
-      continue;
-    }
-    LOG_INFO(nullptr, "=> cam intrinsic [fx,fy,cx,cy,baseline]: "
-                          << camera_intrinsic.fx << ", " << camera_intrinsic.fy << ", " << camera_intrinsic.cx << ", "
-                          << camera_intrinsic.cy << ", " << camera_intrinsic.baseline);
-    saveCameraIntrinsic(result_dir, camera_intrinsic);
+
     std::vector<std::pair<std::string, std::string>> img_pairs = FileUtils::find_pairs(sub_dir);
     bool update_cam_intr = false;
     for (auto &img_pair : img_pairs) {
@@ -191,7 +195,7 @@ int main(int argc, char **argv) {
                                                << model_input_w << ", " << model_input_h << "]");
         cv::resize(left_img, left_img_resize, cv::Size(model_input_w, model_input_h));
         cv::resize(right_img, right_img_resize, cv::Size(model_input_w, model_input_h));
-        if (!update_cam_intr) {
+        if (!update_cam_intr && camera_intrinsic.is_valid()) {
           camera_intrinsic.fx = camera_intrinsic.fx * model_input_w / left_img.cols;
           camera_intrinsic.fy = camera_intrinsic.fy * model_input_h / left_img.rows;
           camera_intrinsic.cx = camera_intrinsic.cx * model_input_w / left_img.cols;
@@ -218,7 +222,7 @@ int main(int argc, char **argv) {
       cv::Mat disp, uncert;
       stereonet_process->forward_sync(left_img_nv12, right_img_nv12, uncertainty_th, disp, uncert);
       cv::Mat depth;
-      stereonet_process->disp_to_depth(disp, depth, camera_intrinsic);
+      if (camera_intrinsic.is_valid()) stereonet_process->disp_to_depth(disp, depth, camera_intrinsic);
 
       // epipolar check
       cv::Mat epipolar_visual;
@@ -236,15 +240,19 @@ int main(int argc, char **argv) {
       cv::imwrite(result_dir + "/" + left_img_name, left_img_resize);
       cv::imwrite(result_dir + "/" + right_img_name, right_img_resize);
       cv::imwrite(result_dir + "/disp_" + prefix + ".pfm", disp);
-      cv::imwrite(result_dir + "/depth_" + prefix + ".png", depth);
       if (!uncert.empty()) cv::imwrite(result_dir + "/uncert_" + prefix + ".pfm", uncert);
-      cv::Mat visual_img;
-      stereonet_process->convert_visual_img(left_img_resize, disp, depth, camera_intrinsic, visual_img);
-      cv::imwrite(result_dir + "/visual_" + prefix + ".png", visual_img);
-      std::vector<stereonet::PointXYZRGB> pointcloud;
-      stereonet_process->depth_to_pointcloud_rgb(depth, left_img_resize, camera_intrinsic, pointcloud);
-      stereonet_process->dump_pcd_file_rgb(result_dir + "/pointcloud_" + prefix + ".pcd", pointcloud);
+      cv::Mat visual_img_disp = stereonet_process->render_disp_or_depth(disp);
+      cv::imwrite(result_dir + "/visual_disp_" + prefix + ".png", visual_img_disp);
       cv::imwrite(result_dir + "/epipolar_visual_" + prefix + ".png", epipolar_visual);
+      if (camera_intrinsic.is_valid()) {
+        cv::imwrite(result_dir + "/depth_" + prefix + ".png", depth);
+        cv::Mat visual_img;
+        stereonet_process->convert_visual_img(left_img_resize, disp, depth, camera_intrinsic, visual_img);
+        cv::imwrite(result_dir + "/visual_" + prefix + ".png", visual_img);
+        std::vector<stereonet::PointXYZRGB> pointcloud;
+        stereonet_process->depth_to_pointcloud_rgb(depth, left_img_resize, camera_intrinsic, pointcloud);
+        stereonet_process->dump_pcd_file_rgb(result_dir + "/pointcloud_" + prefix + ".pcd", pointcloud);
+      }
     }
   }
   LOG_INFO(nullptr, "=> ==============================================");

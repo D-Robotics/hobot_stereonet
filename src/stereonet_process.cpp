@@ -1015,4 +1015,188 @@ void StereonetProcess::convert_visual_img(const cv::Mat &rgb, const cv::Mat &dis
   }
 }
 
+// calc percentile, percent should be [0, 100]
+static float calc_percentile(const std::vector<float> &data, float percent) {
+  if (data.empty()) {
+    return 0.0f;
+  }
+  if (data.size() == 1) {
+    return data[0];
+  }
+
+  float pos = (percent / 100.0f) * (static_cast<float>(data.size() - 1));
+  int idx_low = static_cast<int>(std::floor(pos));
+  int idx_high = static_cast<int>(std::ceil(pos));
+  float frac = pos - static_cast<float>(idx_low);
+
+  float vlow = data[idx_low];
+  float vhigh = data[idx_high];
+  return vlow + (vhigh - vlow) * frac;
+}
+
+static inline float clamp01(float x) {
+  return std::max(0.0f, std::min(1.0f, x));
+}
+
+// easy linear interpolation
+static inline uchar lerpU8(float a, float b, float t) {
+  t = clamp01(t);
+  return static_cast<uchar>(a + (b - a) * t + 0.5f);
+}
+
+// jet color mapping, input [0,1]
+static cv::Vec3b jet_color(float v) {
+  v = clamp01(v);
+
+  // 0.00 - 0.25: Deep blue -> Light blue
+  // 0.25 - 0.50: Light blue -> Green
+  // 0.50 - 0.75: Green -> Yellow
+  // 0.75 - 1.00: Yellow -> Red
+  if (v <= 0.25f) {
+    float t = v / 0.25f;
+    return cv::Vec3b(lerpU8(128, 255, t), // B
+                     lerpU8(0, 128, t),   // G
+                     lerpU8(0, 0, t)      // R
+    );
+  } else if (v <= 0.5f) {
+    float t = (v - 0.25f) / 0.25f;
+    return cv::Vec3b(lerpU8(255, 255, t), // B
+                     lerpU8(128, 255, t), // G
+                     lerpU8(0, 0, t)      // R
+    );
+  } else if (v <= 0.75f) {
+    float t = (v - 0.5f) / 0.25f;
+    return cv::Vec3b(lerpU8(255, 0, t),   // B
+                     lerpU8(255, 255, t), // G
+                     lerpU8(0, 255, t)    // R
+    );
+  } else {
+    float t = (v - 0.75f) / 0.25f;
+    return cv::Vec3b(lerpU8(0, 0, t),    // B
+                     lerpU8(255, 0, t),  // G
+                     lerpU8(255, 255, t) // R
+    );
+  }
+}
+
+// normalize piecewise
+static float piecewise_normalize(float v, float min_v, float p10, float p50, float p90, float max_v) {
+  const float eps = 1e-6f;
+
+  if (v <= 0.0f) {
+    return 0.0f;
+  }
+
+  if (v <= p10) {
+    float denom = std::max(p10 - min_v, eps);
+    return (v - min_v) / denom * 0.25f;
+  } else if (v <= p50) {
+    float denom = std::max(p50 - p10, eps);
+    return 0.25f + (v - p10) / denom * 0.25f;
+  } else if (v <= p90) {
+    float denom = std::max(p90 - p50, eps);
+    return 0.50f + (v - p50) / denom * 0.25f;
+  } else {
+    float denom = std::max(max_v - p90, eps);
+    return 0.75f + (v - p90) / denom * 0.25f;
+  }
+}
+
+cv::Mat StereonetProcess::render_disp_or_depth(const cv::Mat &input, float min_disp, float max_disp, float min_depth,
+                                               float max_depth) {
+  if (input.empty()) {
+    throw std::runtime_error("=> input image is empty");
+  }
+
+  bool is_disp = (input.type() == CV_32FC1);
+  bool is_depth = (input.type() == CV_16UC1);
+
+  if (!is_disp && !is_depth) {
+    throw std::runtime_error("=> unsupported input type, only CV_32FC1 or CV_16UC1");
+  }
+
+  // convert to float
+  cv::Mat img_f;
+  if (is_disp) {
+    input.convertTo(img_f, CV_32F);
+  } else {
+    input.convertTo(img_f, CV_32F);
+  }
+
+  // remove nan / inf
+  for (int y = 0; y < img_f.rows; ++y) {
+    float *row = img_f.ptr<float>(y);
+    for (int x = 0; x < img_f.cols; ++x) {
+      float &v = row[x];
+      if (!std::isfinite(v)) {
+        v = 0.0f;
+      }
+    }
+  }
+
+  // normalize
+  for (int y = 0; y < img_f.rows; ++y) {
+    float *row = img_f.ptr<float>(y);
+    for (int x = 0; x < img_f.cols; ++x) {
+      float &v = row[x];
+      if (is_disp) {
+        if (v < min_disp || v > max_disp) {
+          v = 0.0f;
+        }
+      } else if (is_depth) {
+        if (v < min_depth || v > max_depth) {
+          v = 0.0f;
+        }
+      }
+    }
+  }
+
+  // collect valid values
+  std::vector<float> valid_values;
+  valid_values.reserve(img_f.rows * img_f.cols);
+
+  for (int y = 0; y < img_f.rows; ++y) {
+    const float *row = img_f.ptr<float>(y);
+    for (int x = 0; x < img_f.cols; ++x) {
+      float v = row[x];
+      if (v > 0.0f) {
+        valid_values.push_back(v);
+      }
+    }
+  }
+
+  cv::Mat color(img_f.size(), CV_8UC3, cv::Scalar(0, 0, 0));
+
+  if (valid_values.empty()) {
+    return color;
+  }
+
+  std::sort(valid_values.begin(), valid_values.end());
+
+  float min_v = valid_values.front();
+  float max_v = valid_values.back();
+  float p10 = calc_percentile(valid_values, 10.0f);
+  float p50 = calc_percentile(valid_values, 50.0f);
+  float p90 = calc_percentile(valid_values, 90.0f);
+
+  // render
+  for (int y = 0; y < img_f.rows; ++y) {
+    const float *row = img_f.ptr<float>(y);
+    cv::Vec3b *out_row = color.ptr<cv::Vec3b>(y);
+
+    for (int x = 0; x < img_f.cols; ++x) {
+      float v = row[x];
+      if (v <= 0.0f) {
+        out_row[x] = cv::Vec3b(0, 0, 0);
+        continue;
+      }
+
+      float norm_v = piecewise_normalize(v, min_v, p10, p50, p90, max_v);
+      out_row[x] = jet_color(norm_v);
+    }
+  }
+
+  return color;
+}
+
 } // namespace stereonet
