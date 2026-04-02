@@ -241,9 +241,12 @@ int main(int argc, char **argv) {
       cv::imwrite(result_dir + "/" + right_img_name, right_img_resize);
       cv::imwrite(result_dir + "/disp_" + prefix + ".pfm", disp);
       if (!uncert.empty()) cv::imwrite(result_dir + "/uncert_" + prefix + ".pfm", uncert);
+      cv::imwrite(result_dir + "/epipolar_visual_" + prefix + ".png", epipolar_visual);
       cv::Mat visual_img_disp = stereonet_process->render_disp_or_depth(disp);
       cv::imwrite(result_dir + "/visual_disp_" + prefix + ".png", visual_img_disp);
-      cv::imwrite(result_dir + "/epipolar_visual_" + prefix + ".png", epipolar_visual);
+      cv::Mat visual_img_disp_sf =
+          stereonet_process->render_disp_or_depth(disp, 0.0f, 192.0f, 0.0f, 10000.0f, true, 100, 2.0, 8);
+      cv::imwrite(result_dir + "/visual_disp_sf_" + prefix + ".png", visual_img_disp_sf);
       if (camera_intrinsic.is_valid()) {
         cv::imwrite(result_dir + "/depth_" + prefix + ".png", depth);
         cv::Mat visual_img;

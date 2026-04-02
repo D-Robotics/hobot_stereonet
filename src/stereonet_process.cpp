@@ -1102,8 +1102,136 @@ static float piecewise_normalize(float v, float min_v, float p10, float p50, flo
   }
 }
 
+// speckle filter
+template <typename T>
+static void apply_speckle_filter_impl(cv::Mat &img, int speckle_size, double speckle_diff, int connectivity) {
+  const int rows = img.rows;
+  const int cols = img.cols;
+
+  cv::Mat labels(rows, cols, CV_32S, cv::Scalar(-1));
+  int current_label = 0;
+
+  const int dx4[4] = {1, -1, 0, 0};
+  const int dy4[4] = {0, 0, 1, -1};
+
+  const int dx8[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+  const int dy8[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+
+  std::vector<cv::Point> component_pixels;
+  std::queue<cv::Point> q;
+
+  auto is_valid_value = [](T v) -> bool {
+    if constexpr (std::is_floating_point<T>::value) {
+      return std::isfinite(v) && v > static_cast<T>(0);
+    } else {
+      return v > static_cast<T>(0);
+    }
+  };
+
+  auto value_diff_ok = [speckle_diff](T a, T b) -> bool {
+    double da = static_cast<double>(a);
+    double db = static_cast<double>(b);
+    return std::fabs(da - db) <= speckle_diff;
+  };
+
+  for (int y = 0; y < rows; ++y) {
+    for (int x = 0; x < cols; ++x) {
+      if (labels.at<int>(y, x) != -1) {
+        continue;
+      }
+
+      T seed_val = img.at<T>(y, x);
+      if (!is_valid_value(seed_val)) {
+        labels.at<int>(y, x) = -2; // invalid
+        continue;
+      }
+
+      component_pixels.clear();
+      labels.at<int>(y, x) = current_label;
+      q.push(cv::Point(x, y));
+      component_pixels.push_back(cv::Point(x, y));
+
+      while (!q.empty()) {
+        cv::Point p = q.front();
+        q.pop();
+
+        const T cur_val = img.at<T>(p.y, p.x);
+
+        const int *dx = (connectivity == 4) ? dx4 : dx8;
+        const int *dy = (connectivity == 4) ? dy4 : dy8;
+        const int neighbor_count = (connectivity == 4) ? 4 : 8;
+
+        for (int k = 0; k < neighbor_count; ++k) {
+          int nx = p.x + dx[k];
+          int ny = p.y + dy[k];
+
+          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) {
+            continue;
+          }
+
+          int &nlabel = labels.at<int>(ny, nx);
+          if (nlabel != -1) {
+            continue;
+          }
+
+          T nval = img.at<T>(ny, nx);
+          if (!is_valid_value(nval)) {
+            nlabel = -2;
+            continue;
+          }
+
+          if (value_diff_ok(nval, cur_val)) {
+            nlabel = current_label;
+            q.push(cv::Point(nx, ny));
+            component_pixels.push_back(cv::Point(nx, ny));
+          }
+        }
+      }
+
+      if (static_cast<int>(component_pixels.size()) <= speckle_size) {
+        for (const auto &pt : component_pixels) {
+          img.at<T>(pt.y, pt.x) = static_cast<T>(0);
+        }
+      }
+
+      ++current_label;
+    }
+  }
+}
+
+/**
+ * @brief speckle filter for disparity map or depth map
+ * @param img
+ * @param speckle_size
+ * @param speckle_diff
+ * @param connectivity
+ */
+static void apply_speckle_filter(cv::Mat &img, int speckle_size = 100, double speckle_diff = 2.0,
+                                 int connectivity = 8) {
+  if (img.empty()) {
+    return;
+  }
+
+  if (img.channels() != 1) {
+    throw std::runtime_error("=> apply_speckle_filter only supports single-channel images");
+  }
+
+  if (connectivity != 4 && connectivity != 8) {
+    throw std::runtime_error("=> connectivity must be 4 or 8");
+  }
+
+  if (img.type() == CV_32FC1) {
+    apply_speckle_filter_impl<float>(img, speckle_size, speckle_diff, connectivity);
+  } else if (img.type() == CV_16UC1) {
+    apply_speckle_filter_impl<uint16_t>(img, speckle_size, speckle_diff, connectivity);
+  } else {
+    throw std::runtime_error("=> apply_speckle_filter only supports CV_32FC1 and CV_16UC1");
+  }
+}
+
 cv::Mat StereonetProcess::render_disp_or_depth(const cv::Mat &input, float min_disp, float max_disp, float min_depth,
-                                               float max_depth) {
+                                               float max_depth, bool enable_speckle_filter, int speckle_size,
+                                               double speckle_diff, int speckle_connectivity) {
   if (input.empty()) {
     throw std::runtime_error("=> input image is empty");
   }
@@ -1115,24 +1243,14 @@ cv::Mat StereonetProcess::render_disp_or_depth(const cv::Mat &input, float min_d
     throw std::runtime_error("=> unsupported input type, only CV_32FC1 or CV_16UC1");
   }
 
-  // convert to float
-  cv::Mat img_f;
-  if (is_disp) {
-    input.convertTo(img_f, CV_32F);
-  } else {
-    input.convertTo(img_f, CV_32F);
+  cv::Mat filtered = input.clone();
+  if (enable_speckle_filter) {
+    apply_speckle_filter(filtered, speckle_size, speckle_diff, speckle_connectivity);
   }
 
-  // remove nan / inf
-  for (int y = 0; y < img_f.rows; ++y) {
-    float *row = img_f.ptr<float>(y);
-    for (int x = 0; x < img_f.cols; ++x) {
-      float &v = row[x];
-      if (!std::isfinite(v)) {
-        v = 0.0f;
-      }
-    }
-  }
+  // convert to float
+  cv::Mat img_f;
+  filtered.convertTo(img_f, CV_32F);
 
   // normalize
   for (int y = 0; y < img_f.rows; ++y) {

@@ -231,10 +231,16 @@ public:
    * @param max_disp Maximum disparity value
    * @param min_depth Minimum depth value
    * @param max_depth Maximum depth value
+   * @param enable_speckle_filter Enable speckle filter
+   * @param speckle_size Speckle filter size
+   * @param speckle_diff Speckle filter diff
+   * @param speckle_connectivity Speckle filter connectivity
    * @return Rendered disparity or depth map
    */
   static cv::Mat render_disp_or_depth(const cv::Mat &input, float min_disp = 0.0f, float max_disp = 192.0f,
-                                      float min_depth = 0.0f, float max_depth = 10000.0f);
+                                      float min_depth = 0.0f, float max_depth = 10000.0f,
+                                      bool enable_speckle_filter = false, int speckle_size = 100,
+                                      double speckle_diff = 2.0, int speckle_connectivity = 8);
 
 private:
   // ===================================== member functions =======================================
