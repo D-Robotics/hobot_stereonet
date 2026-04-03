@@ -143,8 +143,8 @@ private:
    */
   void capture_function() {
     // read left and right images
-    cv::Mat left_img = cv::imread("./img/left000000.png", cv::IMREAD_COLOR);
-    cv::Mat right_img = cv::imread("./img/right000000.png", cv::IMREAD_COLOR);
+    cv::Mat left_img = cv::imread("./img/1/left000000.png", cv::IMREAD_COLOR);
+    cv::Mat right_img = cv::imread("./img/1/right000000.png", cv::IMREAD_COLOR);
 
     // read model input size
     int model_input_w = 0, model_input_h = 0;
@@ -159,7 +159,7 @@ private:
     cv::resize(right_img, right_img_resize, cv::Size(model_input_w, model_input_h));
 
     // read camera intrinsic
-    if (readCameraIntrinsicFromFile("./img/camera_intrinsic.txt", camera_intrinsic_)) {
+    if (readCameraIntrinsicFromFile("./img/1/camera_intrinsic.txt", camera_intrinsic_)) {
       LOG_INFO(nullptr, "=> before resize, cam intrinsic [fx, fy, cx, cy, baseline]: ["
                             << camera_intrinsic_.fx << ", " << camera_intrinsic_.fy << ", " << camera_intrinsic_.cx
                             << ", " << camera_intrinsic_.cy << ", " << camera_intrinsic_.baseline << "]");
