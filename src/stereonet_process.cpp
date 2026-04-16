@@ -382,127 +382,197 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   return 0;
 }
 
-int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors,
-                                                                cv::Mat &out_mat) {
+/*
+int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat) {
+  // ----------------------------
+  // 1. Check tensor count
+  // ----------------------------
+  if (tensors.size() < 2) {
+    LOG_ERROR(logger_, "=> tensors size < 2");
+    return -1;
+  }
+
+  // ----------------------------
+  // 2. Use valid shape as logical shape
+  // ----------------------------
   const int32_t *disp_shape = tensors[0].properties.validShape.dimensionSize;
-  // int disp_c_dim = disp_shape[1];
-  int disp_h_dim = disp_shape[2];
-  int disp_w_dim = disp_shape[3];
-  int total_disp_size = disp_h_dim * disp_w_dim;
-
   const int32_t *spx_shape = tensors[1].properties.validShape.dimensionSize;
-  int spx_c_dim = spx_shape[1];
-  int spx_h_dim = spx_shape[2];
-  int spx_w_dim = spx_shape[3];
-  int total_size = spx_h_dim * spx_w_dim;
-  int32_t scale_h = spx_h_dim / disp_h_dim, scale_w = spx_w_dim / disp_w_dim;
 
-  // get scale info
-  float scale_constant = 1.0;
-  float scale_factor;
+  const int32_t c_dim = disp_shape[1];
+  const int32_t h_dim = disp_shape[2];
+  const int32_t w_dim = disp_shape[3];
+
+  const int32_t spx_c_dim = spx_shape[1];
+  const int32_t spx_h_dim = spx_shape[2];
+  const int32_t spx_w_dim = spx_shape[3];
+
+  if (c_dim != spx_c_dim || h_dim != spx_h_dim || w_dim != spx_w_dim) {
+    LOG_ERROR(logger_, "=> disp/spx shape mismatch, " << "disp=(" << c_dim << "," << h_dim << "," << w_dim << "), "
+                                                      << "spx=(" << spx_c_dim << "," << spx_h_dim << "," << spx_w_dim
+                                                      << ")");
+    return -1;
+  }
+
+  // ----------------------------
+  // 3. Get element size
+  // ----------------------------
+  auto get_elem_size = [](hbDNNDataType type) -> int32_t {
+    switch (type) {
+    case HB_DNN_TENSOR_TYPE_F32: return 4;
+    case HB_DNN_TENSOR_TYPE_S32: return 4;
+    case HB_DNN_TENSOR_TYPE_S16: return 2;
+    default: return 0;
+    }
+  };
+
+  const int32_t disp_elem_size = get_elem_size(static_cast<hbDNNDataType>(tensors[0].properties.tensorType));
+  const int32_t spx_elem_size = get_elem_size(static_cast<hbDNNDataType>(tensors[1].properties.tensorType));
+
+  if (disp_elem_size == 0 || spx_elem_size == 0) {
+    LOG_ERROR(logger_, "=> unsupported tensor element size");
+    return -1;
+  }
+
+  // ----------------------------
+  // 4. Get stride in element unit
+  //    stride[] is in bytes
+  // ----------------------------
+  const int32_t *disp_stride = tensors[0].properties.stride;
+  const int32_t *spx_stride = tensors[1].properties.stride;
+
+  if (disp_stride == nullptr || spx_stride == nullptr) {
+    LOG_ERROR(logger_, "=> tensor stride is null");
+    return -1;
+  }
+
+  const int32_t disp_c_stride = disp_stride[1] / disp_elem_size;
+  const int32_t disp_h_stride = disp_stride[2] / disp_elem_size;
+
+  const int32_t spx_c_stride = spx_stride[1] / spx_elem_size;
+  const int32_t spx_h_stride = spx_stride[2] / spx_elem_size;
+
+  // ----------------------------
+  // 5. Get quantization scales
+  // ----------------------------
+  float scale_constant = 1.0f;
   float *disp_scale = &scale_constant;
   float *spx_scale = &scale_constant;
+
   if (tensors[0].properties.quantiType == SCALE) {
     disp_scale = tensors[0].properties.scale.scaleData;
   }
   if (tensors[1].properties.quantiType == SCALE) {
     spx_scale = tensors[1].properties.scale.scaleData;
   }
-  scale_factor = (*disp_scale * *spx_scale);
-  // calc disp
-  out_mat = cv::Mat::zeros(spx_h_dim, spx_w_dim, CV_32FC1);
-  float *result_ptr = reinterpret_cast<float *>(out_mat.data);
-  if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32 &&
-      tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
-    auto disp = reinterpret_cast<int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
-    auto spx = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
-    for (int32_t i = 0; i < spx_c_dim; ++i) {
-      for (int32_t y = 0; y < spx_h_dim; ++y) {
-        // compute y-index for low-res disparity (nearest-neighbor sampling)
-        int32_t idx_y = y / scale_h;
-        // offset of this output row in result_ptr
-        int32_t output_offset = spx_w_dim * y;
-        for (int32_t x = 0; x < spx_w_dim; x += 4) {
-          // compute x-index for low-res disparity (nearest-neighbor sampling)
-          int32_t idx_x = x / scale_w;
+  const bool disp_per_channel_scale =
+      (tensors[0].properties.quantiType == SCALE && tensors[0].properties.quantizeAxis == 1 &&
+       tensors[0].properties.scale.scaleLen >= c_dim);
 
-          // load spx
-          int16x4_t spx_s16 = vld1_s16(&spx[y * spx_w_dim + x]);
-          int32x4_t spx_s32 = vmovl_s16(spx_s16);
+  const bool spx_per_channel_scale =
+      (tensors[1].properties.quantiType == SCALE && tensors[1].properties.quantizeAxis == 1 &&
+       tensors[1].properties.scale.scaleLen >= c_dim);
 
-          // load disp
-          int32_t disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
-          int32x4_t disp_s32 = vdupq_n_s32(disp_val_scalar);
+  // ----------------------------
+  // 6. Allocate output
+  // ----------------------------
+  out_mat = cv::Mat::zeros(h_dim, w_dim, CV_32FC1);
+  float *out_ptr = reinterpret_cast<float *>(out_mat.data);
 
-          // convert to float
-          float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
-          float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
+  // ----------------------------
+  // 7. Helper lambda for per-channel scale
+  // ----------------------------
+  auto get_disp_scale = [&](int32_t c) -> float {
+    if (tensors[0].properties.quantiType != SCALE) return 1.0f;
+    return disp_per_channel_scale ? disp_scale[c] : disp_scale[0];
+  };
 
-          // disp * spx
-          float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
+  auto get_spx_scale = [&](int32_t c) -> float {
+    if (tensors[1].properties.quantiType != SCALE) return 1.0f;
+    return spx_per_channel_scale ? spx_scale[c] : spx_scale[0];
+  };
 
-          // accumulate into output buffer
-          float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
-          float32x4_t updated_output = vaddq_f32(current_output, mul_result);
-          vst1q_f32(&result_ptr[output_offset + x], updated_output);
+  // ----------------------------
+  // 8. Accumulate with stride-aware access
+  // ----------------------------
+  if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
+      tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
+    auto disp_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    for (int32_t c = 0; c < c_dim; ++c) {
+      const float cur_scale = get_disp_scale(c) * get_spx_scale(c);
+      const float *disp_c_ptr = disp_base + c * disp_c_stride;
+      const float *spx_c_ptr = spx_base + c * spx_c_stride;
+
+      for (int32_t y = 0; y < h_dim; ++y) {
+        const float *disp_row = disp_c_ptr + y * disp_h_stride;
+        const float *spx_row = spx_c_ptr + y * spx_h_stride;
+        float *out_row = out_ptr + y * w_dim;
+
+        for (int32_t x = 0; x < w_dim; ++x) {
+          out_row[x] += disp_row[x] * spx_row[x] * cur_scale;
         }
-      }
-      // move to next disparity row
-      disp += total_disp_size;
-      // move to next spx row
-      spx += total_size;
-    }
-
-    // result * scale_factor
-    if (scale_factor != 1.0f) {
-      for (int32_t j = 0; j < total_size; j += 4) {
-        vst1q_f32(result_ptr + j, vmulq_n_f32(vld1q_f32(result_ptr + j), scale_factor));
       }
     }
   } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
-             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
-    auto disp = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
-    auto spx = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    auto disp_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<const int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
-    for (int32_t i = 0; i < spx_c_dim; ++i) {
-      for (int32_t y = 0; y < spx_h_dim; ++y) {
-        // compute y-index for low-res disparity (nearest-neighbor sampling)
-        int32_t idx_y = y / scale_h;
-        // offset of this output row in result_ptr
-        int32_t output_offset = spx_w_dim * y;
-        for (int32_t x = 0; x < spx_w_dim; x += 4) {
-          // compute x-index for low-res disparity (nearest-neighbor sampling)
-          int32_t idx_x = x / scale_w;
+    for (int32_t c = 0; c < c_dim; ++c) {
+      const float cur_scale = get_disp_scale(c) * get_spx_scale(c);
+      const float *disp_c_ptr = disp_base + c * disp_c_stride;
+      const int16_t *spx_c_ptr = spx_base + c * spx_c_stride;
 
-          // load spx
-          float32x4_t spx_f32 = vld1q_f32(&spx[y * spx_w_dim + x]);
+      for (int32_t y = 0; y < h_dim; ++y) {
+        const float *disp_row = disp_c_ptr + y * disp_h_stride;
+        const int16_t *spx_row = spx_c_ptr + y * spx_h_stride;
+        float *out_row = out_ptr + y * w_dim;
 
-          // load disp
-          float disp_val_scalar = disp[idx_y * disp_w_dim + idx_x];
-          float32x4_t disp_f32 = vdupq_n_f32(disp_val_scalar);
-
-          // disp * spx
-          float32x4_t mul_result = vmulq_f32(disp_f32, spx_f32);
-
-          // accumulate into output buffer
-          float32x4_t current_output = vld1q_f32(&result_ptr[output_offset + x]);
-          float32x4_t updated_output = vaddq_f32(current_output, mul_result);
-          vst1q_f32(&result_ptr[output_offset + x], updated_output);
+        for (int32_t x = 0; x < w_dim; ++x) {
+          out_row[x] += disp_row[x] * static_cast<float>(spx_row[x]) * cur_scale;
         }
       }
-      // move to next disparity row
-      disp += total_disp_size;
-      // move to next spx row
-      spx += total_size;
     }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32 &&
+             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    auto disp_base = reinterpret_cast<const int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<const int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
 
-    // result * scale_factor
-    if (scale_factor != 1.0f) {
-      for (int32_t j = 0; j < total_size; j += 4) {
-        float32x4_t cur = vld1q_f32(result_ptr + j);
-        float32x4_t scaled = vmulq_n_f32(cur, scale_factor);
-        vst1q_f32(result_ptr + j, scaled);
+    for (int32_t c = 0; c < c_dim; ++c) {
+      const float cur_scale = get_disp_scale(c) * get_spx_scale(c);
+      const int32_t *disp_c_ptr = disp_base + c * disp_c_stride;
+      const int16_t *spx_c_ptr = spx_base + c * spx_c_stride;
+
+      for (int32_t y = 0; y < h_dim; ++y) {
+        const int32_t *disp_row = disp_c_ptr + y * disp_h_stride;
+        const int16_t *spx_row = spx_c_ptr + y * spx_h_stride;
+        float *out_row = out_ptr + y * w_dim;
+
+        for (int32_t x = 0; x < w_dim; ++x) {
+          out_row[x] += static_cast<float>(disp_row[x]) * static_cast<float>(spx_row[x]) * cur_scale;
+        }
+      }
+    }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S16 &&
+             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    auto disp_base = reinterpret_cast<const int16_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<const int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    for (int32_t c = 0; c < c_dim; ++c) {
+      const float cur_scale = get_disp_scale(c) * get_spx_scale(c);
+      const int16_t *disp_c_ptr = disp_base + c * disp_c_stride;
+      const int16_t *spx_c_ptr = spx_base + c * spx_c_stride;
+
+      for (int32_t y = 0; y < h_dim; ++y) {
+        const int16_t *disp_row = disp_c_ptr + y * disp_h_stride;
+        const int16_t *spx_row = spx_c_ptr + y * spx_h_stride;
+        float *out_row = out_ptr + y * w_dim;
+
+        for (int32_t x = 0; x < w_dim; ++x) {
+          out_row[x] += static_cast<float>(disp_row[x]) * static_cast<float>(spx_row[x]) * cur_scale;
+        }
       }
     }
   } else {
@@ -512,6 +582,205 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
                            << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
     return -1;
   }
+
+  return 0;
+}
+*/
+
+int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors,
+                                                                cv::Mat &out_mat) {
+  // ----------------------------
+  // 1. Use valid shape for logical output size
+  // ----------------------------
+  const int32_t *disp_valid_shape = tensors[0].properties.validShape.dimensionSize;
+  const int32_t *spx_valid_shape = tensors[1].properties.validShape.dimensionSize;
+
+  const int32_t disp_c_dim = disp_valid_shape[1];
+  const int32_t disp_h_dim = disp_valid_shape[2];
+  const int32_t disp_w_dim = disp_valid_shape[3];
+
+  const int32_t spx_c_dim = spx_valid_shape[1];
+  const int32_t spx_h_dim = spx_valid_shape[2];
+  const int32_t spx_w_dim = spx_valid_shape[3];
+
+  if (disp_c_dim != spx_c_dim) {
+    LOG_ERROR(logger_, "=> disp/spx channel mismatch, disp_c=" << disp_c_dim << ", spx_c=" << spx_c_dim);
+    return -1;
+  }
+
+  if (disp_h_dim <= 0 || disp_w_dim <= 0 || spx_h_dim <= 0 || spx_w_dim <= 0) {
+    LOG_ERROR(logger_, "=> invalid tensor shape.");
+    return -1;
+  }
+
+  const int32_t scale_h = spx_h_dim / disp_h_dim;
+  const int32_t scale_w = spx_w_dim / disp_w_dim;
+  if (scale_h <= 0 || scale_w <= 0) {
+    LOG_ERROR(logger_, "=> invalid upsample scale, scale_h=" << scale_h << ", scale_w=" << scale_w);
+    return -1;
+  }
+
+  // ----------------------------
+  // 2. Use stride for real memory layout
+  //    stride is in bytes
+  // ----------------------------
+  const int32_t *disp_stride = tensors[0].properties.alignedByteSize ? tensors[0].properties.stride : nullptr;
+  const int32_t *spx_stride = tensors[1].properties.alignedByteSize ? tensors[1].properties.stride : nullptr;
+
+  if (disp_stride == nullptr || spx_stride == nullptr) {
+    LOG_ERROR(logger_, "=> tensor stride is null.");
+    return -1;
+  }
+
+  // element size in bytes
+  int disp_elem_size = 0;
+  int spx_elem_size = 0;
+
+  switch (tensors[0].properties.tensorType) {
+  case HB_DNN_TENSOR_TYPE_S32: disp_elem_size = 4; break;
+  case HB_DNN_TENSOR_TYPE_F32: disp_elem_size = 4; break;
+  default: LOG_ERROR(logger_, "=> unsupported disp tensor type."); return -1;
+  }
+
+  switch (tensors[1].properties.tensorType) {
+  case HB_DNN_TENSOR_TYPE_S16: spx_elem_size = 2; break;
+  case HB_DNN_TENSOR_TYPE_F32: spx_elem_size = 4; break;
+  default: LOG_ERROR(logger_, "=> unsupported spx tensor type."); return -1;
+  }
+
+  // stride[1]: bytes per channel
+  // stride[2]: bytes per row
+  const int32_t disp_c_stride = disp_stride[1] / disp_elem_size;
+  const int32_t disp_h_stride = disp_stride[2] / disp_elem_size;
+
+  const int32_t spx_c_stride = spx_stride[1] / spx_elem_size;
+  const int32_t spx_h_stride = spx_stride[2] / spx_elem_size;
+
+  // ----------------------------
+  // 3. Get quant scales
+  // ----------------------------
+  float scale_constant = 1.0f;
+  float *disp_scale = &scale_constant;
+  float *spx_scale = &scale_constant;
+
+  if (tensors[0].properties.quantiType == SCALE) {
+    disp_scale = tensors[0].properties.scale.scaleData;
+  }
+  if (tensors[1].properties.quantiType == SCALE) {
+    spx_scale = tensors[1].properties.scale.scaleData;
+  }
+
+  // For disp output, quantizeAxis = 1, so each channel may have its own scale
+  // For spx, usually one shared scale is enough in your model
+  const bool disp_per_channel_scale =
+      (tensors[0].properties.quantiType == SCALE && tensors[0].properties.scale.scaleLen >= disp_c_dim &&
+       tensors[0].properties.quantizeAxis == 1);
+
+  const float spx_scale_val = *spx_scale;
+
+  // ----------------------------
+  // 4. Allocate output with valid size
+  // ----------------------------
+  out_mat = cv::Mat::zeros(spx_h_dim, spx_w_dim, CV_32FC1);
+  float *result_ptr = reinterpret_cast<float *>(out_mat.data);
+
+  // ----------------------------
+  // 5. Read memory using stride, not valid width
+  // ----------------------------
+  if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S32 &&
+      tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    auto disp_base = reinterpret_cast<int32_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    for (int32_t c = 0; c < spx_c_dim; ++c) {
+      const float cur_disp_scale = disp_per_channel_scale ? disp_scale[c] : (*disp_scale);
+      const float cur_scale = cur_disp_scale * spx_scale_val;
+
+      const int32_t *disp_c_ptr = disp_base + c * disp_c_stride;
+      const int16_t *spx_c_ptr = spx_base + c * spx_c_stride;
+
+      for (int32_t y = 0; y < spx_h_dim; ++y) {
+        const int32_t idx_y = std::min(y / scale_h, disp_h_dim - 1);
+        float *out_row = result_ptr + y * spx_w_dim;
+        const int16_t *spx_row = spx_c_ptr + y * spx_h_stride;
+        const int32_t *disp_row = disp_c_ptr + idx_y * disp_h_stride;
+
+        int32_t x = 0;
+#ifdef __aarch64__
+        for (; x <= spx_w_dim - 4; x += 4) {
+          const int32_t idx_x0 = std::min((x + 0) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x1 = std::min((x + 1) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x2 = std::min((x + 2) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x3 = std::min((x + 3) / scale_w, disp_w_dim - 1);
+
+          int32x4_t disp_s32 = {disp_row[idx_x0], disp_row[idx_x1], disp_row[idx_x2], disp_row[idx_x3]};
+          int16x4_t spx_s16 = vld1_s16(spx_row + x);
+          int32x4_t spx_s32 = vmovl_s16(spx_s16);
+
+          float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
+          float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
+          float32x4_t mul_f32 = vmulq_n_f32(vmulq_f32(disp_f32, spx_f32), cur_scale);
+
+          float32x4_t out_f32 = vld1q_f32(out_row + x);
+          out_f32 = vaddq_f32(out_f32, mul_f32);
+          vst1q_f32(out_row + x, out_f32);
+        }
+#endif
+        for (; x < spx_w_dim; ++x) {
+          const int32_t idx_x = std::min(x / scale_w, disp_w_dim - 1);
+          out_row[x] += static_cast<float>(disp_row[idx_x]) * static_cast<float>(spx_row[x]) * cur_scale;
+        }
+      }
+    }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_F32 &&
+             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_F32) {
+    auto disp_base = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<float *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    for (int32_t c = 0; c < spx_c_dim; ++c) {
+      const float cur_disp_scale = disp_per_channel_scale ? disp_scale[c] : (*disp_scale);
+      const float cur_scale = cur_disp_scale * spx_scale_val;
+
+      const float *disp_c_ptr = disp_base + c * disp_c_stride;
+      const float *spx_c_ptr = spx_base + c * spx_c_stride;
+
+      for (int32_t y = 0; y < spx_h_dim; ++y) {
+        const int32_t idx_y = std::min(y / scale_h, disp_h_dim - 1);
+        float *out_row = result_ptr + y * spx_w_dim;
+        const float *spx_row = spx_c_ptr + y * spx_h_stride;
+        const float *disp_row = disp_c_ptr + idx_y * disp_h_stride;
+
+        int32_t x = 0;
+#ifdef __aarch64__
+        for (; x <= spx_w_dim - 4; x += 4) {
+          const int32_t idx_x0 = std::min((x + 0) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x1 = std::min((x + 1) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x2 = std::min((x + 2) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x3 = std::min((x + 3) / scale_w, disp_w_dim - 1);
+
+          float32x4_t disp_f32 = {disp_row[idx_x0], disp_row[idx_x1], disp_row[idx_x2], disp_row[idx_x3]};
+          float32x4_t spx_f32 = vld1q_f32(spx_row + x);
+          float32x4_t mul_f32 = vmulq_n_f32(vmulq_f32(disp_f32, spx_f32), cur_scale);
+
+          float32x4_t out_f32 = vld1q_f32(out_row + x);
+          out_f32 = vaddq_f32(out_f32, mul_f32);
+          vst1q_f32(out_row + x, out_f32);
+        }
+#endif
+        for (; x < spx_w_dim; ++x) {
+          const int32_t idx_x = std::min(x / scale_w, disp_w_dim - 1);
+          out_row[x] += disp_row[idx_x] * spx_row[x] * cur_scale;
+        }
+      }
+    }
+  } else {
+    LOG_ERROR(logger_, "=> output tensor type unsupported! tensor[0]: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[0].properties.tensorType))
+                           << ", tensor[1]: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(tensors[1].properties.tensorType)));
+    return -1;
+  }
+
   return 0;
 }
 

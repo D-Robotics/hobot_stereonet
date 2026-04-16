@@ -2204,6 +2204,22 @@ void StereoNetNode::save_result_once(const std::shared_ptr<PubData> &pub_data) {
     cv::imwrite(origin_left_image_path, pub_data->origin_left);
     cv::imwrite(origin_right_image_path, pub_data->origin_right);
   }
+  if (!pub_data->left_bgr.empty()) {
+    cv::Mat gray;
+    cv::cvtColor(pub_data->left_bgr, gray, cv::COLOR_BGR2GRAY);
+
+    cv::Mat gray_f;
+    gray.convertTo(gray_f, CV_32F, 1.0 / 255.0);
+
+    cv::Mat grad_x, grad_y, grad_mag;
+    cv::Sobel(gray_f, grad_x, CV_32F, 1, 0, 3);
+    cv::Sobel(gray_f, grad_y, CV_32F, 0, 1, 3);
+    cv::magnitude(grad_x, grad_y, grad_mag);
+
+    cv::imwrite((fs::path(save_dir_) / fs::path(ss.str() + "left_grad_x.pfm")).string(), grad_x);
+    cv::imwrite((fs::path(save_dir_) / fs::path(ss.str() + "left_grad_y.pfm")).string(), grad_y);
+    cv::imwrite((fs::path(save_dir_) / fs::path(ss.str() + "left_grad.pfm")).string(), grad_mag);
+  }
 
   RCLCPP_WARN(this->get_logger(), "\033[32m=> save result to %s, pub count: %d, save count: %d\033[0m",
               save_dir_.c_str(), pub_data->count, current_count);
