@@ -885,20 +885,20 @@ int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_ten
 
 int StereonetProcess::get_idle_tensor() {
   for (int i = 0; i < max_memory_count_; ++i) {
-    if (idle_tensor_[i]) {
-      idle_tensor_[i] = false;
+    bool expected = true;
+    if (idle_tensor_[i].compare_exchange_strong(expected, false, std::memory_order_acquire,
+                                                std::memory_order_relaxed)) {
       return i;
     }
   }
+
   return -1;
 }
 
-int StereonetProcess::set_tensor_idle(const int &tensor_id) {
-  if (tensor_id >= 0 || tensor_id < max_memory_count_) {
-    idle_tensor_[tensor_id] = true;
-    return 0;
+void StereonetProcess::set_tensor_idle(const InferenceHandle &tensor_id) {
+  if (tensor_id >= 0 && tensor_id < max_memory_count_) {
+    idle_tensor_[tensor_id].store(true, std::memory_order_release);
   }
-  return -1;
 }
 
 int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_tensors, uint8_t *left_img_data,

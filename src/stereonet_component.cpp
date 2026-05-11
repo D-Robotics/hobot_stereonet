@@ -849,8 +849,15 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
             this->get_logger(), *this->get_clock(), 5000,
             "\033[31m=> input image size not match model input size, need resize, [%d x %d] -> [%d x %d]\033[0m",
             single_img_w, single_img_h, model_input_w, model_input_h);
-        resize_stereo_nv12_image(stereo_msg, single_img_w, single_img_h, model_input_w, model_input_h, left_img_data,
-                                 right_img_data);
+        cv::Mat stereo_bgr;
+        ImgConvertUtils::nv12_to_bgr_mat(const_cast<uint8_t *>(stereo_msg->data.data()), stereo_bgr, stereo_msg->width,
+                                         stereo_msg->height);
+        cv::Mat left_bgr = stereo_bgr.rowRange(0, single_img_h).clone();
+        cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, stereo_msg->height).clone();
+        cv::resize(left_bgr, left_bgr, cv::Size(model_input_w, model_input_h));
+        cv::resize(right_bgr, right_bgr, cv::Size(model_input_w, model_input_h));
+        ImgConvertUtils::bgr_mat_to_nv12(left_bgr, left_img_data.data());
+        ImgConvertUtils::bgr_mat_to_nv12(right_bgr, right_img_data.data());
         if (camera_info_updated_ == false) {
           camera_info_updated_ = true;
           camera_intrinsic_->cx = camera_intrinsic_->cx * model_input_w / single_img_w;
@@ -875,11 +882,17 @@ void StereoNetNode::preprocess(const sensor_msgs::msg::Image::SharedPtr &stereo_
       }
     } else if (calib_method_ == "custom") {
       ScopeProcessTime t(this->get_logger(), "stereo rectify");
-      std::vector<uint8_t> left_src_nv12;
-      std::vector<uint8_t> right_src_nv12;
-      split_stereo_nv12_image(stereo_msg, single_img_w, single_img_h, left_src_nv12, right_src_nv12);
-      stereo_rectifier_->rectify_nv12(left_src_nv12.data(), right_src_nv12.data(), single_img_w, single_img_h,
-                                      left_img_data.data(), right_img_data.data(), model_input_w, model_input_h);
+      cv::Mat stereo_bgr;
+      ImgConvertUtils::nv12_to_bgr_mat(const_cast<uint8_t *>(stereo_msg->data.data()), stereo_bgr, stereo_msg->width,
+                                       stereo_msg->height);
+
+      cv::Mat left_bgr = stereo_bgr.rowRange(0, single_img_h).clone();
+      cv::Mat right_bgr = stereo_bgr.rowRange(single_img_h, stereo_msg->height).clone();
+      // rectify
+      cv::Mat left_bgr_rectify, right_bgr_rectify;
+      stereo_rectifier_->rectify(left_bgr, right_bgr, left_bgr_rectify, right_bgr_rectify);
+      ImgConvertUtils::bgr_mat_to_nv12(left_bgr_rectify, left_img_data.data());
+      ImgConvertUtils::bgr_mat_to_nv12(right_bgr_rectify, right_img_data.data());
     }
 
   } else if (stereo_msg->encoding == "rgb8" || stereo_msg->encoding == "bgr8") {
@@ -1688,8 +1701,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   // ===================================== render visual image ==============================================
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
-  cv::Mat left_bgr;
-  ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), left_bgr, width, height);
+  cv::Mat left_bgr = pub_data->left_bgr;
 
   cv::Mat visual_img;
 

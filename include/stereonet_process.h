@@ -269,7 +269,7 @@ private:
    * @param tensor_id Index of the tensor to set as idle
    * @return 0 on success, -1 on failure
    */
-  int set_tensor_idle(const int &tensor_id);
+  void set_tensor_idle(const InferenceHandle &tensor_id);
 
   /**
    * @brief Fill image data into the input tensor
