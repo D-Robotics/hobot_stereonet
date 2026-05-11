@@ -622,10 +622,11 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
   // ----------------------------
   // 2. Use stride for real memory layout
-  //    stride is in bytes
+  //    stride is in bytes.
+  //    Use auto to support both int32_t* and int64_t* SDK definitions.
   // ----------------------------
-  const int32_t *disp_stride = tensors[0].properties.alignedByteSize ? tensors[0].properties.stride : nullptr;
-  const int32_t *spx_stride = tensors[1].properties.alignedByteSize ? tensors[1].properties.stride : nullptr;
+  auto disp_stride = tensors[0].properties.alignedByteSize ? tensors[0].properties.stride : nullptr;
+  auto spx_stride = tensors[1].properties.alignedByteSize ? tensors[1].properties.stride : nullptr;
 
   if (disp_stride == nullptr || spx_stride == nullptr) {
     LOG_ERROR(logger_, "=> tensor stride is null.");
@@ -650,11 +651,10 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
   // stride[1]: bytes per channel
   // stride[2]: bytes per row
-  const int32_t disp_c_stride = disp_stride[1] / disp_elem_size;
-  const int32_t disp_h_stride = disp_stride[2] / disp_elem_size;
-
-  const int32_t spx_c_stride = spx_stride[1] / spx_elem_size;
-  const int32_t spx_h_stride = spx_stride[2] / spx_elem_size;
+  const int64_t disp_c_stride = static_cast<int64_t>(disp_stride[1]) / disp_elem_size;
+  const int64_t disp_h_stride = static_cast<int64_t>(disp_stride[2]) / disp_elem_size;
+  const int64_t spx_c_stride = static_cast<int64_t>(spx_stride[1]) / spx_elem_size;
+  const int64_t spx_h_stride = static_cast<int64_t>(spx_stride[2]) / spx_elem_size;
 
   // ----------------------------
   // 3. Get quant scales
@@ -670,8 +670,8 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
     spx_scale = tensors[1].properties.scale.scaleData;
   }
 
-  // For disp output, quantizeAxis = 1, so each channel may have its own scale
-  // For spx, usually one shared scale is enough in your model
+  // For disp output, quantizeAxis = 1, so each channel may have its own scale.
+  // For spx, usually one shared scale is enough in your model.
   const bool disp_per_channel_scale =
       (tensors[0].properties.quantiType == SCALE && tensors[0].properties.scale.scaleLen >= disp_c_dim &&
        tensors[0].properties.quantizeAxis == 1);
@@ -706,7 +706,6 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
         const int32_t *disp_row = disp_c_ptr + idx_y * disp_h_stride;
 
         int32_t x = 0;
-#ifdef __aarch64__
         for (; x <= spx_w_dim - 4; x += 4) {
           const int32_t idx_x0 = std::min((x + 0) / scale_w, disp_w_dim - 1);
           const int32_t idx_x1 = std::min((x + 1) / scale_w, disp_w_dim - 1);
@@ -725,7 +724,6 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
           out_f32 = vaddq_f32(out_f32, mul_f32);
           vst1q_f32(out_row + x, out_f32);
         }
-#endif
         for (; x < spx_w_dim; ++x) {
           const int32_t idx_x = std::min(x / scale_w, disp_w_dim - 1);
           out_row[x] += static_cast<float>(disp_row[idx_x]) * static_cast<float>(spx_row[x]) * cur_scale;
@@ -751,7 +749,6 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
         const float *disp_row = disp_c_ptr + idx_y * disp_h_stride;
 
         int32_t x = 0;
-#ifdef __aarch64__
         for (; x <= spx_w_dim - 4; x += 4) {
           const int32_t idx_x0 = std::min((x + 0) / scale_w, disp_w_dim - 1);
           const int32_t idx_x1 = std::min((x + 1) / scale_w, disp_w_dim - 1);
@@ -766,7 +763,6 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
           out_f32 = vaddq_f32(out_f32, mul_f32);
           vst1q_f32(out_row + x, out_f32);
         }
-#endif
         for (; x < spx_w_dim; ++x) {
           const int32_t idx_x = std::min(x / scale_w, disp_w_dim - 1);
           out_row[x] += disp_row[idx_x] * spx_row[x] * cur_scale;
