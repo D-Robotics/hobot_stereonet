@@ -134,6 +134,41 @@ private:
                   const int &model_input_h, std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data);
 
   /**
+   * @brief Resize the image to the specified width and height
+   * @param src_nv12 The source image data in NV12 format
+   * @param src_w The source image width
+   * @param src_h The source image height
+   * @param dst_nv12 The destination image data in NV12 format
+   * @param dst_w The destination image width
+   * @param dst_h The destination image height
+   */
+  void resize_nv12_image(const uint8_t *src_nv12, int src_w, int src_h, uint8_t *dst_nv12, int dst_w, int dst_h);
+
+  /**
+   * @brief Resize the stereo image to the specified width and height
+   * @param stereo_msg The stereo image message
+   * @param src_w The source image width
+   * @param src_h The source image height
+   * @param dst_w The destination image width
+   * @param dst_h The destination image height
+   * @param left_img_data Output shared pointer to the left image data
+   * @param right_img_data Output shared pointer to the right image data
+   */
+  void resize_stereo_nv12_image(const sensor_msgs::msg::Image::SharedPtr &stereo_msg, int src_w, int src_h, int dst_w,
+                                int dst_h, std::vector<uint8_t> &left_img_data, std::vector<uint8_t> &right_img_data);
+
+  /**
+   * @brief Split the stereo image to left and right image data
+   * @param stereo_msg The stereo image message
+   * @param single_img_w The single image width
+   * @param single_img_h The single image height
+   * @param left_nv12 Output shared pointer to the left image data
+   * @param right_nv12 Output shared pointer to the right image data
+   */
+  void split_stereo_nv12_image(const sensor_msgs::msg::Image::SharedPtr &stereo_msg, int single_img_w, int single_img_h,
+                               std::vector<uint8_t> &left_nv12, std::vector<uint8_t> &right_nv12);
+
+  /**
    * @brief Publish function to publish the processed disparity maps
    * This function runs in a separate thread and continuously publishes disparity maps.
    */
@@ -230,7 +265,7 @@ private:
    * @param bottom_bgr bottom image
    * @return true if top is left
    */
-  bool judge_top_is_left_by_ORB(const cv::Mat& top_bgr, const cv::Mat& bottom_bgr);
+  bool judge_top_is_left_by_ORB(const cv::Mat &top_bgr, const cv::Mat &bottom_bgr);
 
   // ============================================ member variables ============================================
   // sub

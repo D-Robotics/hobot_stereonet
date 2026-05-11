@@ -44,6 +44,18 @@ public:
                cv::Mat &rectified_right_image);
 
   /**
+   * @brief Rectify the left and right images
+   * @param left_nv12 The left image in NV12 format
+   * @param right_nv12 The right image in NV12 format
+   * @param output_w Output image width
+   * @param output_h Output image height
+   * @param rectified_left_nv12 The rectified left image in NV12 format
+   * @param rectified_right_nv12 The rectified right image in NV12 format
+   */
+  void rectify_nv12(const uint8_t *left_nv12, const uint8_t *right_nv12, int input_w, int input_h,
+                    uint8_t *rect_left_nv12, uint8_t *rect_right_nv12, int output_w, int output_h);
+
+  /**
    * @brief Get the intrinsic parameters
    * @param fx Focal length in x direction
    * @param fy Focal length in y direction

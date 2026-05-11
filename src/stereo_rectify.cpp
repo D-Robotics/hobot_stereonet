@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "stereo_rectify.h"
+#include <cassert>
 
 StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rclcpp::Logger &logger)
     : stereo_calib_file_path_(stereo_calib_file_path), logger_(logger) {
@@ -263,6 +264,40 @@ void StereoRectify::rectify(const cv::Mat &left_image, const cv::Mat &right_imag
       }
     }
   }
+}
+
+void StereoRectify::rectify_nv12(const uint8_t *left_nv12, const uint8_t *right_nv12, int input_w, int input_h,
+                                 uint8_t *rect_left_nv12, uint8_t *rect_right_nv12, int output_w, int output_h) {
+  assert(undistmap1ls_.size() == 1);
+  cv::Mat left_y(input_h, input_w, CV_8UC1, const_cast<uint8_t *>(left_nv12));
+  cv::Mat right_y(input_h, input_w, CV_8UC1, const_cast<uint8_t *>(right_nv12));
+
+  cv::Mat left_uv(input_h / 2, input_w, CV_8UC1, const_cast<uint8_t *>(left_nv12 + input_w * input_h));
+  cv::Mat right_uv(input_h / 2, input_w, CV_8UC1, const_cast<uint8_t *>(right_nv12 + input_w * input_h));
+
+  cv::Mat rect_left_y(output_h, output_w, CV_8UC1, rect_left_nv12);
+  cv::Mat rect_right_y(output_h, output_w, CV_8UC1, rect_right_nv12);
+
+  cv::Mat rect_left_uv(output_h / 2, output_w, CV_8UC1, rect_left_nv12 + output_w * output_h);
+  cv::Mat rect_right_uv(output_h / 2, output_w, CV_8UC1, rect_right_nv12 + output_w * output_h);
+
+  // Y plane: use original undistort maps
+  cv::remap(left_y, rect_left_y, undistmap1ls_[0], undistmap2ls_[0], cv::INTER_LINEAR);
+  cv::remap(right_y, rect_right_y, undistmap1rs_[0], undistmap2rs_[0], cv::INTER_LINEAR);
+
+  // UV plane: map needs half y coordinate
+  cv::Mat uv_map1_l = undistmap1ls_[0].clone();
+  cv::Mat uv_map2_l = undistmap2ls_[0] * 0.5f;
+  cv::Mat uv_map1_r = undistmap1rs_[0].clone();
+  cv::Mat uv_map2_r = undistmap2rs_[0] * 0.5f;
+
+  cv::resize(uv_map1_l, uv_map1_l, cv::Size(output_w, output_h / 2), 0, 0, cv::INTER_LINEAR);
+  cv::resize(uv_map2_l, uv_map2_l, cv::Size(output_w, output_h / 2), 0, 0, cv::INTER_LINEAR);
+  cv::resize(uv_map1_r, uv_map1_r, cv::Size(output_w, output_h / 2), 0, 0, cv::INTER_LINEAR);
+  cv::resize(uv_map2_r, uv_map2_r, cv::Size(output_w, output_h / 2), 0, 0, cv::INTER_LINEAR);
+
+  cv::remap(left_uv, rect_left_uv, uv_map1_l, uv_map2_l, cv::INTER_LINEAR);
+  cv::remap(right_uv, rect_right_uv, uv_map1_r, uv_map2_r, cv::INTER_LINEAR);
 }
 
 void StereoRectify::get_intrinsic(double &fx, double &fy, double &cx, double &cy, double &baseline) const {
