@@ -293,6 +293,22 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<std::string>("post_version", "auto");
   post_version_ = this->get_parameter("post_version").as_string();
 
+  this->declare_parameter<bool>("ground_angle_enable", false);
+  this->declare_parameter<int>("ground_roi_center_x", -1);
+  this->declare_parameter<int>("ground_roi_center_y", -1);
+  this->declare_parameter<int>("ground_roi_width", 80);
+  this->declare_parameter<int>("ground_roi_height", 40);
+  this->declare_parameter<int>("ground_roi_min_valid_points", 100);
+  ground_angle_enable_ = this->get_parameter("ground_angle_enable").as_bool();
+  ground_roi_center_x_ = this->get_parameter("ground_roi_center_x").as_int();
+  ground_roi_center_y_ = this->get_parameter("ground_roi_center_y").as_int();
+  ground_roi_width_ = this->get_parameter("ground_roi_width").as_int();
+  ground_roi_height_ = this->get_parameter("ground_roi_height").as_int();
+  ground_roi_min_valid_points_ = this->get_parameter("ground_roi_min_valid_points").as_int();
+  if (ground_roi_width_ <= 0) ground_roi_width_ = 160;
+  if (ground_roi_height_ <= 0) ground_roi_height_ = 80;
+  if (ground_roi_min_valid_points_ <= 0) ground_roi_min_valid_points_ = 100;
+
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -343,6 +359,10 @@ void StereoNetNode::set_node_params() {
           << epipolar_mode_ << ", " << feature_epipolar_mode_ << ", " << epipolar_img_ << ", " << chessboard_per_rows_
           << ", " << chessboard_per_cols_ << ", " << chessboard_square_size_ << "(m)]" << std::endl
           << "feature_epipolar_mode: " << feature_epipolar_mode_ << std::endl
+          << "[ground_angle_enable, ground_roi_center_x, ground_roi_center_y, ground_roi_width, ground_roi_height, "
+             "ground_roi_min_valid_points]: ["
+          << ground_angle_enable_ << ", " << ground_roi_center_x_ << ", " << ground_roi_center_y_ << ", "
+          << ground_roi_width_ << ", " << ground_roi_height_ << ", " << ground_roi_min_valid_points_ << "]" << std::endl
           << "post_version: " << post_version_ << std::endl
           << "[infer_thread_num, save_thread_num, max_save_task]: [" << infer_thread_num_ << ", " << save_thread_num_
           << ", " << max_save_task_ << "]" << std::endl
@@ -1696,6 +1716,63 @@ static std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vec
   return {mean, neg_range, pos_range, count};
 }
 
+/**
+ * @brief Compute the ground angle based on the depth image
+ * @param depth The depth image
+ * @param intr The camera intrinsic
+ * @param roi The ROI
+ * @param min_valid_points The minimum valid points
+ * @param angle_deg The output ground angle
+ * @return true if the ground angle is valid
+ */
+static bool compute_ground_xz_angle(const cv::Mat &depth, const CameraIntrinsic &intr, const cv::Rect &roi,
+                                    int min_valid_points, double &angle_deg) {
+  if (depth.empty() || depth.type() != CV_16UC1) return false;
+  if (intr.fx <= 0 || intr.fy <= 0) return false;
+
+  std::vector<cv::Point3d> pts;
+  pts.reserve(roi.width * roi.height);
+
+  for (int v = roi.y; v < roi.y + roi.height; ++v) {
+    const uint16_t *row = depth.ptr<uint16_t>(v);
+    for (int u = roi.x; u < roi.x + roi.width; ++u) {
+      uint16_t d_mm = row[u];
+      if (d_mm == 0) continue;
+
+      double z = d_mm * 0.001; // mm -> m
+      double x = (static_cast<double>(u) - intr.cx) * z / intr.fx;
+      double y = (static_cast<double>(v) - intr.cy) * z / intr.fy;
+
+      pts.emplace_back(x, y, z);
+    }
+  }
+
+  if (static_cast<int>(pts.size()) < min_valid_points) return false;
+
+  // Fit plane as: y = a * x + b * z + c
+  cv::Mat A(static_cast<int>(pts.size()), 3, CV_64F);
+  cv::Mat B(static_cast<int>(pts.size()), 1, CV_64F);
+
+  for (int i = 0; i < static_cast<int>(pts.size()); ++i) {
+    A.at<double>(i, 0) = pts[i].x;
+    A.at<double>(i, 1) = pts[i].z;
+    A.at<double>(i, 2) = 1.0;
+    B.at<double>(i, 0) = pts[i].y;
+  }
+
+  cv::Mat X;
+  if (!cv::solve(A, B, X, cv::DECOMP_SVD)) return false;
+
+  double a = X.at<double>(0, 0);
+  double b = X.at<double>(1, 0);
+
+  // Plane normal is [-a, 1, -b].
+  // XZ plane normal is [0, 1, 0].
+  // Angle between ground plane and XZ plane.
+  angle_deg = std::atan(std::sqrt(a * a + b * b)) * 180.0 / M_PI;
+  return true;
+}
+
 void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_data) {
   if (visual_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
   // ===================================== render visual image ==============================================
@@ -2041,6 +2118,49 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
       cv::putText(visual_img, "or set the mipi_channel and mipi_channel2 parameters.", cv::Point(10, text_height * 4),
                   cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 0, 255), 2);
     }
+  }
+  // ===================================== render ground angle ===============================================
+  if (ground_angle_enable_) {
+    int cx = ground_roi_center_x_;
+    int cy = ground_roi_center_y_;
+
+    // Default ROI: image center x, lower area y.
+    if (cx < 0) cx = width / 2;
+    if (cy < 0) cy = height - (ground_roi_height_ / 2) - 5;
+
+    int roi_w = std::min(ground_roi_width_, width);
+    int roi_h = std::min(ground_roi_height_, height);
+
+    int x0 = cx - roi_w / 2;
+    int y0 = cy - roi_h / 2;
+
+    x0 = std::max(0, std::min(x0, width - roi_w));
+    y0 = std::max(0, std::min(y0, height - roi_h));
+
+    cv::Rect ground_roi(x0, y0, roi_w, roi_h);
+
+    double ground_angle_deg = 0.0;
+    bool ok = compute_ground_xz_angle(pub_data->depth, *camera_intrinsic_, ground_roi, ground_roi_min_valid_points_,
+                                      ground_angle_deg);
+
+    // Draw ROI on upper left image and lower depth visualization.
+    cv::rectangle(visual_img, ground_roi, CV_RGB(0, 255, 0), 2);
+
+    cv::Rect ground_roi_bottom(ground_roi.x, ground_roi.y + left_bgr.rows, ground_roi.width, ground_roi.height);
+    cv::rectangle(visual_img, ground_roi_bottom, CV_RGB(0, 255, 0), 2);
+
+    std::stringstream ss;
+    if (ok) {
+      ss << "Ground-XZ angle: " << std::fixed << std::setprecision(2) << ground_angle_deg << " deg";
+    } else {
+      ss << "Ground-XZ angle: invalid";
+    }
+
+    int text_y = std::max(30, ground_roi.y - 10);
+    cv::putText(visual_img, ss.str(), cv::Point(ground_roi.x, text_y), cv::FONT_HERSHEY_SIMPLEX, font_scale,
+                CV_RGB(0, 255, 0), 2);
+    cv::putText(visual_img, ss.str(), cv::Point(ground_roi_bottom.x, ground_roi_bottom.y - 10),
+                cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 255, 0), 2);
   }
 
   // ===================================== publish visual image ============================================

@@ -129,6 +129,13 @@ def generate_launch_description():
         {'name':'chessboard_square_size', 'default_value':'0.06', 'description': 'chessboard_square_size'},
         {'name':'feature_epipolar_mode', 'default_value':'False', 'description': 'feature_epipolar_mode'},
 
+        {'name':'ground_angle_enable', 'default_value':'False', 'description': 'ground_angle_enable'},
+        {'name':'ground_roi_center_x', 'default_value':'-1', 'description': 'ground_roi_center_x'},
+        {'name':'ground_roi_center_y', 'default_value':'-1', 'description': 'ground_roi_center_y'},
+        {'name':'ground_roi_width', 'default_value':'160', 'description': 'ground_roi_width'},
+        {'name':'ground_roi_height', 'default_value':'80', 'description': 'ground_roi_height'},
+        {'name':'ground_roi_min_valid_points', 'default_value':'100', 'description': 'ground_roi_min_valid_points'},
+
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
         {'name':'max_save_task', 'default_value':'50', 'description': 'max_save_task'},

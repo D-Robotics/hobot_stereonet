@@ -61,6 +61,7 @@ render_perf=True
 render_max_disp=80
 render_z_near=-1.0
 render_z_range=3.0
+depth_decimal_num=2
 
 # speckle filter
 speckle_filter_enable=False
@@ -71,6 +72,7 @@ max_disp_diff=1.0
 pointcloud_height_min=-5.0
 pointcloud_height_max=5.0
 pointcloud_depth_max=5.0
+pointcloud_downsample_step=2
 
 # pcl filter
 pcl_filter_enable=False
@@ -118,6 +120,14 @@ chessboard_per_rows=20
 chessboard_per_cols=11
 chessboard_square_size=0.06
 feature_epipolar_mode=False
+
+# angle calc
+ground_angle_enable=False
+ground_roi_center_x=-1
+ground_roi_center_y=-1
+ground_roi_width=80
+ground_roi_height=40
+ground_roi_min_valid_points=100
 
 # web
 stereonet_pub_web=True
@@ -181,6 +191,7 @@ while [[ $# -gt 0 ]]; do
     --render_max_disp) render_max_disp=$2; shift 2 ;;
     --render_z_near) render_z_near=$2; shift 2 ;;
     --render_z_range) render_z_range=$2; shift 2 ;;
+    --depth_decimal_num) depth_decimal_num=$2; shift 2 ;;
 
     # speckle filter
     --speckle_filter_enable) speckle_filter_enable=$2; shift 2 ;;
@@ -191,6 +202,7 @@ while [[ $# -gt 0 ]]; do
     --pointcloud_height_min) pointcloud_height_min=$2; shift 2 ;;
     --pointcloud_height_max) pointcloud_height_max=$2; shift 2 ;;
     --pointcloud_depth_max) pointcloud_depth_max=$2; shift 2 ;;
+    --pointcloud_downsample_step) pointcloud_downsample_step=$2; shift 2 ;;
 
     # pcl filter
     --pcl_filter_enable) pcl_filter_enable=$2; shift 2 ;;
@@ -239,6 +251,14 @@ while [[ $# -gt 0 ]]; do
     --chessboard_square_size) chessboard_square_size=$2; shift 2 ;;
     --feature_epipolar_mode) feature_epipolar_mode=$2; shift 2 ;;
 
+    # angle calc
+    --ground_angle_enable) ground_angle_enable=$2; shift 2 ;;
+    --ground_roi_center_x) ground_roi_center_x=$2; shift 2 ;;
+    --ground_roi_center_y) ground_roi_center_y=$2; shift 2 ;;
+    --ground_roi_width) ground_roi_width=$2; shift 2 ;;
+    --ground_roi_height) ground_roi_height=$2; shift 2 ;;
+    --ground_roi_min_valid_points) ground_roi_min_valid_points=$2; shift 2 ;;
+
     # web
     --stereonet_pub_web) stereonet_pub_web=$2; shift 2 ;;
     --codec_sub_topic) codec_sub_topic=$2; shift 2 ;;
@@ -267,8 +287,10 @@ mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotat
 mipi_channel:=$mipi_channel mipi_channel2:=$mipi_channel2 mipi_cal_rotation:=$mipi_cal_rotation \
 calib_method:=$calib_method stereo_calib_file_path:=$stereo_calib_file_path \
 render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max_disp render_z_near:=$render_z_near render_z_range:=$render_z_range \
+depth_decimal_num:=$depth_decimal_num \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=$pointcloud_height_min pointcloud_height_max:=$pointcloud_height_max pointcloud_depth_max:=$pointcloud_depth_max \
+pointcloud_downsample_step:=$pointcloud_downsample_step \
 pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
 infer_thread_num:=$infer_thread_num save_thread_num:=$save_thread_num max_save_task:=$max_save_task \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
@@ -281,6 +303,8 @@ left_img_mask_enable:=$left_img_mask_enable \
 epipolar_mode:=$epipolar_mode epipolar_img:=$epipolar_img \
 chessboard_per_rows:=$chessboard_per_rows chessboard_per_cols:=$chessboard_per_cols chessboard_square_size:=$chessboard_square_size \
 feature_epipolar_mode:=$feature_epipolar_mode \
+ground_angle_enable:=$ground_angle_enable ground_roi_center_x:=$ground_roi_center_x ground_roi_center_y:=$ground_roi_center_y \
+ground_roi_width:=$ground_roi_width ground_roi_height:=$ground_roi_height ground_roi_min_valid_points:=$ground_roi_min_valid_points \
 stereonet_pub_web:=$stereonet_pub_web codec_sub_topic:=$codec_sub_topic codec_in_format:=$codec_in_format \
 codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic websocket_channel:=$websocket_channel
 

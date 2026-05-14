@@ -390,6 +390,14 @@ private:
   double chessboard_square_size_ = 0.06;
   bool feature_epipolar_mode_ = false;
 
+  // angle calc
+  bool ground_angle_enable_ = false;
+  int ground_roi_center_x_ = -1;
+  int ground_roi_center_y_ = -1;
+  int ground_roi_width_ = 160;
+  int ground_roi_height_ = 80;
+  int ground_roi_min_valid_points_ = 100;
+
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
   std::vector<std::thread> infer_threads_;
