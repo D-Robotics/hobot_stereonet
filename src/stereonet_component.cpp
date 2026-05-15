@@ -2204,6 +2204,7 @@ void StereoNetNode::publish_epipolar_image(const std::shared_ptr<PubData> &pub_d
                                             chessboard_square_size_, camera_intrinsic_, visual_img);
   }
   // ===================================== publish visual image ============================================
+  if (visual_img.empty()) return;
   pub_data->visual_img = visual_img;
   // Convert cv::Mat to sensor_msgs::msg::Image
   auto visual_msg = std::make_shared<sensor_msgs::msg::Image>();
@@ -2242,6 +2243,7 @@ void StereoNetNode::publish_feature_epipolar_image(const std::shared_ptr<PubData
     FeatureEpipolarAlign::check_epipolar_alignment(left_img, right_img, camera_intrinsic_, visual_img);
   }
   // ===================================== publish visual image ============================================
+  if (visual_img.empty()) return;
   pub_data->visual_img = visual_img;
   // Convert cv::Mat to sensor_msgs::msg::Image
   auto visual_msg = std::make_shared<sensor_msgs::msg::Image>();
