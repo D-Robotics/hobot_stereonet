@@ -51,8 +51,10 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     stereo_node["cam1"]["T_cn_cnm1"] >> cam1_T_cn_cnm1;
 
     float fov_scale = 0.8f;
+    bool fov_scale_provided = false;
     if (!stereo_node["cam1"]["fov_scale"].empty()) {
       stereo_node["cam1"]["fov_scale"] >> fov_scale;
+      fov_scale_provided = true;
     }
 
     float alpha = 0.0f;
@@ -87,16 +89,17 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     }
 
     // save
-    Kls_.push_back(Kl);
-    Krs_.push_back(Kr);
-    Dls_.push_back(Dl);
-    Drs_.push_back(Dr);
-    R_rls_.push_back(R_rl);
-    t_rls_.push_back(t_rl);
-    cam_resolutions_.push_back(cam0_resolution);
-    distortion_models_.push_back(cam0_distortion_model);
-    fov_scales_.push_back(fov_scale);
-    alphas_.push_back(alpha);
+    Kl_ = Kl;
+    Kr_ = Kr;
+    Dl_ = Dl;
+    Dr_ = Dr;
+    R_rl_ = R_rl;
+    t_rl_ = t_rl;
+    cam_resolution_ = cam0_resolution;
+    distortion_model_ = cam0_distortion_model;
+    fov_scale_ = fov_scale;
+    fov_scale_provided_ = fov_scale_provided;
+    alpha_ = alpha;
 
     // print
     RCLCPP_WARN_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
@@ -115,130 +118,199 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
   };
 
-  while (true) {
-    std::string stereo_no = "stereo" + std::to_string(i);
-    if (!fs[stereo_no].empty()) {
-      cv::FileNode stereo_node = fs[stereo_no];
-      extract_parameters(stereo_node);
-      i++;
-    } else {
-      if (i == 0) {
-        extract_parameters(fs);
+  if (!fs["cameraMatrix1"].empty()) {
+    // OpenCV format
+    fs["cameraMatrix1"] >> Kl_;
+    fs["distCoeffs1"] >> Dl_;
+    fs["cameraMatrix2"] >> Kr_;
+    fs["distCoeffs2"] >> Dr_;
+    fs["R"] >> R_rl_;
+
+    fs["T"] >> t_rl_;
+    int width, height;
+    fs["image_width"] >> width;
+    fs["image_height"] >> height;
+    cam_resolution_ = {width, height};
+    distortion_model_ = Dl_.total() == 8 ? "rational_polynomial" : "radtan";
+    if (!fs["distortion_model"].empty()) fs["distortion_model"] >> distortion_model_;
+    alpha_ = 0.0f;
+    if (!fs["alpha"].empty()) fs["alpha"] >> alpha_;
+    // print
+    RCLCPP_WARN_STREAM(logger_, "=> load stereo calib from: " << stereo_calib_file_path_);
+    RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl_);
+    RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl_);
+    RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr_);
+    RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr_);
+    RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl_);
+    RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl_);
+    RCLCPP_WARN_STREAM(logger_,
+                       "=> cam_resolution: " << "[" << cam_resolution_[0] << ", " << cam_resolution_[1] << "]");
+    RCLCPP_WARN_STREAM(logger_, "=> cam_distortion_model: " << distortion_model_);
+    if (distortion_model_ == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale_);
+    if (distortion_model_ == "radtan" || distortion_model_ == "rational_polynomial")
+      RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha_);
+    RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
+  } else if (!fs["stereo0"].empty()) {
+    // stereo0 format
+    /*
+    stereo0:
+      cam0:
+        intrinsics: [...]
+        distortion_coeffs: [...]
+        resolution: [...]
+        distortion_model: radtan|rational_polynomial|equidistant
+      cam1:
+        intrinsics: [...]
+        distortion_coeffs: [...]
+        T_cn_cnm1: [...]
+    */
+    extract_parameters(fs["stereo0"]);
+  } else {
+    // cam0/cam1 format
+    /*
+    cam0:
+      intrinsics: [...]
+      distortion_coeffs: [...]
+      resolution: [...]
+      distortion_model: radtan|rational_polynomial|equidistant
+    cam1:
+      intrinsics: [...]
+      distortion_coeffs: [...]
+      T_cn_cnm1: [...]
+    */
+    extract_parameters(fs);
+  }
+
+  fs.release();
+}
+
+static bool has_black_border(const cv::Mat &map1, const cv::Mat &map2, int input_w, int input_h) {
+  for (int y = 0; y < map1.rows; ++y) {
+    const float *mx = map1.ptr<float>(y);
+    const float *my = map2.ptr<float>(y);
+
+    for (int x = 0; x < map1.cols; ++x) {
+      if (mx[x] < 0 || mx[x] >= input_w - 1 || my[x] < 0 || my[x] >= input_h - 1) {
+        return true;
       }
+    }
+  }
+  return false;
+}
+
+static float find_max_no_black_fovscale(const cv::Mat &Kl, const cv::Mat &Dl, const cv::Mat &Kr, const cv::Mat &Dr,
+                                        const cv::Mat &R_rl, const cv::Mat &t_rl, int input_w, int input_h,
+                                        int output_w, int output_h) {
+  float best_scale = 0.1f;
+
+  for (float scale = 0.1f; scale <= 2.0f; scale += 0.01f) {
+    cv::Mat Rl, Rr, Pl, Pr, Q;
+    cv::Mat map1_l, map2_l, map1_r, map2_r;
+
+    cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(input_w, input_h), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                               cv::fisheye::CALIB_ZERO_DISPARITY, cv::Size(output_w, output_h), 0.0, scale);
+
+    cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(output_w, output_h), CV_32FC1, map1_l, map2_l);
+
+    cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(output_w, output_h), CV_32FC1, map1_r, map2_r);
+
+    bool left_black = has_black_border(map1_l, map2_l, input_w, input_h);
+    bool right_black = has_black_border(map1_r, map2_r, input_w, input_h);
+
+    if (!left_black && !right_black) {
+      best_scale = scale;
+    } else {
       break;
     }
   }
-  fs.release();
+
+  return best_scale;
 }
 
 int StereoRectify::build_undistmap(const int &input_width, const int &input_height, const int &output_width,
                                    const int &output_height) {
   if (undistmap_built_) return 0;
   RCLCPP_WARN_STREAM(logger_, "=> -------- build_undistmap --------------------");
-  for (int i = 0; i < Kls_.size(); i++) {
-    cv::Mat Kl = Kls_[i].clone();
-    cv::Mat Kr = Krs_[i].clone();
-    cv::Mat Dl = Dls_[i].clone();
-    cv::Mat Dr = Drs_[i].clone();
-    cv::Mat R_rl = R_rls_[i].clone();
-    cv::Mat t_rl = t_rls_[i].clone();
-    std::vector<int> cam_resolution = cam_resolutions_[i];
-    std::string distortion_model = distortion_models_[i];
-    float fov_scale = fov_scales_[i];
-    float alpha = alphas_[i];
+  cv::Mat Kl = Kl_.clone();
+  cv::Mat Kr = Kr_.clone();
+  cv::Mat Dl = Dl_.clone();
+  cv::Mat Dr = Dr_.clone();
+  cv::Mat R_rl = R_rl_.clone();
+  cv::Mat t_rl = t_rl_.clone();
 
-    int tmp_input_width = -1;
-    int tmp_input_height = -1;
-    int tmp_output_width = -1;
-    int tmp_output_height = -1;
-    if (i == 0) {
-      tmp_input_width = input_width;
-      tmp_input_height = input_height;
-    } else if (i >= 1) {
-      tmp_input_width = cam_resolution[0];
-      tmp_input_height = cam_resolution[1];
-    }
+  double width_scale = static_cast<double>(input_width) / cam_resolution_[0];
+  double height_scale = static_cast<double>(input_height) / cam_resolution_[1];
+  Kl.at<double>(0, 0) *= width_scale;
+  Kl.at<double>(0, 2) *= width_scale;
+  Kl.at<double>(1, 1) *= height_scale;
+  Kl.at<double>(1, 2) *= height_scale;
+  Kr.at<double>(0, 0) *= width_scale;
+  Kr.at<double>(0, 2) *= width_scale;
+  Kr.at<double>(1, 1) *= height_scale;
+  Kr.at<double>(1, 2) *= height_scale;
 
-    if (i == Kls_.size() - 1) {
-      tmp_output_width = output_width;
-      tmp_output_height = output_height;
-    } else if (i >= 0 && i < Kls_.size() - 1) {
-      std::vector<int> cam_resolution_next = cam_resolutions_[i + 1];
-      tmp_output_width = cam_resolution_next[0];
-      tmp_output_height = cam_resolution_next[1];
-    }
-
-    double width_scale = static_cast<double>(tmp_input_width) / static_cast<double>(cam_resolution[0]);
-    double height_scale = static_cast<double>(tmp_input_height) / static_cast<double>(cam_resolution[1]);
-    Kl.at<double>(0, 0) *= width_scale;
-    Kl.at<double>(0, 2) *= width_scale;
-    Kl.at<double>(1, 1) *= height_scale;
-    Kl.at<double>(1, 2) *= height_scale;
-    Kr.at<double>(0, 0) *= width_scale;
-    Kr.at<double>(0, 2) *= width_scale;
-    Kr.at<double>(1, 1) *= height_scale;
-    Kr.at<double>(1, 2) *= height_scale;
-
-    cv::Mat Rl, Rr, Pl, Pr, Q;
-    cv::Mat undistmap1l, undistmap2l, undistmap1r, undistmap2r;
-    if (distortion_model == "radtan" || distortion_model == "rational_polynomial") {
-      if (alpha > 1.0f) alpha = 1.0f;
-      cv::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(tmp_input_width, tmp_input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                        cv::CALIB_ZERO_DISPARITY, alpha, cv::Size(tmp_output_width, tmp_output_height));
-      cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(tmp_output_width, tmp_output_height), CV_32FC1, undistmap1l,
-                                  undistmap2l);
-      cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(tmp_output_width, tmp_output_height), CV_32FC1, undistmap1r,
-                                  undistmap2r);
-    } else if (distortion_model == "equidistant") {
-      if (fov_scale <= 0) fov_scale = 0.8f;
-      cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(tmp_input_width, tmp_input_height), R_rl, t_rl, Rl, Rr, Pl,
-                                 Pr, Q, cv::fisheye::CALIB_ZERO_DISPARITY,
-                                 cv::Size(tmp_output_width, tmp_output_height), 0.0, fov_scale);
-      cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(tmp_output_width, tmp_output_height), CV_32FC1,
-                                           undistmap1l, undistmap2l);
-      cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(tmp_output_width, tmp_output_height), CV_32FC1,
-                                           undistmap1r, undistmap2r);
+  cv::Mat Rl, Rr, Pl, Pr, Q;
+  cv::Mat undistmap1l, undistmap2l, undistmap1r, undistmap2r;
+  if (distortion_model_ == "radtan" || distortion_model_ == "rational_polynomial") {
+    if (alpha_ > 1.0f) alpha_ = 1.0f;
+    cv::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(input_width, input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                      cv::CALIB_ZERO_DISPARITY, alpha_, cv::Size(output_width, output_height));
+    cv::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(output_width, output_height), CV_32FC1, undistmap1l,
+                                undistmap2l);
+    cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(output_width, output_height), CV_32FC1, undistmap1r,
+                                undistmap2r);
+  } else if (distortion_model_ == "equidistant") {
+    if (fov_scale_provided_) {
+      if (fov_scale_ <= 0) fov_scale_ = 0.8f;
     } else {
-      RCLCPP_ERROR_STREAM(logger_, "=> unsupported distortion_model: " << distortion_model);
-      return -1;
+      fov_scale_ = find_max_no_black_fovscale(Kl, Dl, Kr, Dr, R_rl, t_rl, input_width, input_height, output_width,
+                                              output_height);
+      RCLCPP_WARN_STREAM(logger_, "=> auto selected max no-black fov_scale: " << fov_scale_);
     }
-
-    undistmap1ls_.push_back(undistmap1l);
-    undistmap2ls_.push_back(undistmap2l);
-    undistmap1rs_.push_back(undistmap1r);
-    undistmap2rs_.push_back(undistmap2r);
-    Qs_.push_back(Q);
-
-    RCLCPP_WARN_STREAM(logger_, "=> input_resolution: " << "[" << tmp_input_width << ", " << tmp_input_height << "]");
-    RCLCPP_WARN_STREAM(logger_, "=> cam_resolution: " << "[" << cam_resolution[0] << ", " << cam_resolution[1] << "]");
-    RCLCPP_WARN_STREAM(logger_, "=> width, height scale: " << "[" << width_scale << ", " << height_scale << "]");
-    RCLCPP_WARN_STREAM(logger_,
-                       "=> output_resolution: " << "[" << tmp_output_width << ", " << tmp_output_height << "]");
-    RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl);
-    RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl);
-    RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr);
-    RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr);
-    RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
-    RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
-    RCLCPP_WARN_STREAM(logger_, "=> distortion_model: " << distortion_model);
-    if (distortion_model == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale);
-    if (distortion_model == "radtan" || distortion_model == "rational_polynomial")
-      RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha);
-    double fx = Q.at<double>(2, 3);
-    double fy = Q.at<double>(2, 3);
-    double cx = -Q.at<double>(0, 3);
-    double cy = -Q.at<double>(1, 3);
-    double baseline = std::abs(1 / Q.at<double>(3, 2));
-    RCLCPP_WARN_STREAM(logger_, "=> rectify fx: " << fx << ", fy: " << fy << ", cx: " << cx << ", cy: " << cy
-                                                  << ", baseline: " << baseline);
-    RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
-    if (i == Kls_.size() - 1) {
-      float HFOV = 2 * atan(tmp_output_width / (2 * fx)) * 180 / M_PI;
-      float VFOV = 2 * atan(tmp_output_height / (2 * fy)) * 180 / M_PI;
-      RCLCPP_WARN_STREAM(logger_, "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
-      RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
-    }
+    cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(input_width, input_height), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                               cv::fisheye::CALIB_ZERO_DISPARITY, cv::Size(output_width, output_height), 0.0,
+                               fov_scale_);
+    cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(output_width, output_height), CV_32FC1, undistmap1l,
+                                         undistmap2l);
+    cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(output_width, output_height), CV_32FC1, undistmap1r,
+                                         undistmap2r);
+  } else {
+    RCLCPP_ERROR_STREAM(logger_, "=> unsupported distortion_model: " << distortion_model_);
+    return -1;
   }
+
+  Q_ = Q;
+  undistmap1l_ = undistmap1l;
+  undistmap2l_ = undistmap2l;
+  undistmap1r_ = undistmap1r;
+  undistmap2r_ = undistmap2r;
+
+  RCLCPP_WARN_STREAM(logger_, "=> input_resolution: " << "[" << input_width << ", " << input_height << "]");
+  RCLCPP_WARN_STREAM(logger_, "=> cam_resolution: " << "[" << cam_resolution_[0] << ", " << cam_resolution_[1] << "]");
+  RCLCPP_WARN_STREAM(logger_, "=> width, height scale: " << "[" << width_scale << ", " << height_scale << "]");
+  RCLCPP_WARN_STREAM(logger_, "=> output_resolution: " << "[" << output_width << ", " << output_height << "]");
+  RCLCPP_WARN_STREAM(logger_, "=> Kl: " << std::endl << Kl);
+  RCLCPP_WARN_STREAM(logger_, "=> Dl: " << std::endl << Dl);
+  RCLCPP_WARN_STREAM(logger_, "=> Kr: " << std::endl << Kr);
+  RCLCPP_WARN_STREAM(logger_, "=> Dr: " << std::endl << Dr);
+  RCLCPP_WARN_STREAM(logger_, "=> R_rl: " << std::endl << R_rl);
+  RCLCPP_WARN_STREAM(logger_, "=> t_rl: " << std::endl << t_rl);
+  RCLCPP_WARN_STREAM(logger_, "=> distortion_model: " << distortion_model_);
+  if (distortion_model_ == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale_);
+  if (distortion_model_ == "radtan" || distortion_model_ == "rational_polynomial")
+    RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha_);
+  double fx = Q.at<double>(2, 3);
+  double fy = Q.at<double>(2, 3);
+  double cx = -Q.at<double>(0, 3);
+  double cy = -Q.at<double>(1, 3);
+  double baseline = std::abs(1 / Q.at<double>(3, 2));
+  RCLCPP_WARN_STREAM(logger_, "=> rectify fx: " << fx << ", fy: " << fy << ", cx: " << cx << ", cy: " << cy
+                                                << ", baseline: " << baseline);
+  RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
+  float HFOV = 2 * atan(output_width / (2 * fx)) * 180 / M_PI;
+  float VFOV = 2 * atan(output_height / (2 * fy)) * 180 / M_PI;
+  RCLCPP_WARN_STREAM(logger_, "=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°");
+  RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
 
   undistmap_built_ = true;
   return 0;
@@ -246,29 +318,12 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
 
 void StereoRectify::rectify(const cv::Mat &left_image, const cv::Mat &right_image, cv::Mat &rectified_left_image,
                             cv::Mat &rectified_right_image) {
-  if (undistmap1ls_.size() == 1) {
-    cv::remap(left_image, rectified_left_image, undistmap1ls_[0], undistmap2ls_[0], cv::INTER_LINEAR);
-    cv::remap(right_image, rectified_right_image, undistmap1rs_[0], undistmap2rs_[0], cv::INTER_LINEAR);
-  } else {
-    cv::Mat tmp_left_image, tmp_right_image;
-    for (int i = 0; i < undistmap1ls_.size(); i++) {
-      if (i == 0) {
-        cv::remap(left_image, tmp_left_image, undistmap1ls_[i], undistmap2ls_[i], cv::INTER_LINEAR);
-        cv::remap(right_image, tmp_right_image, undistmap1rs_[i], undistmap2rs_[i], cv::INTER_LINEAR);
-      } else if (i == undistmap1ls_.size() - 1) {
-        cv::remap(tmp_left_image, rectified_left_image, undistmap1ls_[i], undistmap2ls_[i], cv::INTER_LINEAR);
-        cv::remap(tmp_right_image, rectified_right_image, undistmap1rs_[i], undistmap2rs_[i], cv::INTER_LINEAR);
-      } else {
-        cv::remap(tmp_left_image, tmp_left_image, undistmap1ls_[i], undistmap2ls_[i], cv::INTER_LINEAR);
-        cv::remap(tmp_right_image, tmp_right_image, undistmap1rs_[i], undistmap2rs_[i], cv::INTER_LINEAR);
-      }
-    }
-  }
+  cv::remap(left_image, rectified_left_image, undistmap1l_, undistmap2l_, cv::INTER_LINEAR);
+  cv::remap(right_image, rectified_right_image, undistmap1r_, undistmap2r_, cv::INTER_LINEAR);
 }
 
 void StereoRectify::rectify_nv12(const uint8_t *left_nv12, const uint8_t *right_nv12, int input_w, int input_h,
                                  uint8_t *rect_left_nv12, uint8_t *rect_right_nv12, int output_w, int output_h) {
-  assert(undistmap1ls_.size() == 1);
   cv::Mat left_y(input_h, input_w, CV_8UC1, const_cast<uint8_t *>(left_nv12));
   cv::Mat right_y(input_h, input_w, CV_8UC1, const_cast<uint8_t *>(right_nv12));
 
@@ -282,14 +337,14 @@ void StereoRectify::rectify_nv12(const uint8_t *left_nv12, const uint8_t *right_
   cv::Mat rect_right_uv(output_h / 2, output_w, CV_8UC1, rect_right_nv12 + output_w * output_h);
 
   // Y plane: use original undistort maps
-  cv::remap(left_y, rect_left_y, undistmap1ls_[0], undistmap2ls_[0], cv::INTER_LINEAR);
-  cv::remap(right_y, rect_right_y, undistmap1rs_[0], undistmap2rs_[0], cv::INTER_LINEAR);
+  cv::remap(left_y, rect_left_y, undistmap1l_, undistmap2l_, cv::INTER_LINEAR);
+  cv::remap(right_y, rect_right_y, undistmap1r_, undistmap2r_, cv::INTER_LINEAR);
 
   // UV plane: map needs half y coordinate
-  cv::Mat uv_map1_l = undistmap1ls_[0].clone();
-  cv::Mat uv_map2_l = undistmap2ls_[0] * 0.5f;
-  cv::Mat uv_map1_r = undistmap1rs_[0].clone();
-  cv::Mat uv_map2_r = undistmap2rs_[0] * 0.5f;
+  cv::Mat uv_map1_l = undistmap1l_.clone();
+  cv::Mat uv_map2_l = undistmap2l_ * 0.5f;
+  cv::Mat uv_map1_r = undistmap1r_.clone();
+  cv::Mat uv_map2_r = undistmap2r_ * 0.5f;
 
   cv::resize(uv_map1_l, uv_map1_l, cv::Size(output_w, output_h / 2), 0, 0, cv::INTER_LINEAR);
   cv::resize(uv_map2_l, uv_map2_l, cv::Size(output_w, output_h / 2), 0, 0, cv::INTER_LINEAR);
@@ -301,7 +356,7 @@ void StereoRectify::rectify_nv12(const uint8_t *left_nv12, const uint8_t *right_
 }
 
 void StereoRectify::get_intrinsic(double &fx, double &fy, double &cx, double &cy, double &baseline) const {
-  cv::Mat Q = Qs_[Qs_.size() - 1];
+  cv::Mat Q = Q_;
   fx = Q.at<double>(2, 3);
   fy = Q.at<double>(2, 3);
   cx = -Q.at<double>(0, 3);

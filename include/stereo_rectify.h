@@ -73,15 +73,16 @@ private:
   std::string stereo_calib_file_path_;
 
   // camera intrinsic
-  std::vector<cv::Mat> Kls_, Krs_, Dls_, Drs_, R_rls_, t_rls_;
-  std::vector<std::vector<int>> cam_resolutions_;
-  std::vector<std::string> distortion_models_;
-  std::vector<float> fov_scales_;
-  std::vector<float> alphas_;
+  cv::Mat Kl_, Kr_, Dl_, Dr_, R_rl_, t_rl_;
+  std::vector<int> cam_resolution_;
+  std::string distortion_model_;
+  float fov_scale_ = 0.8f;
+  bool fov_scale_provided_ = false;
+  float alpha_ = 0.0f;
 
   // stereo rectification
-  std::vector<cv::Mat> Qs_;
-  std::vector<cv::Mat> undistmap1ls_, undistmap2ls_, undistmap1rs_, undistmap2rs_;
+  cv::Mat Q_;
+  cv::Mat undistmap1l_, undistmap2l_, undistmap1r_, undistmap2r_;
 
   // build undistort map flag
   bool undistmap_built_ = false;
