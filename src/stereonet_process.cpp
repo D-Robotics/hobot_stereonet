@@ -1523,13 +1523,11 @@ cv::Mat StereonetProcess::render_disp_or_depth(const cv::Mat &input, float min_d
     for (int x = 0; x < img_f.cols; ++x) {
       float &v = row[x];
       if (is_disp) {
-        if (v < min_disp || v > max_disp) {
-          v = 0.0f;
-        }
+        if (v < min_disp) v = 0.0f;
+        if (v > max_disp) v = max_disp;
       } else if (is_depth) {
-        if (v < min_depth || v > max_depth) {
-          v = 0.0f;
-        }
+        if (v < min_depth) v = 0.0f;
+        if (v > max_depth) v = max_depth;
       }
     }
   }
