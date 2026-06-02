@@ -65,7 +65,7 @@ bash make_ln.sh
 
 ``` bash
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/StereoInfer/3rdparty/lib_opencv4.5.4/lib/
-./StereoInfer ./model/DStereoV2.4_int16_uncertainty.bin 1 30 0.10
+./test_perf ./model/DStereoV2.4_int16_uncertainty.bin 1 30 0.10
 ```
 
 Parameter Explanation:
