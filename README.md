@@ -16,6 +16,89 @@
 - 中文文档：https://developer.d-robotics.cc/rdk_doc/Robot_development/boxs/spatial/hobot_stereonet
 - English Document: https://developer.d-robotics.cc/rdk_doc/en/Robot_development/boxs/spatial/hobot_stereonet
 
+## Git LFS Setup
+
+Some model files (`*.hbm`) are stored using Git LFS (Large File Storage).  
+Please install Git LFS before cloning the repository.
+
+### Install Git LFS
+
+Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install git-lfs -y
+git lfs install
+```
+
+Verify installation:
+
+```bash
+git lfs version
+```
+
+### Clone Repository
+
+Clone the repository normally:
+
+```bash
+git clone https://github.com/D-Robotics/hobot_stereonet.git
+cd hobot_stereonet
+```
+
+### Download LFS Files
+
+If Git LFS is already installed before cloning, model files will be downloaded automatically.
+
+Otherwise, after installing Git LFS, run:
+
+```bash
+git lfs pull
+```
+
+to download all large model files.
+
+### Verify LFS Files
+
+List all files managed by Git LFS:
+
+```bash
+git lfs ls-files
+```
+
+Example output:
+
+```text
+xxxxxxxxxx * config/dstereo_s600_640_350_v3.0.hbm
+```
+
+### Common Issues
+
+If a model file contains text similar to:
+
+```text
+version https://git-lfs.github.com/spec/v1
+oid sha256:...
+size ...
+```
+
+instead of binary content, it means the actual LFS file has not been downloaded.
+
+Run:
+
+```bash
+git lfs pull
+```
+
+or
+
+```bash
+git lfs fetch --all
+git lfs checkout
+```
+
+to restore the real model files.
+
 ## Project Structure
 
 ```
