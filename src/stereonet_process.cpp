@@ -211,6 +211,14 @@ int StereonetProcess::postprocess(const InferenceHandle &handle, const double &u
 
   // get shape info
   auto &outputs = batch_output_tensors_[idle_tensor_id];
+  // S600
+  if (outputs.size() == 1) {
+    ret_code = postprocess_only_disp(outputs, disp);
+    set_tensor_idle(idle_tensor_id);
+    return ret_code;
+  }
+
+  // X5 | S100
   if (outputs.size() < 2) {
     LOG_ERROR(logger_, "=> not enough output tensors for postprocess, size=" << outputs.size());
     set_tensor_idle(idle_tensor_id);
@@ -586,6 +594,61 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
   return 0;
 }
 */
+
+int StereonetProcess::postprocess_only_disp(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat) {
+  const hbDNNTensor &disp_tensor = tensors[0];
+
+  if (disp_tensor.properties.tensorType != HB_DNN_TENSOR_TYPE_F32) {
+    LOG_ERROR(logger_, "=> unsupported disp tensor type, only support HB_DNN_TENSOR_TYPE_F32.");
+    return -1;
+  }
+
+  if (disp_tensor.properties.validShape.numDimensions != 3) {
+    LOG_ERROR(logger_, "=> invalid disp tensor dimension, expected 3 dims, got "
+                           << disp_tensor.properties.validShape.numDimensions);
+    return -1;
+  }
+
+  const int32_t *valid_shape = disp_tensor.properties.validShape.dimensionSize;
+
+  const int32_t n_dim = valid_shape[0];
+  const int32_t h_dim = valid_shape[1];
+  const int32_t w_dim = valid_shape[2];
+
+  if (n_dim != 1 || h_dim <= 0 || w_dim <= 0) {
+    LOG_ERROR(logger_, "=> invalid disp tensor shape, n=" << n_dim << ", h=" << h_dim << ", w=" << w_dim);
+    return -1;
+  }
+
+  auto stride = disp_tensor.properties.alignedByteSize ? disp_tensor.properties.stride : nullptr;
+  if (stride == nullptr) {
+    LOG_ERROR(logger_, "=> disp tensor stride is null.");
+    return -1;
+  }
+
+  const int32_t elem_size = sizeof(float);
+
+  // shape: N,H,W
+  // stride[1]: bytes per row
+  // stride[2]: bytes per element
+  const int64_t h_stride = static_cast<int64_t>(stride[1]) / elem_size;
+
+  auto disp_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(disp_tensor, 0).virAddr);
+  if (disp_base == nullptr) {
+    LOG_ERROR(logger_, "=> disp tensor virAddr is null.");
+    return -1;
+  }
+
+  out_mat = cv::Mat::zeros(h_dim, w_dim, CV_32FC1);
+
+  for (int32_t y = 0; y < h_dim; ++y) {
+    const float *src_row = disp_base + y * h_stride;
+    float *dst_row = out_mat.ptr<float>(y);
+    std::memcpy(dst_row, src_row, w_dim * sizeof(float));
+  }
+
+  return 0;
+}
 
 int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors,
                                                                 cv::Mat &out_mat) {

@@ -297,6 +297,14 @@ private:
    */
   int postprocess_convex_upsampling_with_interp(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
 
+  /**
+   * @brief Postprocess the output tensors using only disparity map
+   * @param tensors Vector of output tensors from the model
+   * @param out_mat Output matrix to hold the processed result
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess_only_disp(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
+
   // ===================================== member variables =======================================
   rclcpp::Logger logger_;
   std::string model_path_;

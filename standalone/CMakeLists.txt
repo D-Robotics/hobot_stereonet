@@ -14,6 +14,8 @@ if(PLATFORM_X5)
     add_definitions(-DPLATFORM_X5)
 elseif(PLATFORM_S100)
     add_definitions(-DPLATFORM_S100)
+elseif(PLATFORM_S600)
+    add_definitions(-DPLATFORM_S600)
 endif()
 
 # =================================== find packages ===================================
@@ -66,7 +68,7 @@ if(PLATFORM_X5)
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libdnn
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libdnn/hobot/lib
     )
-elseif(PLATFORM_S100)
+elseif(PLATFORM_S100 OR PLATFORM_S600)
     include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/include
     )
@@ -85,7 +87,7 @@ add_executable(test_perf
 )
 if(PLATFORM_X5)
     target_link_libraries(test_perf dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})
-elseif(PLATFORM_S100)
+elseif(PLATFORM_S100 OR PLATFORM_S600)
     target_link_libraries(test_perf dnn hbucp ${OpenCV_LIBS}
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libalog.so.1.2.2
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libbpu.so.2
@@ -108,7 +110,7 @@ add_executable(infer
 )
 if(PLATFORM_X5)
     target_link_libraries(infer dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})
-elseif(PLATFORM_S100)
+elseif(PLATFORM_S100 OR PLATFORM_S600)
     target_link_libraries(infer dnn hbucp ${OpenCV_LIBS}
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libalog.so.1.2.2
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ucp_3.13.6/libbpu.so.2
