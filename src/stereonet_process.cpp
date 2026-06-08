@@ -80,6 +80,18 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
   properties.quantizeAxis = 3;
 #endif
   hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
+
+#ifdef PLATFORM_S600
+  if (model_input_h_ == 308 && model_input_w_ == 560) {
+    // special case for S600 model
+    model_input_h_ = 352;
+    model_input_w_ = 640;
+    inner_model_input_h_ = 308;
+    inner_model_input_w_ = 560;
+    LOG_WARN(logger_,
+             "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
+  }
+#endif
   LOG_WARN(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
 
   // prepare input tensor and output tensor
@@ -112,7 +124,33 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, I
       LOG_ERROR(logger_, "=> no idle tensor");
       return -1;
     }
-    ret_code = fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data, right_img_data);
+#ifdef PLATFORM_S600
+    if (inner_model_input_h_ > 0 && inner_model_input_w_ > 0) {
+      cv::Mat left_img_bgr(model_input_h_, model_input_w_, CV_8UC3);
+      cv::Mat right_img_bgr(model_input_h_, model_input_w_, CV_8UC3);
+      ImgConvertUtils::nv12_to_bgr24_neon(left_img_data, left_img_bgr.data, model_input_w_, model_input_h_);
+      ImgConvertUtils::nv12_to_bgr24_neon(right_img_data, right_img_bgr.data, model_input_w_, model_input_h_);
+      cv::resize(left_img_bgr, left_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_));
+      cv::resize(right_img_bgr, right_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_));
+      const int align_width = ((left_img_bgr.cols + 63) / 64) * 64;
+      if (align_width != left_img_bgr.cols) {
+        const int pad_right = align_width - left_img_bgr.cols;
+        cv::copyMakeBorder(left_img_bgr, left_img_bgr, 0, 0, 0, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+        cv::copyMakeBorder(right_img_bgr, right_img_bgr, 0, 0, 0, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+      }
+      std::vector<uint8_t> new_left_img_data, new_right_img_data;
+      new_left_img_data.resize(left_img_bgr.cols * left_img_bgr.rows * 3 / 2);
+      new_right_img_data.resize(right_img_bgr.cols * right_img_bgr.rows * 3 / 2);
+      ImgConvertUtils::bgr_mat_to_nv12(left_img_bgr, new_left_img_data.data());
+      ImgConvertUtils::bgr_mat_to_nv12(right_img_bgr, new_right_img_data.data());
+      ret_code = fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], new_left_img_data.data(),
+                                          new_right_img_data.data());
+    } else {
+#endif
+      ret_code = fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data, right_img_data);
+#ifdef PLATFORM_S600
+    }
+#endif
   }
 
   {
@@ -640,7 +678,6 @@ int StereonetProcess::postprocess_only_disp(const std::vector<hbDNNTensor> &tens
   }
 
   out_mat = cv::Mat::zeros(h_dim, w_dim, CV_32FC1);
-
   for (int32_t y = 0; y < h_dim; ++y) {
     const float *src_row = disp_base + y * h_stride;
     float *dst_row = out_mat.ptr<float>(y);
@@ -844,8 +881,9 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 }
 
 int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensors) {
+  static bool prt_flag = true;
   int ret_code = 0;
-  LOG_WARN_ONCE(logger_, "=> ----- prepare_input_tensor -----");
+  if (prt_flag) LOG_WARN(logger_, "=> ----- prepare_input_tensor -----");
 
   // allocate memory for input tensor
   input_tensors.resize(input_count_);
@@ -855,8 +893,9 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     hbDNNTensorProperties properties;
     ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetInputTensorProperties failed");
-    LOG_WARN_ONCE(logger_, "=> input tensor type is "
-                               << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
+    if (prt_flag)
+      LOG_WARN(logger_,
+               "=> input tensor type is " << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType)));
     input_tensor_type_ = properties.tensorType;
 
 #ifdef PLATFORM_X5
@@ -873,10 +912,9 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     }
 #endif
 
-#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
+#ifdef PLATFORM_S100
     // properties.quantizeAxis = 3;
-    properties.alignedByteSize = properties.validShape.dimensionSize[0] * properties.validShape.dimensionSize[1] *
-                                 properties.validShape.dimensionSize[2] * properties.validShape.dimensionSize[3];
+    // MARCH: "nash-e" (J5/J6E) need to set stride to align with 32-byte for nv12 input
     auto dim_len = properties.validShape.numDimensions;
     for (int32_t dim_i = dim_len - 1; dim_i >= 0; --dim_i) {
       if (properties.stride[dim_i] == -1) {
@@ -884,6 +922,20 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
         properties.stride[dim_i] = ALIGN_32(cur_stride);
       }
     }
+    properties.alignedByteSize = properties.stride[0];
+#endif
+
+#ifdef PLATFORM_S600
+    // properties.quantizeAxis = 3;
+    // "nash-p" (J6P/H) need to set stride to align with 64-byte for nv12 input
+    auto dim_len = properties.validShape.numDimensions;
+    for (int32_t dim_i = dim_len - 1; dim_i >= 0; --dim_i) {
+      if (properties.stride[dim_i] == -1) {
+        auto cur_stride = properties.stride[dim_i + 1] * properties.validShape.dimensionSize[dim_i + 1];
+        properties.stride[dim_i] = ALIGN_64(cur_stride);
+      }
+    }
+    properties.alignedByteSize = properties.stride[0];
 #endif
 
     tensor.properties = properties;
@@ -901,7 +953,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], (3 * model_input_h_ * model_input_w_) / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[0].memSize = (3 * model_input_h_ * model_input_w_) / 2;
-      LOG_WARN_ONCE(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
+      if (prt_flag) LOG_WARN(logger_, "=> input[" << i << "].memsize: " << tensor.sysMem[0].memSize);
     } else if (properties.tensorType == HB_DNN_IMG_TYPE_NV12_SEPARATE) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[0], model_input_h_ * model_input_w_);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
@@ -910,8 +962,8 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
       ret_code = hbSysAllocCachedMem(&tensor.sysMem[1], model_input_h_ * model_input_w_ / 2);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       tensor.sysMem[1].memSize = model_input_h_ * model_input_w_ / 2;
-      LOG_WARN_ONCE(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
-      LOG_WARN_ONCE(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
+      if (prt_flag) LOG_WARN(logger_, "=> input[" << i << "].memsize[0]: " << tensor.sysMem[0].memSize);
+      if (prt_flag) LOG_WARN(logger_, "=> input[" << i << "].memsize[1]: " << tensor.sysMem[1].memSize);
     } else {
       return -1;
     }
@@ -921,28 +973,33 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
     if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem, properties.alignedByteSize);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-      LOG_WARN_ONCE(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
+      if (prt_flag) LOG_WARN(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
     } else {
       return -1;
     }
 #endif
+    if (prt_flag) LOG_WARN(logger_, "=> ----------------");
   }
+  prt_flag = false;
   return ret_code;
 }
 
 int StereonetProcess::prepare_output_tensor(std::vector<hbDNNTensor> &output_tensors) {
+  static bool prt_flag = true;
   int ret_code = 0;
   LOG_WARN_ONCE(logger_, "=> ----- prepare_output_tensor -----");
   output_tensors.resize(output_count_);
   for (int i = 0; i < output_count_; ++i) {
     ret_code = hbDNNGetOutputTensorProperties(&output_tensors[i].properties, dnn_handle_, i);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNGetOutputTensorProperties failed");
-    LOG_WARN_ONCE(logger_, "=> output tensor type is " << magic_enum::enum_name(
-                               static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
+    if (prt_flag)
+      LOG_WARN(logger_, "=> output tensor type is " << magic_enum::enum_name(
+                            static_cast<hbDNNDataType>(output_tensors[i].properties.tensorType)));
     ret_code = hbSysAllocCachedMem(&TENSOR_SYSMEM(output_tensors[i], 0), output_tensors[i].properties.alignedByteSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
-    LOG_WARN_ONCE(logger_, "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
+    if (prt_flag) LOG_WARN(logger_, "=> output[" << i << "].memsize: " << output_tensors[i].properties.alignedByteSize);
   }
+  prt_flag = false;
   return ret_code;
 }
 

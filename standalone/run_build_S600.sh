@@ -17,7 +17,7 @@ make -j$(nproc)
 
 echo "=> ================="
 mkdir model
-cp -r ../../config/dstereo_s600*.hbm ./model/
+cp -r ../../config/S600*.hbm ./model/
 cp -r ../img ./
 mkdir -p ./3rdparty/lib_opencv4.5.4/
 cp -r ../3rdparty/lib_opencv4.5.4/ ./3rdparty/

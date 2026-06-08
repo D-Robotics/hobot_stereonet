@@ -24,6 +24,7 @@
 
 #define ALIGN(value, alignment) (((value) + ((alignment) - 1)) & ~((alignment) - 1))
 #define ALIGN_32(value) ALIGN(value, 32)
+#define ALIGN_64(value) ALIGN(value, 64)
 
 #define TENSOR_SYSMEM(x, y) x.sysMem
 

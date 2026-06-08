@@ -32,6 +32,9 @@
 #include "BS_thread_pool.hpp"
 #include "pub_data.h"
 #endif
+#ifdef PLATFORM_S600
+#include "img_convert_utils.h"
+#endif
 
 using InferenceHandle = int;
 
@@ -326,6 +329,8 @@ private:
   int model_input_h_;
   // int model_output_w_;
   // int model_output_h_;
+  int inner_model_input_w_ = -1;
+  int inner_model_input_h_ = -1;
 
   // uncertainty
   float uncertainty_th_ = -0.10;
