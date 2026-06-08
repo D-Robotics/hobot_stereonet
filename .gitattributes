@@ -1,1 +1,1 @@
-config/dstereo_s600_640_350_v3.0.hbm filter=lfs diff=lfs merge=lfs -text
+config/S600*.hbm filter=lfs diff=lfs merge=lfs -text
