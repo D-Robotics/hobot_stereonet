@@ -28,7 +28,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'config',
-        'S600_DStereoV3.0.1_352x640.hbm'
+        'S600_DStereoV3_352x640.hbm'
     )
 
     # stereonet node
