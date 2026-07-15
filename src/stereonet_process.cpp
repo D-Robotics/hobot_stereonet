@@ -634,54 +634,175 @@ int StereonetProcess::postprocess_convex_upsampling(const std::vector<hbDNNTenso
 */
 
 int StereonetProcess::postprocess_only_disp(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat) {
+  if (tensors.empty()) {
+    LOG_ERROR(logger_, "=> postprocess_only_disp: tensors is empty.");
+    return -1;
+  }
+
   const hbDNNTensor &disp_tensor = tensors[0];
+  const auto &properties = disp_tensor.properties;
+  const auto &valid_shape = properties.validShape;
 
-  if (disp_tensor.properties.tensorType != HB_DNN_TENSOR_TYPE_F32) {
-    LOG_ERROR(logger_, "=> unsupported disp tensor type, only support HB_DNN_TENSOR_TYPE_F32.");
+  // Support:
+  // 3D: [N, H, W]
+  // 4D: [N, C, H, W]
+  if (valid_shape.numDimensions != 3 && valid_shape.numDimensions != 4) {
+    LOG_ERROR(logger_, "=> invalid disp tensor dimension, expected 3 or 4 dims, got " << valid_shape.numDimensions);
     return -1;
   }
 
-  if (disp_tensor.properties.validShape.numDimensions != 3) {
-    LOG_ERROR(logger_, "=> invalid disp tensor dimension, expected 3 dims, got "
-                           << disp_tensor.properties.validShape.numDimensions);
+  const int32_t *shape = valid_shape.dimensionSize;
+
+  int32_t n_dim = 0;
+  int32_t c_dim = 1;
+  int32_t h_dim = 0;
+  int32_t w_dim = 0;
+
+  int32_t h_stride_index = 0;
+  int32_t w_stride_index = 0;
+
+  if (valid_shape.numDimensions == 3) {
+    // Layout: N H W
+    n_dim = shape[0];
+    h_dim = shape[1];
+    w_dim = shape[2];
+
+    h_stride_index = 1;
+    w_stride_index = 2;
+  } else {
+    // Layout: N C H W
+    n_dim = shape[0];
+    c_dim = shape[1];
+    h_dim = shape[2];
+    w_dim = shape[3];
+
+    h_stride_index = 2;
+    w_stride_index = 3;
+  }
+
+  if (n_dim != 1 || c_dim != 1 || h_dim <= 0 || w_dim <= 0) {
+    LOG_ERROR(logger_,
+              "=> invalid disp tensor shape, n=" << n_dim << ", c=" << c_dim << ", h=" << h_dim << ", w=" << w_dim);
     return -1;
   }
 
-  const int32_t *valid_shape = disp_tensor.properties.validShape.dimensionSize;
+  // Get stride information.
+  const auto *stride = properties.alignedByteSize > 0 ? properties.stride : nullptr;
 
-  const int32_t n_dim = valid_shape[0];
-  const int32_t h_dim = valid_shape[1];
-  const int32_t w_dim = valid_shape[2];
-
-  if (n_dim != 1 || h_dim <= 0 || w_dim <= 0) {
-    LOG_ERROR(logger_, "=> invalid disp tensor shape, n=" << n_dim << ", h=" << h_dim << ", w=" << w_dim);
-    return -1;
-  }
-
-  auto stride = disp_tensor.properties.alignedByteSize ? disp_tensor.properties.stride : nullptr;
   if (stride == nullptr) {
     LOG_ERROR(logger_, "=> disp tensor stride is null.");
     return -1;
   }
 
-  const int32_t elem_size = sizeof(float);
-
-  // shape: N,H,W
-  // stride[1]: bytes per row
-  // stride[2]: bytes per element
-  const int64_t h_stride = static_cast<int64_t>(stride[1]) / elem_size;
-
-  auto disp_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(disp_tensor, 0).virAddr);
-  if (disp_base == nullptr) {
+  const void *vir_addr = TENSOR_SYSMEM(disp_tensor, 0).virAddr;
+  if (vir_addr == nullptr) {
     LOG_ERROR(logger_, "=> disp tensor virAddr is null.");
     return -1;
   }
 
+  // Read the quantization scale.
+  float scale = 1.0f;
+
+  if (properties.quantiType == SCALE) {
+    if (properties.scale.scaleData == nullptr || properties.scale.scaleLen <= 0) {
+      LOG_ERROR(logger_, "=> disp tensor quantiType is SCALE, but scale data is invalid.");
+      return -1;
+    }
+
+    // Single-channel output uses the first scale value.
+    scale = properties.scale.scaleData[0];
+  }
+
   out_mat = cv::Mat::zeros(h_dim, w_dim, CV_32FC1);
-  for (int32_t y = 0; y < h_dim; ++y) {
-    const float *src_row = disp_base + y * h_stride;
-    float *dst_row = out_mat.ptr<float>(y);
-    std::memcpy(dst_row, src_row, w_dim * sizeof(float));
+
+  switch (properties.tensorType) {
+  case HB_DNN_TENSOR_TYPE_F32: {
+    constexpr int32_t elem_size = sizeof(float);
+
+    if (stride[h_stride_index] % elem_size != 0 || stride[w_stride_index] % elem_size != 0) {
+      LOG_ERROR(logger_, "=> invalid F32 stride, h_stride_bytes=" << stride[h_stride_index]
+                                                                  << ", w_stride_bytes=" << stride[w_stride_index]);
+      return -1;
+    }
+
+    const int64_t h_stride = static_cast<int64_t>(stride[h_stride_index]) / elem_size;
+    const int64_t w_stride = static_cast<int64_t>(stride[w_stride_index]) / elem_size;
+
+    const auto *src = reinterpret_cast<const float *>(vir_addr);
+
+    for (int32_t y = 0; y < h_dim; ++y) {
+      const float *src_row = src + y * h_stride;
+      float *dst_row = out_mat.ptr<float>(y);
+
+      if (w_stride == 1 && std::abs(scale - 1.0f) < 1e-8f) {
+        std::memcpy(dst_row, src_row, static_cast<size_t>(w_dim) * sizeof(float));
+      } else {
+        for (int32_t x = 0; x < w_dim; ++x) {
+          dst_row[x] = src_row[x * w_stride] * scale;
+        }
+      }
+    }
+
+    break;
+  }
+
+  case HB_DNN_TENSOR_TYPE_S32: {
+    constexpr int32_t elem_size = sizeof(int32_t);
+
+    if (stride[h_stride_index] % elem_size != 0 || stride[w_stride_index] % elem_size != 0) {
+      LOG_ERROR(logger_, "=> invalid S32 stride, h_stride_bytes=" << stride[h_stride_index]
+                                                                  << ", w_stride_bytes=" << stride[w_stride_index]);
+      return -1;
+    }
+
+    const int64_t h_stride = static_cast<int64_t>(stride[h_stride_index]) / elem_size;
+    const int64_t w_stride = static_cast<int64_t>(stride[w_stride_index]) / elem_size;
+
+    const auto *src = reinterpret_cast<const int32_t *>(vir_addr);
+
+    for (int32_t y = 0; y < h_dim; ++y) {
+      const int32_t *src_row = src + y * h_stride;
+      float *dst_row = out_mat.ptr<float>(y);
+
+      for (int32_t x = 0; x < w_dim; ++x) {
+        dst_row[x] = static_cast<float>(src_row[x * w_stride]) * scale;
+      }
+    }
+
+    break;
+  }
+
+  case HB_DNN_TENSOR_TYPE_S16: {
+    constexpr int32_t elem_size = sizeof(int16_t);
+
+    if (stride[h_stride_index] % elem_size != 0 || stride[w_stride_index] % elem_size != 0) {
+      LOG_ERROR(logger_, "=> invalid S16 stride, h_stride_bytes=" << stride[h_stride_index]
+                                                                  << ", w_stride_bytes=" << stride[w_stride_index]);
+      return -1;
+    }
+
+    const int64_t h_stride = static_cast<int64_t>(stride[h_stride_index]) / elem_size;
+    const int64_t w_stride = static_cast<int64_t>(stride[w_stride_index]) / elem_size;
+
+    const auto *src = reinterpret_cast<const int16_t *>(vir_addr);
+
+    for (int32_t y = 0; y < h_dim; ++y) {
+      const int16_t *src_row = src + y * h_stride;
+      float *dst_row = out_mat.ptr<float>(y);
+
+      for (int32_t x = 0; x < w_dim; ++x) {
+        dst_row[x] = static_cast<float>(src_row[x * w_stride]) * scale;
+      }
+    }
+
+    break;
+  }
+
+  default:
+    LOG_ERROR(logger_, "=> unsupported disp tensor type: "
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(properties.tensorType))
+                           << ", only support F32, S32 and S16.");
+    return -1;
   }
 
   return 0;
