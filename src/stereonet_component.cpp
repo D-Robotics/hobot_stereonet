@@ -117,11 +117,14 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<double>("pointcloud_height_min", -5.0);
   this->declare_parameter<double>("pointcloud_height_max", 5.0);
   this->declare_parameter<double>("pointcloud_depth_max", 5.0);
+  this->declare_parameter<std::string>("pointcloud_coord", "ROS");
   pointcloud_downsample_step_ = this->get_parameter("pointcloud_downsample_step").as_int();
   pointcloud_height_min_ = this->get_parameter("pointcloud_height_min").as_double();
   pointcloud_height_max_ = this->get_parameter("pointcloud_height_max").as_double();
   pointcloud_depth_max_ = this->get_parameter("pointcloud_depth_max").as_double();
+  pointcloud_coord_ = this->get_parameter("pointcloud_coord").as_string();
   if (pointcloud_downsample_step_ <= 0) pointcloud_downsample_step_ = 2;
+  if (pointcloud_coord_ != "ROS" && pointcloud_coord_ != "Camera") pointcloud_coord_ = "ROS";
 
   this->declare_parameter<bool>("save_result_flag", "false");
   save_result_flag_ = this->get_parameter("save_result_flag").as_bool();
@@ -332,9 +335,10 @@ void StereoNetNode::set_node_params() {
           << "[camera_fx, camera_fy, camera_cx, camera_cy, baseline, doffs]: [" << camera_intrinsic_->fx << ", "
           << camera_intrinsic_->fy << ", " << camera_intrinsic_->cx << ", " << camera_intrinsic_->cy << ", "
           << camera_intrinsic_->baseline << "(m)" << camera_intrinsic_->doffs << "]" << std::endl
-          << "[pointcloud_downsample_step, pointcloud_height_min, pointcloud_height_max, pointcloud_depth_max]: ["
+          << "[pointcloud_downsample_step, pointcloud_height_min, pointcloud_height_max, pointcloud_depth_max, "
+             "pointcloud_coord]: ["
           << pointcloud_downsample_step_ << ", " << pointcloud_height_min_ << "(m), " << pointcloud_height_max_
-          << "(m), " << pointcloud_depth_max_ << "(m)]" << std::endl
+          << "(m), " << pointcloud_depth_max_ << "(m), " << pointcloud_coord_ << "]" << std::endl
           << "[use_local_image_flag, local_image_dir, image_sleep]: [" << use_local_image_flag_ << ", "
           << local_image_dir_ << ", " << image_sleep_ << "]" << std::endl
           << "[save_result_flag, save_dir, save_freq, save_total, save_stereo_flag, save_origin_flag, save_disp_flag, "
@@ -1377,9 +1381,15 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
       float y = (v - cy) * z / fy;
       if (-y > pointcloud_height_max_ || -y < pointcloud_height_min_) continue;
       pcl::PointXYZRGB pt;
-      pt.x = z;
-      pt.y = -x;
-      pt.z = -y;
+      if (pointcloud_coord_ == "ROS") {
+        pt.x = z;
+        pt.y = -x;
+        pt.z = -y;
+      } else {
+        pt.x = x;
+        pt.y = y;
+        pt.z = z;
+      }
       const cv::Vec3b &color = bgr_row[u];
       pt.r = color[2];
       pt.g = color[1];

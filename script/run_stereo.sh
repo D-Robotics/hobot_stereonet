@@ -73,6 +73,7 @@ pointcloud_height_min=-5.0
 pointcloud_height_max=5.0
 pointcloud_depth_max=5.0
 pointcloud_downsample_step=2
+pointcloud_coord=ROS
 
 # pcl filter
 pcl_filter_enable=False
@@ -203,6 +204,7 @@ while [[ $# -gt 0 ]]; do
     --pointcloud_height_max) pointcloud_height_max=$2; shift 2 ;;
     --pointcloud_depth_max) pointcloud_depth_max=$2; shift 2 ;;
     --pointcloud_downsample_step) pointcloud_downsample_step=$2; shift 2 ;;
+    --pointcloud_coord) pointcloud_coord=$2; shift 2 ;;
 
     # pcl filter
     --pcl_filter_enable) pcl_filter_enable=$2; shift 2 ;;
@@ -290,7 +292,7 @@ render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max
 depth_decimal_num:=$depth_decimal_num \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=$pointcloud_height_min pointcloud_height_max:=$pointcloud_height_max pointcloud_depth_max:=$pointcloud_depth_max \
-pointcloud_downsample_step:=$pointcloud_downsample_step \
+pointcloud_downsample_step:=$pointcloud_downsample_step pointcloud_coord:=$pointcloud_coord \
 pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
 infer_thread_num:=$infer_thread_num save_thread_num:=$save_thread_num max_save_task:=$max_save_task \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \

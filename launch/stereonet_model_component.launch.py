@@ -81,6 +81,7 @@ def generate_launch_description():
         {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},
         {'name':'pointcloud_height_max', 'default_value':'5.0', 'description': 'pointcloud_height_max'},
         {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
+        {'name':'pointcloud_coord', 'default_value':'ROS', 'description': 'pointcloud_coord'},
 
         {'name':'calib_method', 'default_value':'none', 'description': '[none custom]'},
         {'name':'stereo_calib_file_path', 'default_value': '', 'description': 'stereo_calib_file_path'},

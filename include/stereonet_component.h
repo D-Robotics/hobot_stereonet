@@ -19,6 +19,7 @@
 #include <sstream>
 #include <mutex>
 #include <omp.h>
+#include <string>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
@@ -324,6 +325,7 @@ private:
   double pointcloud_height_min_ = -5.0;
   double pointcloud_height_max_ = 5.0;
   double pointcloud_depth_max_ = 5.0;
+  std::string pointcloud_coord_ = "ROS"; // ROS or Camera
 
   // postprocess params
   bool speckle_filter_enable_ = false;
