@@ -1,5 +1,5 @@
-SET(CMAKE_C_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
-SET(CMAKE_CXX_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
+#SET(CMAKE_C_COMPILER /opt/gcc-arm-11.2-2022.02-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
+#SET(CMAKE_CXX_COMPILER /opt/gcc-arm-11.2-2022.02-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
 
 cmake_minimum_required(VERSION 3.10)
 
@@ -32,4 +32,11 @@ add_executable(${PROJECT_NAME} main.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../src/image_conversion.cpp)
 
 target_link_libraries(${PROJECT_NAME}
+        dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})
+
+add_executable(metrics metrics_main.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/stereonet_process.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/image_conversion.cpp)
+
+target_link_libraries(metrics
         dnn cnn_intf hbmem hbrt_bayes_aarch64 alog ${OpenCV_LIBS})

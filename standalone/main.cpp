@@ -294,12 +294,21 @@ void dump_pcd_file(StereoResult &stereo_result) {
 int dump_visual_image(InferenceData &infer_data,
                       StereoResult &stereo_result,
                       std::vector<float>&points,
-                      const std::string &file_name = "") {
+                      const std::string &file_name = "",
+                      bool render_grid_depth = true,
+                      bool render_horiz_lines = false) {
+  if (render_horiz_lines) render_grid_depth = false;
   auto ts = stereo_result.ts;
   const cv::Mat &depth_img = stereo_result.model_depth;
   cv::Mat bgr_image = infer_data.left_image;
-  cv::Mat visual_img(bgr_image.rows * 2, bgr_image.cols, CV_8UC3);
+  int visual_cols = render_horiz_lines ? bgr_image.cols * 2 : bgr_image.cols;
+  cv::Mat visual_img(bgr_image.rows * 2, visual_cols, CV_8UC3, cv::Scalar(0, 0, 0));
   bgr_image.copyTo(visual_img(cv::Rect(0, 0, bgr_image.cols, bgr_image.rows)));
+
+  if (render_horiz_lines) {
+    infer_data.right_image.copyTo(
+        visual_img(cv::Rect(bgr_image.cols, 0, bgr_image.cols, bgr_image.rows)));
+  }
 
   cv::Mat feat_mat(bgr_image.rows, bgr_image.cols, CV_32F, const_cast<float *>(points.data()));
   dump_disparity(stereo_result, feat_mat, file_name);
@@ -323,12 +332,14 @@ int dump_visual_image(InferenceData &infer_data,
                cv::Point2i(j * x_step, bgr_image.rows * 2),
                cv::Scalar(255, 255, 255), 1);
 
-      cv::line(visual_img, cv::Point2i(0, i * y_step),
-               cv::Point2i(bgr_image.cols, i * y_step),
-               cv::Scalar(255, 255, 255), 1);
-      cv::line(visual_img, cv::Point2i(j * x_step, 0),
-               cv::Point2i(j * x_step, bgr_image.rows),
-               cv::Scalar(255, 255, 255), 1);
+      if (render_grid_depth) {
+        cv::line(visual_img, cv::Point2i(0, i * y_step),
+                 cv::Point2i(bgr_image.cols, i * y_step),
+                 cv::Scalar(255, 255, 255), 1);
+        cv::line(visual_img, cv::Point2i(j * x_step, 0),
+                 cv::Point2i(j * x_step, bgr_image.rows),
+                 cv::Scalar(255, 255, 255), 1);
+      }
       uint16_t Z;
       double distance;
       switch (depth_img.type()) {
@@ -355,12 +366,25 @@ int dump_visual_image(InferenceData &infer_data,
                   cv::FONT_HERSHEY_SIMPLEX, 0.6,
                   cv::Scalar(255, 255, 255), 2);
 
-      cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
-                                                    i * y_step - 3),
-                  cv::FONT_HERSHEY_SIMPLEX, 0.6,
-                  cv::Scalar(255, 255, 255), 2);
+      if (render_grid_depth) {
+        cv::putText(visual_img, ss.str(), cv::Point2i(j * x_step + 3,
+                                                      i * y_step - 3),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6,
+                    cv::Scalar(255, 255, 255), 2);
+      }
     }
   }
+
+  if (render_horiz_lines) {
+    const int line_count = 20;
+    for (int i = 1; i <= line_count; i++) {
+      int y = bgr_image.rows * i / (line_count + 1);
+      cv::line(visual_img, cv::Point2i(0, y),
+               cv::Point2i(visual_cols, y),
+               cv::Scalar(0, 255, 255), 1);
+    }
+  }
+
   if (file_name.empty()) {
     cv::imwrite("./result/" + std::to_string(ts) +"_visual.jpg", visual_img);
   } else {
@@ -369,7 +393,37 @@ int dump_visual_image(InferenceData &infer_data,
   return 0;
 }
 
+struct RenderOptions {
+  bool render_grid_depth = true;
+  bool render_horiz_lines = false;
+};
+
+bool parse_render_options(int argc, char **argv, RenderOptions &opts) {
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+    if (arg == "--no-render-grid-depth") {
+      opts.render_grid_depth = false;
+    } else if (arg == "--render-horiz-lines") {
+      opts.render_horiz_lines = true;
+    } else if (arg == "--help" || arg == "-h") {
+      std::cout << "Usage: " << argv[0]
+                << " [--no-render-grid-depth] [--render-horiz-lines]\n"
+                << "  --no-render-grid-depth  skip grid + depth labels on left BGR half\n"
+                << "  --render-horiz-lines    append right image and draw 20 horizontal lines\n";
+      return false;
+    } else {
+      std::cerr << "unknown arg: " << arg << std::endl;
+      return false;
+    }
+  }
+  return true;
+}
+
 int main_V2_4(int argc, char **argv) {
+  RenderOptions render_opts;
+  if (!parse_render_options(argc, argv, render_opts)) {
+    return -1;
+  }
   int ret;
   std::string stereonet_model_file_path = "./config/DStereoV2.4_int16.bin";
   std::string left_file = "./left000000.png", right_file = "./right000000.png";
@@ -399,7 +453,8 @@ int main_V2_4(int argc, char **argv) {
   ret = stereo_demo.get_inference_result(infer_data,
                                          stereo_result, disparity_points, camera_parameter);
   if (ret == 0) {
-    dump_visual_image(infer_data, stereo_result, disparity_points);
+    dump_visual_image(infer_data, stereo_result, disparity_points, "",
+                      render_opts.render_grid_depth, render_opts.render_horiz_lines);
     dump_pcd_file(stereo_result);
     dump_depth_in_mm(stereo_result);
   } else {
@@ -411,6 +466,10 @@ int main_V2_4(int argc, char **argv) {
 }
 
 int main_V2_4_uncertainty(int argc, char **argv) {
+  RenderOptions render_opts;
+  if (!parse_render_options(argc, argv, render_opts)) {
+    return -1;
+  }
   int ret;
   float blind_area;
   int print_count = 0;
@@ -450,7 +509,8 @@ int main_V2_4_uncertainty(int argc, char **argv) {
           DataWrapper data_wrapper;
           if (data_que.get(data_wrapper)) {
             dump_visual_image(data_wrapper.inference_data,
-                              data_wrapper.stereo_result, data_wrapper.disparity_points);
+                              data_wrapper.stereo_result, data_wrapper.disparity_points, "",
+                              render_opts.render_grid_depth, render_opts.render_horiz_lines);
             dump_pcd_file(data_wrapper.stereo_result);
             dump_depth_in_mm(data_wrapper.stereo_result);
           }
@@ -504,6 +564,8 @@ void calculate_metrics(const std::string &json_file, const std::string &data_pat
   std::vector<double> a99s_max(3, std::numeric_limits<double>::min());
   std::vector<int> a99s_max_index(3, -1);
 
+  constexpr double kMaxDisplayDepth = 5.0;
+  MetricsProcess::set_max_disparity(192);
   stereo_demo.init(stereonet_model_file_path, "v2.4", 192, -0.1);
   stereo_image_sets = StereoDataLoader::load(json_file);
   std::cout << "stereo_image_sets count: " << stereo_image_sets.size() << std::endl;

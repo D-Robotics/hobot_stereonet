@@ -27,8 +27,6 @@
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 
-#define MIN_DISPARITY 1e-3
-
 struct MetricsJsonWriter {
  public:
   MetricsJsonWriter() {
@@ -202,6 +200,18 @@ struct MetricsJsonWriter {
 };
 
 struct MetricsProcess{
+ public:
+  // Min disparity threshold. Derived from the user's max display depth:
+  // min_disparity = fx * baseline / max_depth. Pixels with disparity <= this
+  // are treated as invalid (too far / infinite).
+  static void set_min_disparity(double v) { min_disparity_ = v; }
+  static double min_disparity() { return min_disparity_; }
+
+  // Max disparity ceiling (default 192, the model's max_disp). Pixels with
+  // disparity > this are treated as invalid.
+  static void set_max_disparity(double v) { max_disparity_ = v; }
+  static double max_disparity() { return max_disparity_; }
+
 //----------------------------------------
 // EPE (Endpoint Error)
 //----------------------------------------
@@ -221,7 +231,8 @@ struct MetricsProcess{
     gt_disp.convertTo(gt, CV_64F);
     pred_disp.convertTo(pred, CV_64F);
 
-    cv::Mat valid_mask = (gt > MIN_DISPARITY) & (pred > MIN_DISPARITY) & (gt <= 192) & (pred <= 192);
+    cv::Mat valid_mask = (gt > min_disparity()) & (pred > min_disparity()) &
+                         (gt <= max_disparity()) & (pred <= max_disparity());
 
     int valid_count = cv::countNonZero(valid_mask);
     if (valid_count == 0)
@@ -243,7 +254,8 @@ struct MetricsProcess{
     gt_disp.convertTo(gt, CV_64F);
     pred_disp.convertTo(pred, CV_64F);
 
-    cv::Mat valid_mask = (gt > MIN_DISPARITY) & (pred > MIN_DISPARITY) & (gt <= 192) & (pred <= 192);
+    cv::Mat valid_mask = (gt > min_disparity()) & (pred > min_disparity()) &
+                         (gt <= max_disparity()) & (pred <= max_disparity());
     int valid_count = cv::countNonZero(valid_mask);
     if (valid_count == 0)
       return { std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN() };
@@ -266,7 +278,8 @@ struct MetricsProcess{
     gt_disp.convertTo(gt, CV_64F);
     pred_disp.convertTo(pred, CV_64F);
 
-    cv::Mat valid_mask = (gt > MIN_DISPARITY) & (pred > MIN_DISPARITY) & (gt <= 192) & (pred <= 192);
+    cv::Mat valid_mask = (gt > min_disparity()) & (pred > min_disparity()) &
+                         (gt <= max_disparity()) & (pred <= max_disparity());
     cv::Mat gt_depth = dispToDepth(gt, fx, baseline);
 
     cv::Mat near_mask = (gt_depth < depth_threshold) & valid_mask;
@@ -290,7 +303,8 @@ struct MetricsProcess{
     gt_disp.convertTo(gt, CV_64F);
     pred_disp.convertTo(pred, CV_64F);
 
-    cv::Mat valid_mask = (gt > MIN_DISPARITY) & (pred > MIN_DISPARITY) & (gt <= 192) & (pred <= 192);
+    cv::Mat valid_mask = (gt > min_disparity()) & (pred > min_disparity()) &
+                         (gt <= max_disparity()) & (pred <= max_disparity());
     cv::Mat gt_depth = dispToDepth(gt, fx, baseline);
 
     cv::Mat near_mask = (gt_depth < depth_threshold) & valid_mask;
@@ -322,7 +336,8 @@ struct MetricsProcess{
     cv::Mat gt, pred;
     gt_disp.convertTo(gt, CV_64F);
     pred_disp.convertTo(pred, CV_64F);
-    cv::Mat valid_mask = (gt > MIN_DISPARITY) & (pred > MIN_DISPARITY) & (gt <= 192) & (pred <= 192);
+    cv::Mat valid_mask = (gt > min_disparity()) & (pred > min_disparity()) &
+                         (gt <= max_disparity()) & (pred <= max_disparity());
     cv::Mat gt_depth = dispToDepth(gt, fx, baseline);
     cv::Mat pred_depth = dispToDepth(pred, fx, baseline);
     std::vector<double> results;
@@ -406,7 +421,8 @@ struct MetricsProcess{
     cv::Mat gt_depth = dispToDepth(gt, fx, baseline);
     cv::Mat pred_depth = dispToDepth(pred, fx, baseline);
 
-    cv::Mat valid_mask = (gt > MIN_DISPARITY) & (pred > MIN_DISPARITY) & (gt <= 192) & (pred <= 192);
+    cv::Mat valid_mask = (gt > min_disparity()) & (pred > min_disparity()) &
+                         (gt <= max_disparity()) & (pred <= max_disparity());
     cv::Mat far_mask = (gt_depth > depth_threshold) & valid_mask;
 
     int far_count = cv::countNonZero(far_mask);
@@ -418,6 +434,9 @@ struct MetricsProcess{
     return ratio;
   }
 
+ private:
+  static inline double min_disparity_ = 1e-3;
+  static inline double max_disparity_ = 192.0;
 };
 
 
