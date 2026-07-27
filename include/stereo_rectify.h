@@ -17,6 +17,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "opencv2/opencv.hpp"
+#include <fstream>
 
 class StereoRectify {
 public:

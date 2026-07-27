@@ -1,8 +1,12 @@
 #!/bin/bash
-source /opt/tros/humble/setup.bash
-#source /opt/ros/humble/setup.bash
-#source /userdata/install/setup.bash
-#export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/deps
+if [[ -f /opt/tros/humble/setup.bash ]]; then
+  source /opt/tros/humble/setup.bash
+elif [[ -f /opt/tros/jazzy/setup.bash ]]; then
+  source /opt/tros/jazzy/setup.bash
+else
+  echo "Error: neither Humble nor Jazzy TROS environment was found"
+  exit 1
+fi
 
 image_width=1280
 image_height=1088
