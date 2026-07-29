@@ -19,6 +19,9 @@ frame_ts_type=realtime
 out_format=nv12
 channel=2
 channel2=0
+sync_awb=False
+sync_ccm=False
+sync_ae=False
 log_level=ERROR
 
 while [[ $# -gt 0 ]]; do
@@ -34,6 +37,9 @@ while [[ $# -gt 0 ]]; do
     --out_format) out_format=$2; shift 2 ;;
     --channel) channel=$2; shift 2 ;;
     --channel2) channel2=$2; shift 2 ;;
+    --sync_awb) sync_awb=$2; shift 2 ;;
+    --sync_ccm) sync_ccm=$2; shift 2 ;;
+    --sync_ae) sync_ae=$2; shift 2 ;;
     --log_level) log_level=$2; shift 2 ;;
     *) echo "unknown param: $1"; exit 1 ;;
   esac
@@ -48,4 +54,5 @@ ros2 run mipi_cam mipi_cam --ros-args \
 -p frame_ts_type:=$frame_ts_type \
 -p out_format:=$out_format \
 -p channel:=$channel -p channel2:=$channel2 \
+-p sync_awb:=$sync_awb -p sync_ccm:=$sync_ccm -p sync_ae:=$sync_ae \
 --log-level $log_level
