@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "stereo_rectify.h"
-#include <cassert>
 
 StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rclcpp::Logger &logger)
     : stereo_calib_file_path_(stereo_calib_file_path), logger_(logger) {
@@ -254,6 +253,49 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     }
 
     /*
+     * Read Mei unified camera model xi.
+     *
+     * Current YAML format:
+     *
+     * cam1:
+     *   xi_left: ...
+     *   xi_right: ...
+     */
+    double xi_l = 0.0;
+    double xi_r = 0.0;
+    if (cam0_distortion_model == "mei") {
+      bool has_xi = false;
+      // Preferred format: xi stored in each camera.
+      if (!cam0_node["xi"].empty() && !cam1_node["xi"].empty()) {
+        cam0_node["xi"] >> xi_l;
+        cam1_node["xi"] >> xi_r;
+        has_xi = true;
+      }
+
+      // Compatible with current Python output.
+      if (!has_xi && !cam1_node["xi_left"].empty() && !cam1_node["xi_right"].empty()) {
+        cam1_node["xi_left"] >> xi_l;
+        cam1_node["xi_right"] >> xi_r;
+        has_xi = true;
+      }
+
+      // Also allow them under stereo0.
+      if (!has_xi && !stereo_node["xi_left"].empty() && !stereo_node["xi_right"].empty()) {
+        stereo_node["xi_left"] >> xi_l;
+        stereo_node["xi_right"] >> xi_r;
+        has_xi = true;
+      }
+
+      if (!has_xi) {
+        RCLCPP_ERROR_STREAM(logger_, "Mei model requires xi_left and xi_right");
+        return false;
+      }
+
+      RCLCPP_WARN_STREAM(logger_, "=> xi_left: " << xi_l);
+      RCLCPP_WARN_STREAM(logger_, "=> xi_right: " << xi_r);
+    }
+
+    /*
      * Read the stereo extrinsic transformation.
      *
      * T_cn_cnm1 in cam1 represents T_cam1_cam0:
@@ -345,6 +387,8 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     Dr_ = Dr;
     R_rl_ = R_rl;
     t_rl_ = t_rl;
+    xi_l_ = xi_l;
+    xi_r_ = xi_r;
     cam_resolution_ = cam0_resolution;
     distortion_model_ = cam0_distortion_model;
     fov_scale_ = fov_scale;
@@ -481,34 +525,228 @@ static bool has_black_border(const cv::Mat &map1, const cv::Mat &map2, int input
   }
   return false;
 }
-
 static float find_max_no_black_fovscale(const cv::Mat &Kl, const cv::Mat &Dl, const cv::Mat &Kr, const cv::Mat &Dr,
                                         const cv::Mat &R_rl, const cv::Mat &t_rl, int input_w, int input_h,
                                         int output_w, int output_h) {
-  float best_scale = 0.1f;
 
-  for (float scale = 0.1f; scale <= 2.0f; scale += 0.01f) {
+  const cv::Size input_size(input_w, input_h);
+  const cv::Size output_size(output_w, output_h);
+
+  constexpr float kMinScale = 0.1f;
+  constexpr float kInitialMaxScale = 2.0f;
+  constexpr float kTolerance = 1e-4f;
+  constexpr int kMaxIterations = 30;
+
+  auto is_valid = [&](float scale) -> bool {
     cv::Mat Rl, Rr, Pl, Pr, Q;
-    cv::Mat map1_l, map2_l, map1_r, map2_r;
+    cv::Mat map1_l, map2_l;
+    cv::Mat map1_r, map2_r;
 
-    cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, cv::Size(input_w, input_h), R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
-                               cv::fisheye::CALIB_ZERO_DISPARITY, cv::Size(output_w, output_h), 0.0, scale);
+    cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, input_size, R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                               cv::fisheye::CALIB_ZERO_DISPARITY, output_size, 0.0, scale);
 
-    cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl, cv::Size(output_w, output_h), CV_32FC1, map1_l, map2_l);
+    cv::fisheye::initUndistortRectifyMap(Kl, Dl, Rl, Pl, output_size, CV_32FC1, map1_l, map2_l);
 
-    cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(output_w, output_h), CV_32FC1, map1_r, map2_r);
+    cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, output_size, CV_32FC1, map1_r, map2_r);
 
-    bool left_black = has_black_border(map1_l, map2_l, input_w, input_h);
-    bool right_black = has_black_border(map1_r, map2_r, input_w, input_h);
+    return !has_black_border(map1_l, map2_l, input_w, input_h) && !has_black_border(map1_r, map2_r, input_w, input_h);
+  };
 
-    if (!left_black && !right_black) {
-      best_scale = scale;
+  /*
+   * fov_scale:
+   *
+   * smaller -> larger focal -> smaller FOV -> easier to be valid
+   * larger  -> smaller focal -> larger FOV -> easier to have black border
+   *
+   * We search the maximum valid scale.
+   */
+
+  float low = kMinScale;
+
+  if (!is_valid(low)) {
+    throw std::runtime_error("Even minimum fisheye fov_scale has black border");
+  }
+
+  /*
+   * Find an invalid upper bound.
+   */
+  float high = kInitialMaxScale;
+
+  while (is_valid(high)) {
+    low = high;
+    high *= 1.5f;
+
+    if (high > 20.0f) {
+      // Everything tested is valid.
+      return low;
+    }
+  }
+
+  /*
+   * Now:
+   *
+   * low  -> valid
+   * high -> invalid
+   *
+   * Search maximum valid scale.
+   */
+  for (int i = 0; i < kMaxIterations; ++i) {
+
+    const float mid = 0.5f * (low + high);
+
+    if (is_valid(mid)) {
+      low = mid;
     } else {
+      high = mid;
+    }
+
+    if ((high - low) < kTolerance) {
       break;
     }
   }
 
-  return best_scale;
+  return low;
+}
+
+static bool check_mei_no_black(const cv::Mat &Kl, const cv::Mat &Dl, double xi_l, const cv::Mat &Kr, const cv::Mat &Dr,
+                               double xi_r, const cv::Mat &Rl, const cv::Mat &Rr, const cv::Size &input_size,
+                               const cv::Size &output_size, double focal, double border = 1.0) {
+
+  const double cx = (output_size.width - 1) * 0.5;
+
+  const double cy = (output_size.height - 1) * 0.5;
+
+  cv::Mat Knew = (cv::Mat_<double>(3, 3) << focal, 0.0, cx, 0.0, focal, cy, 0.0, 0.0, 1.0);
+
+  cv::Mat map1_l, map2_l;
+  cv::Mat map1_r, map2_r;
+
+  cv::omnidir::initUndistortRectifyMap(Kl, Dl, xi_l, Rl, Knew, output_size, CV_32FC1, map1_l, map2_l,
+                                       cv::omnidir::RECTIFY_PERSPECTIVE);
+
+  cv::omnidir::initUndistortRectifyMap(Kr, Dr, xi_r, Rr, Knew, output_size, CV_32FC1, map1_r, map2_r,
+                                       cv::omnidir::RECTIFY_PERSPECTIVE);
+
+  auto map_valid = [&](const cv::Mat &map_x, const cv::Mat &map_y) -> bool {
+    for (int y = 0; y < map_x.rows; ++y) {
+
+      const float *px = map_x.ptr<float>(y);
+
+      const float *py = map_y.ptr<float>(y);
+
+      for (int x = 0; x < map_x.cols; ++x) {
+
+        const float mx = px[x];
+        const float my = py[x];
+
+        if (!std::isfinite(mx) || !std::isfinite(my) || mx < border || mx > input_size.width - 1 - border ||
+            my < border || my > input_size.height - 1 - border) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  return map_valid(map1_l, map2_l) && map_valid(map1_r, map2_r);
+}
+
+static double find_min_valid_mei_focal_scale(const cv::Mat &Kl, const cv::Mat &Dl, double xi_l, const cv::Mat &Kr,
+                                             const cv::Mat &Dr, double xi_r, const cv::Mat &Rl, const cv::Mat &Rr,
+                                             const cv::Size &input_size, const cv::Size &output_size,
+                                             double &base_focal) {
+
+  /*
+   * Use one common focal length for both x/y directions.
+   * This guarantees:
+   *
+   * fx == fy
+   *
+   * after rectification.
+   */
+
+  const double focal_l = std::min(Kl.at<double>(0, 0), Kl.at<double>(1, 1));
+
+  const double focal_r = std::min(Kr.at<double>(0, 0), Kr.at<double>(1, 1));
+
+  /*
+   * Use the smaller focal length of the two cameras
+   * to preserve a larger common stereo FOV.
+   */
+  base_focal = std::min(focal_l, focal_r);
+
+  /*
+   * Scale according to output resolution.
+   *
+   * Use the smaller resolution scale to avoid
+   * artificially increasing the focal length when
+   * aspect ratio changes.
+   */
+  const double scale_x = static_cast<double>(output_size.width) / input_size.width;
+
+  const double scale_y = static_cast<double>(output_size.height) / input_size.height;
+
+  const double resolution_scale = std::min(scale_x, scale_y);
+
+  base_focal *= resolution_scale;
+
+  double low = 0.1;
+  double high = 3.0;
+
+  constexpr double kTolerance = 1e-4;
+  constexpr int kMaxIterations = 30;
+  constexpr double kBorder = 1.0;
+
+  auto valid = [&](double focal_scale) {
+    const double focal = base_focal * focal_scale;
+    return check_mei_no_black(Kl, Dl, xi_l, Kr, Dr, xi_r, Rl, Rr, input_size, output_size, focal, kBorder);
+  };
+
+  /*
+   * Make sure the upper bound is valid.
+   */
+  while (!valid(high)) {
+    high *= 1.5;
+
+    if (high > 20.0) {
+      throw std::runtime_error("Cannot find valid Mei focal scale");
+    }
+  }
+
+  /*
+   * If low is already valid, continue searching
+   * for an even smaller focal length.
+   */
+  while (valid(low) && low > 0.01) {
+    high = low;
+    low *= 0.5;
+  }
+
+  /*
+   * Binary search:
+   *
+   * low  -> invalid, larger FOV
+   * high -> valid, smaller FOV
+   *
+   * Find the minimum valid focal scale.
+   */
+  for (int i = 0; i < kMaxIterations; ++i) {
+
+    const double mid = 0.5 * (low + high);
+
+    if (valid(mid)) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+
+    if ((high - low) < kTolerance) {
+      break;
+    }
+  }
+
+  return high;
 }
 
 int StereoRectify::build_undistmap(const int &input_width, const int &input_height, const int &output_width,
@@ -558,6 +796,57 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
                                          undistmap2l);
     cv::fisheye::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(output_width, output_height), CV_32FC1, undistmap1r,
                                          undistmap2r);
+  } else if (distortion_model_ == "mei") {
+    const cv::Size input_size(input_width, input_height);
+    const cv::Size output_size(output_width, output_height);
+    /*
+     * Compute stereo rectification rotations.
+     */
+    cv::omnidir::stereoRectify(R_rl, t_rl, Rl, Rr);
+    /*
+     * Search maximum FOV without black borders.
+     */
+    double base_focal = 0.0;
+    mei_focal_scale_ =
+        find_min_valid_mei_focal_scale(Kl, Dl, xi_l_, Kr, Dr, xi_r_, Rl, Rr, input_size, output_size, base_focal);
+
+    /*
+     * Build the final perspective intrinsic matrix.
+     */
+    const double rectify_focal = base_focal * mei_focal_scale_;
+    rectify_fx_ = rectify_focal;
+    rectify_fy_ = rectify_focal;
+    rectify_cx_ = (output_width - 1) * 0.5;
+    rectify_cy_ = (output_height - 1) * 0.5;
+    cv::Mat Knew =
+        (cv::Mat_<double>(3, 3) << rectify_fx_, 0.0, rectify_cx_, 0.0, rectify_fy_, rectify_cy_, 0.0, 0.0, 1.0);
+
+    /*
+     * Generate Mei -> perspective remap.
+     */
+    cv::omnidir::initUndistortRectifyMap(Kl, Dl, xi_l_, Rl, Knew, output_size, CV_32FC1, undistmap1l, undistmap2l,
+                                         cv::omnidir::RECTIFY_PERSPECTIVE);
+    cv::omnidir::initUndistortRectifyMap(Kr, Dr, xi_r_, Rr, Knew, output_size, CV_32FC1, undistmap1r, undistmap2r,
+                                         cv::omnidir::RECTIFY_PERSPECTIVE);
+
+    /*
+     * Stereo baseline.
+     */
+    rectify_baseline_ = cv::norm(t_rl);
+
+    /*
+     * Construct Q manually.
+     *
+     * Z = fx * B / disparity
+     */
+    Q = cv::Mat::zeros(4, 4, CV_64F);
+    Q.at<double>(0, 0) = 1.0;
+    Q.at<double>(0, 3) = -rectify_cx_;
+    Q.at<double>(1, 1) = 1.0;
+    Q.at<double>(1, 3) = -rectify_cy_;
+    Q.at<double>(2, 3) = rectify_fx_;
+    Q.at<double>(3, 2) = 1.0 / rectify_baseline_;
+    Q.at<double>(3, 3) = 0.0;
   } else {
     RCLCPP_ERROR_STREAM(logger_, "=> unsupported distortion_model: " << distortion_model_);
     return -1;
@@ -583,6 +872,10 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
   if (distortion_model_ == "equidistant") RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale_);
   if (distortion_model_ == "radtan" || distortion_model_ == "rational_polynomial")
     RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha_);
+  if (distortion_model_ == "mei") {
+    RCLCPP_WARN_STREAM(logger_, "=> xi: left=" << xi_l_ << ", right=" << xi_r_);
+    RCLCPP_WARN_STREAM(logger_, "=> Mei max no-black focal_scale: " << mei_focal_scale_);
+  }
   double fx = Q.at<double>(2, 3);
   double fy = Q.at<double>(2, 3);
   double cx = -Q.at<double>(0, 3);

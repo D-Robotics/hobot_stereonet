@@ -18,6 +18,10 @@
 #include "rclcpp/rclcpp.hpp"
 #include "opencv2/opencv.hpp"
 #include <fstream>
+#include <opencv2/ccalib/omnidir.hpp>
+#include <cmath>
+#include <limits>
+#include <cassert>
 
 class StereoRectify {
 public:
@@ -87,6 +91,18 @@ private:
 
   // build undistort map flag
   bool undistmap_built_ = false;
+
+  // mei model
+  double xi_l_ = 0.0;
+  double xi_r_ = 0.0;
+
+  double rectify_fx_ = 0.0;
+  double rectify_fy_ = 0.0;
+  double rectify_cx_ = 0.0;
+  double rectify_cy_ = 0.0;
+  double rectify_baseline_ = 0.0;
+
+  double mei_focal_scale_ = 1.0;
 };
 
 #endif // HOBOT_STEREONET_INCLUDE_STEREO_RECTIFY_H_
