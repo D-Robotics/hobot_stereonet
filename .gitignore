@@ -1,0 +1,7 @@
+cmake-build-debug
+cmake-build-release
+tools/build
+platform_private
+standalone/build
+src/*.dep
+src/*.obj
