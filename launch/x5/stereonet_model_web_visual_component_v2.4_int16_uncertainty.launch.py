@@ -15,6 +15,7 @@
 import os
 
 from launch import LaunchDescription
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from launch.actions import IncludeLaunchDescription
@@ -42,6 +43,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "stereonet_model_file_path": stereonet_model_file_path,
+            "mipi_image_subframerate": LaunchConfiguration('mipi_image_subframerate'),
         }.items(),
     )
 
