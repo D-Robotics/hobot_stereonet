@@ -170,12 +170,44 @@ public:
   void get_model_input_size(int &w, int &h) const;
 
   /**
-   * @brief Convert disparity map to depth map
-   * @param disp Input disparity map
-   * @param depth Output depth map
+   * @brief Convert a perspective (pinhole) rectified disparity map to a depth
+   *        map: Z = fx * baseline / (disparity + doffs). NEON-accelerated.
+   * @param disp Input disparity map (CV_32FC1)
+   * @param depth Output depth map (CV_16UC1, millimeters)
    * @param camera_intrinsic Camera intrinsic parameters
    */
-  static void disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic);
+  static void perspective_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                             const CameraIntrinsic &camera_intrinsic);
+
+  /**
+   * @brief Convert a longitude-latitude (equirectangular / spherical) rectified
+   *        stereo disparity map to a depth map.
+   *
+   * For RECTIFY_LONGLATI the rectified image is an unrolling of the unit sphere
+   * (column -> longitude, row -> latitude). The disparity d (pixels) relates to
+   * the angular disparity by d = f_lon * dphi, and the baseline B subtends an
+   * angle ~B/R at a point of radial distance R, giving:
+   *
+   *   R = baseline * f_lon / disparity
+   *
+   * where f_lon = camera_intrinsic.fx (longitude pixels-per-radian, = Knew(0,0)
+   * used to build the longlati map) and baseline is in meters. This matches
+   * cv::omnidir::stereoReconstruct for RECTIFY_LONGLATI. The output depth is the
+   * radial distance R expressed in millimeters (CV_16UC1), consistent with
+   * perspective_disparity_to_depth's output format.
+   *
+   * @param disp Input disparity map (CV_32FC1, pixels)
+   * @param depth Output depth map (CV_16UC1, millimeters)
+   * @param camera_intrinsic Camera intrinsic parameters (fx = f_lon, baseline in m)
+   */
+  static void longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                          const CameraIntrinsic &camera_intrinsic);
+
+  /**
+   * @brief Dispatch disparity->depth conversion based on camera_intrinsic.rectify_model.
+   *        Uses longlati_disparity_to_depth for RECTIFY_LONGLATI, else perspective_disparity_to_depth.
+   */
+  static void disparity_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic);
 
   /**
    * @brief Convert depth map to point cloud

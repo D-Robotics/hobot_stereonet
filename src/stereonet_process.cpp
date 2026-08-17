@@ -212,7 +212,7 @@ int StereonetProcess::forward_async(std::vector<uint8_t> &left_img_data, std::ve
     postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
 
     cv::Mat depth;
-    disp_to_depth(disp, depth, *camera_intrinsic);
+    disparity_to_depth(disp, depth, *camera_intrinsic);
 
     auto pub_data = std::make_shared<PubData>();
     pub_data->timestamp = static_cast<uint64_t>(stereo_msg->header.stamp.sec) * 1'000'000'000 +
@@ -323,7 +323,7 @@ int StereonetProcess::postprocess_out_disp_depth(const int idle_tensor_id, const
                                                  cv::Mat &uncert, cv::Mat &depth) {
   int ret_code = 0;
   ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
-  disp_to_depth(disp, depth, camera_intrinsic);
+  disparity_to_depth(disp, depth, camera_intrinsic);
   return ret_code;
 }
 
@@ -332,7 +332,7 @@ int StereonetProcess::postprocess_out_depth(const int idle_tensor_id, const doub
   int ret_code = 0;
   cv::Mat disp, uncert;
   ret_code = postprocess(idle_tensor_id, uncertainty_th, disp, uncert);
-  disp_to_depth(disp, depth, camera_intrinsic);
+  disparity_to_depth(disp, depth, camera_intrinsic);
   return ret_code;
 }
 
@@ -1235,28 +1235,8 @@ void StereonetProcess::get_model_input_size(int &w, int &h) const {
   h = model_input_h_;
 }
 
-/*
-void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic) {
-  depth = cv::Mat::zeros(disp.size(), CV_16UC1);
-  for (int i = 0; i < disp.rows; ++i) {
-    for (int j = 0; j < disp.cols; ++j) {
-      float d = disp.at<float>(i, j);
-      if (d <= 0.0) {
-        depth.at<uint16_t>(i, j) = 0;
-      } else {
-        float z = (camera_intrinsic.baseline * camera_intrinsic.fx * 1000.0) / (d + camera_intrinsic.doffs); // in mm
-        if (z > 65535.0) {
-          depth.at<uint16_t>(i, j) = 65535;
-        } else {
-          depth.at<uint16_t>(i, j) = static_cast<uint16_t>(z);
-        }
-      }
-    }
-  }
-}
-*/
-
-void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic) {
+void StereonetProcess::perspective_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                                      const CameraIntrinsic &camera_intrinsic) {
   depth.create(disp.size(), CV_16UC1);
   const int rows = disp.rows;
   const int cols = disp.cols;
@@ -1301,6 +1281,59 @@ void StereonetProcess::disp_to_depth(const cv::Mat &disp, cv::Mat &depth, const 
         depth_ptr[j] = (z > 65535.0f) ? 65535 : static_cast<uint16_t>(z);
       }
     }
+  }
+}
+
+void StereonetProcess::longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                                   const CameraIntrinsic &camera_intrinsic) {
+  depth.create(disp.size(), CV_16UC1);
+  const int rows = disp.rows;
+  const int cols = disp.cols;
+
+  // Spherical (longitude-latitude) stereo triangulation, matching the Python
+  // longlati reconstruction:
+  //   pi_w = PI / (W-1)               // radians per pixel of longitude (= 1/fx)
+  //   diff = pi_w * disparity         // angular disparity (rad)
+  //   tt   = (col/(W-1) - 0.5) * PI   // longitude of the pixel (rad)
+  //   mgnt = baseline * sin(col*pi_w - diff) / sin(diff)   // radial distance (m)
+  // The scalar depth stored here is mgnt converted to millimeters.
+  const double bl = camera_intrinsic.baseline; // meters
+  const double pi_w = (cols > 1) ? (M_PI / (cols - 1)) : 0.0;
+
+  for (int i = 0; i < rows; ++i) {
+    const float *disp_ptr = disp.ptr<float>(i);
+    uint16_t *depth_ptr = depth.ptr<uint16_t>(i);
+    for (int j = 0; j < cols; ++j) {
+      const float d = disp_ptr[j];
+      if (d <= 0.0f) {
+        depth_ptr[j] = 0;
+        continue;
+      }
+      const double diff = pi_w * d;
+      const double sin_diff = std::sin(diff);
+      if (sin_diff <= 1e-12) {
+        // angular disparity too small (very far) or invalid -> saturate
+        depth_ptr[j] = 65535;
+        continue;
+      }
+      const double col_angle = static_cast<double>(j) * pi_w; // = j*PI/(cols-1)
+      const double mgnt = bl * std::sin(col_angle - diff) / sin_diff; // meters
+      if (!std::isfinite(mgnt) || mgnt <= 0.0) {
+        depth_ptr[j] = 0;
+        continue;
+      }
+      double mm = mgnt * 1000.0;
+      if (mm > 65535.0) mm = 65535.0;
+      depth_ptr[j] = static_cast<uint16_t>(mm);
+    }
+  }
+}
+
+void StereonetProcess::disparity_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic) {
+  if (camera_intrinsic.rectify_model == "RECTIFY_LONGLATI") {
+    longlati_disparity_to_depth(disp, depth, camera_intrinsic);
+  } else {
+    perspective_disparity_to_depth(disp, depth, camera_intrinsic);
   }
 }
 

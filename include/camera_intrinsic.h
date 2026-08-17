@@ -29,6 +29,12 @@ struct CameraIntrinsic {
   double baseline = 0.0; // in meters
   double doffs = 0.0;
 
+  // Mei omnidirectional rectification model: "RECTIFY_PERSPECTIVE" (default)
+  // or "RECTIFY_LONGLATI" (longitude-latitude / spherical projection).
+  // For LONGLATI, fx is the longitude pixels-per-radian of the rectified
+  // equirectangular image and the depth is the radial distance.
+  std::string rectify_model = "RECTIFY_PERSPECTIVE";
+
   bool is_valid() const {
     return (fx > 0.0 && fy > 0.0 && cx >= 0.0 && cy >= 0.0 && baseline > 0.0);
   }

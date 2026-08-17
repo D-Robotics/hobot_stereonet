@@ -70,6 +70,11 @@ public:
    */
   void get_intrinsic(double &fx, double &fy, double &cx, double &cy, double &baseline) const;
 
+  /**
+   * @brief Get the rectification model name, e.g. "RECTIFY_PERSPECTIVE" or "RECTIFY_LONGLATI".
+   */
+  std::string get_rectify_model() const { return rectify_model_; }
+
 private:
   // logger
   rclcpp::Logger logger_;
@@ -81,9 +86,15 @@ private:
   cv::Mat Kl_, Kr_, Dl_, Dr_, R_rl_, t_rl_;
   std::vector<int> cam_resolution_;
   std::string distortion_model_;
+  // Mei rectification model: "RECTIFY_PERSPECTIVE" (default) or "RECTIFY_LONGLATI".
+  std::string rectify_model_ = "RECTIFY_PERSPECTIVE";
   float fov_scale_ = 0.8f;
-  bool fov_scale_provided_ = false;
   float alpha_ = 0.0f;
+
+  // Mei perspective / fisheye (equidistant): target horizontal FOV in degrees
+  // (<=0 means auto max-no-black). mei: focal derived directly from it;
+  // equidistant: the fov_scale yielding this HFOV is searched.
+  double target_hfov_ = 0.0;
 
   // stereo rectification
   cv::Mat Q_;

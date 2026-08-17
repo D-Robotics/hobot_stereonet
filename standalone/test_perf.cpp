@@ -216,7 +216,7 @@ private:
           cv::Mat disp, uncert;
           stereonet_process_->forward_sync(left_img_nv12, right_img_nv12, uncertainty_th_, disp, uncert);
           cv::Mat depth;
-          stereonet_process_->disp_to_depth(disp, depth, camera_intrinsic_);
+          stereonet_process_->perspective_disparity_to_depth(disp, depth, camera_intrinsic_);
 
           // enquque
           while (pub_data_queue_.size_approx() >= infer_thread_num_) {

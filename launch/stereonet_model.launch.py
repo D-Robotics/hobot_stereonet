@@ -141,7 +141,7 @@ def generate_launch_description():
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
         {'name':'max_save_task', 'default_value':'50', 'description': 'max_save_task'},
 
-        {'name':'post_version', 'default_value':'auto', 'description': 'post_version'},
+        {'name':'post_version', 'default_value':'auto', 'description':'post_version'},
     ]
 
     launch = declare_configurable_parameters(node_params)

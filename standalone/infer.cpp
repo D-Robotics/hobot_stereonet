@@ -239,7 +239,7 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
     }
     cv::Mat depth;
     if (camera_intrinsic.is_valid()) {
-      stereonet_process->disp_to_depth(disp, depth, camera_intrinsic);
+      stereonet_process->perspective_disparity_to_depth(disp, depth, camera_intrinsic);
     }
 
     // epipolar check

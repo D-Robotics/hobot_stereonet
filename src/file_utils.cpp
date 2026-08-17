@@ -26,9 +26,8 @@ std::vector<std::pair<std::string, std::string>> FileUtils::find_pairs(const std
 
     auto path = entry.path();
     std::string filename = path.filename().string();
-    std::string extension = path.extension().string();
 
-    if ((extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp") &&
+    if (is_image_file(path.extension().string()) &&
         filename.find("left") != std::string::npos) {
       std::string right_filename = filename;
       size_t pos = right_filename.find("left");
@@ -45,6 +44,33 @@ std::vector<std::pair<std::string, std::string>> FileUtils::find_pairs(const std
   });
 
   return file_pairs;
+}
+
+bool FileUtils::is_image_file(const std::string &extension) {
+  return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp";
+}
+
+std::vector<std::string> FileUtils::find_images(const std::string &folder_path) {
+  std::vector<std::string> images;
+
+  if (!fs::exists(folder_path) || !fs::is_directory(folder_path)) {
+    return images;
+  }
+
+  for (const auto &entry : fs::directory_iterator(folder_path)) {
+    if (!entry.is_regular_file()) continue;
+
+    auto path = entry.path();
+    if (!is_image_file(path.extension().string())) continue;
+
+    images.emplace_back(fs::absolute(path).string());
+  }
+
+  std::sort(images.begin(), images.end(), [](const auto &a, const auto &b) {
+    return fs::path(a).filename().string() < fs::path(b).filename().string();
+  });
+
+  return images;
 }
 
 void FileUtils::save_to_bin(const std::string &filename, const char *data, size_t size) {

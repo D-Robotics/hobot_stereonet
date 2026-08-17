@@ -161,6 +161,7 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<bool>("save_pcd_flag", false);
   save_pcd_flag_ = this->get_parameter("save_pcd_flag").as_bool();
 
+
   this->declare_parameter<std::string>("calib_method", "none");
   calib_method_ = this->get_parameter("calib_method").as_string();
   auto is_valid_calib_method = [](const std::string &calib_method) {
@@ -649,6 +650,7 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     stereo_rectifier_->build_undistmap(single_img_w, single_img_h, model_input_w, model_input_h);
     stereo_rectifier_->get_intrinsic(camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
                                      camera_intrinsic_->cy, camera_intrinsic_->baseline);
+    camera_intrinsic_->rectify_model = stereo_rectifier_->get_rectify_model();
     camera_info_updated_ = true;
   }
 
@@ -756,9 +758,9 @@ void StereoNetNode::infer_function(const int &thread_id) {
         stereonet_process_->forward_sync(rectify_left_img_data, rectify_right_img_data, uncertainty_th_, disp, uncert);
         cv::Mat depth;
         {
-          ScopeProcessTime t(this->get_logger(), "disp_to_depth");
+          ScopeProcessTime t(this->get_logger(), "disparity_to_depth");
           if (camera_intrinsic_->is_valid()) {
-            StereonetProcess::disp_to_depth(disp, depth, *camera_intrinsic_);
+            StereonetProcess::disparity_to_depth(disp, depth, *camera_intrinsic_);
           } else {
             if (calib_method_ == "none") {
               RCLCPP_ERROR_ONCE(
@@ -1353,60 +1355,9 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   cv::Mat bgr;
   ImgConvertUtils::nv12_to_bgr_mat(pub_data->rectify_left_img_data.data(), bgr, pub_data->disp.cols,
                                    pub_data->disp.rows);
-  const int step = pointcloud_downsample_step_; // downsample
-  const int rows = pub_data->depth.rows;
-  const int cols = pub_data->depth.cols;
-  const float fx = camera_intrinsic_->fx;
-  const float fy = camera_intrinsic_->fy;
-  const float cx = camera_intrinsic_->cx;
-  const float cy = camera_intrinsic_->cy;
 
-  int num_threads = omp_get_max_threads();
-  std::vector<std::vector<pcl::PointXYZRGB>> thread_points(num_threads);
-
-  // Estimate the capacity needed for each thread to avoid frequent resizing during push_back
-  size_t est_points_per_thread = (rows / step) * (cols / step) / num_threads;
-  for (auto &v : thread_points) v.reserve(est_points_per_thread);
-
-#pragma omp parallel for schedule(static)
-  for (int v = 0; v < rows; v += step) {
-    int tid = omp_get_thread_num();
-    std::vector<pcl::PointXYZRGB> &local_points = thread_points[tid];
-    const uint16_t *depth_row = pub_data->depth.ptr<uint16_t>(v);
-    const cv::Vec3b *bgr_row = bgr.ptr<cv::Vec3b>(v);
-    for (int u = 0; u < cols; u += step) {
-      float z = depth_row[u] * 0.001f; // mm to m
-      if (z <= 0 || z > pointcloud_depth_max_) continue;
-      float x = (u - cx) * z / fx;
-      float y = (v - cy) * z / fy;
-      if (-y > pointcloud_height_max_ || -y < pointcloud_height_min_) continue;
-      pcl::PointXYZRGB pt;
-      if (pointcloud_coord_ == "ROS") {
-        pt.x = z;
-        pt.y = -x;
-        pt.z = -y;
-      } else {
-        pt.x = x;
-        pt.y = y;
-        pt.z = z;
-      }
-      const cv::Vec3b &color = bgr_row[u];
-      pt.r = color[2];
-      pt.g = color[1];
-      pt.b = color[0];
-      local_points.push_back(pt);
-    }
-  }
-
-  // Count total points and reserve space in pcl_cloud
-  size_t total_points = 0;
-  for (auto &v : thread_points) total_points += v.size();
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-  pcl_cloud->points.reserve(total_points);
-  for (auto &v : thread_points) pcl_cloud->points.insert(pcl_cloud->points.end(), v.begin(), v.end());
-  pcl_cloud->width = pcl_cloud->points.size();
-  pcl_cloud->height = 1;
-  pcl_cloud->is_dense = false;
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud;
+  build_pointcloud(pub_data->disp, pub_data->depth, bgr, pcl_cloud);
 
   sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
   if (pcl_filter_enable_) {
@@ -1426,6 +1377,96 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   cloud_msg->is_dense = false;
   cloud_msg->is_bigendian = false;
   pointcloud2_pub_->publish(*cloud_msg);
+}
+
+void StereoNetNode::build_pointcloud(const cv::Mat &disp, const cv::Mat &depth, const cv::Mat &left_bgr,
+                                     pcl::PointCloud<pcl::PointXYZRGB>::Ptr &out_cloud) {
+  const int rows = depth.rows;
+  const int cols = depth.cols;
+  const int step = pointcloud_downsample_step_; // downsample
+  const float fx = camera_intrinsic_->fx;
+  const float fy = camera_intrinsic_->fy;
+  const float cx = camera_intrinsic_->cx;
+  const float cy = camera_intrinsic_->cy;
+
+  int num_threads = omp_get_max_threads();
+  std::vector<std::vector<pcl::PointXYZRGB>> thread_points(num_threads);
+  size_t est_points_per_thread = (rows / step) * (cols / step) / num_threads;
+  for (auto &v : thread_points) v.reserve(est_points_per_thread);
+
+  const bool is_longlati = (camera_intrinsic_->rectify_model == "RECTIFY_LONGLATI");
+  // longlati spherical triangulation params (match the Python reconstruction)
+  const double bl = camera_intrinsic_->baseline; // meters
+  const double pi_w = (cols > 1) ? (M_PI / (cols - 1)) : 0.0;
+  const double pi_h = (rows > 1) ? (M_PI / (rows - 1)) : 0.0;
+  // Python longlati FOV (colatitude) threshold: drop rays beyond 0.75 * (pi/2)
+  const double colat_thr = 0.75 * (M_PI / 2.0);
+
+#pragma omp parallel for schedule(static)
+  for (int v = 0; v < rows; v += step) {
+    int tid = omp_get_thread_num();
+    std::vector<pcl::PointXYZRGB> &local_points = thread_points[tid];
+    const cv::Vec3b *bgr_row = left_bgr.ptr<cv::Vec3b>(v);
+    const float *disp_row = is_longlati ? disp.ptr<float>(v) : nullptr;
+    const uint16_t *depth_row = is_longlati ? nullptr : depth.ptr<uint16_t>(v);
+    const double pp = is_longlati ? (static_cast<double>(v) * pi_h - M_PI / 2.0) : 0.0;
+    const double sin_pp = is_longlati ? std::sin(pp) : 0.0;
+    const double cos_pp = is_longlati ? std::cos(pp) : 1.0;
+    for (int u = 0; u < cols; u += step) {
+      float X, Y, Z; // camera frame: +Z forward, +Y down
+      if (is_longlati) {
+        const float d = disp_row[u];
+        if (d <= 0.0f) continue;
+        const double diff = pi_w * d;
+        const double sin_diff = std::sin(diff);
+        if (sin_diff <= 1e-12) continue;
+        const double col_angle = static_cast<double>(u) * pi_w; // u*PI/(cols-1)
+        const double mgnt = bl * std::sin(col_angle - diff) / sin_diff; // radial distance (m)
+        if (!std::isfinite(mgnt) || mgnt <= 0.0) continue;
+        const double tt = col_angle - M_PI / 2.0; // longitude (u/(W-1)-0.5)*PI
+        const double sin_tt = std::sin(tt);
+        const double cos_tt = std::cos(tt);
+        // unit sphere ray (+Z forward): (sin(tt), cos(tt)*sin(pp), cos(tt)*cos(pp))
+        // FOV (colatitude) filter, matching the Python write_ply
+        const double cz_ray = cos_tt * cos_pp;
+        if (std::acos(std::max(-1.0, std::min(1.0, cz_ray))) > colat_thr) continue;
+        X = static_cast<float>(sin_tt * mgnt);
+        Y = static_cast<float>(cos_tt * sin_pp * mgnt);
+        Z = static_cast<float>(cz_ray * mgnt);
+      } else {
+        Z = depth_row[u] * 0.001f; // mm to m
+        if (Z <= 0) continue;
+        X = (u - cx) * Z / fx;
+        Y = (v - cy) * Z / fy;
+      }
+      if (Z <= 0 || Z > pointcloud_depth_max_) continue;
+      if (-Y > pointcloud_height_max_ || -Y < pointcloud_height_min_) continue;
+      pcl::PointXYZRGB pt;
+      if (pointcloud_coord_ == "ROS") {
+        pt.x = Z;
+        pt.y = -X;
+        pt.z = -Y;
+      } else {
+        pt.x = X;
+        pt.y = Y;
+        pt.z = Z;
+      }
+      const cv::Vec3b &color = bgr_row[u];
+      pt.r = color[2];
+      pt.g = color[1];
+      pt.b = color[0];
+      local_points.push_back(pt);
+    }
+  }
+
+  size_t total_points = 0;
+  for (auto &v : thread_points) total_points += v.size();
+  out_cloud.reset(new pcl::PointCloud<pcl::PointXYZRGB>());
+  out_cloud->points.reserve(total_points);
+  for (auto &v : thread_points) out_cloud->points.insert(out_cloud->points.end(), v.begin(), v.end());
+  out_cloud->width = out_cloud->points.size();
+  out_cloud->height = 1;
+  out_cloud->is_dense = false;
 }
 
 void StereoNetNode::publish_origin_left_image(const std::shared_ptr<PubData> &pub_data) {
@@ -2470,16 +2511,14 @@ void StereoNetNode::infer_offline() {
   }
 
   int cnt = 0;
-  for (auto &img_pair : img_paths) {
-    if (rclcpp::ok() == false) break;
-    RCLCPP_WARN_STREAM(this->get_logger(), "\033[33m=> processing image pair: [" << img_pair.first << ", "
-                                                                                 << img_pair.second << "]\033[0m");
-    cv::Mat left_img_bgr = cv::imread(img_pair.first, cv::IMREAD_COLOR);
-    cv::Mat right_img_bgr = cv::imread(img_pair.second, cv::IMREAD_COLOR);
+  // process a left/right image pair: the left and right are stacked vertically
+  // (top = left, bottom = right) into a single nv12 message
+  auto process_pair = [this, &cnt](const cv::Mat &left_img_bgr, const cv::Mat &right_img_bgr,
+                                   const std::string &label) {
+    if (rclcpp::ok() == false) return;
     if (left_img_bgr.empty() || right_img_bgr.empty()) {
-      RCLCPP_ERROR(this->get_logger(), "=> failed to read image pair: %s and %s", img_pair.first.c_str(),
-                   img_pair.second.c_str());
-      continue;
+      RCLCPP_ERROR(this->get_logger(), "=> failed to read image pair: %s", label.c_str());
+      return;
     }
     int model_input_w = 0, model_input_h = 0;
     stereonet_process_->get_model_input_size(model_input_w, model_input_h);
@@ -2487,6 +2526,7 @@ void StereoNetNode::infer_offline() {
       stereo_rectifier_->build_undistmap(left_img_bgr.cols, left_img_bgr.rows, model_input_w, model_input_h);
       stereo_rectifier_->get_intrinsic(camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
                                        camera_intrinsic_->cy, camera_intrinsic_->baseline);
+      camera_intrinsic_->rectify_model = stereo_rectifier_->get_rectify_model();
     }
 
     cv::Mat combine_img_bgr;
@@ -2512,6 +2552,38 @@ void StereoNetNode::infer_offline() {
     input_image_queue_.enqueue(stereo_msg);
     std::this_thread::sleep_for(std::chrono::milliseconds(image_sleep_));
     cnt++;
+  };
+
+  if (!img_paths.empty()) {
+    for (auto &img_pair : img_paths) {
+      if (rclcpp::ok() == false) break;
+      RCLCPP_WARN_STREAM(this->get_logger(), "\033[33m=> processing image pair: [" << img_pair.first << ", "
+                                                                                   << img_pair.second << "]\033[0m");
+      cv::Mat left_img_bgr = cv::imread(img_pair.first, cv::IMREAD_COLOR);
+      cv::Mat right_img_bgr = cv::imread(img_pair.second, cv::IMREAD_COLOR);
+      process_pair(left_img_bgr, right_img_bgr, img_pair.first + " and " + img_pair.second);
+    }
+  } else {
+    // no named left/right pairs found; fall back to treating each image in the
+    // directory as a top-bottom stacked frame (top = left, bottom = right)
+    auto stacked_imgs = FileUtils::find_images(local_image_dir_);
+    RCLCPP_WARN(this->get_logger(),
+                "\033[32m=> no image pairs with left/right names found, fall back to %zu stacked images in %s\033[0m",
+                stacked_imgs.size(), local_image_dir_.c_str());
+    for (const auto &stacked_path : stacked_imgs) {
+      if (rclcpp::ok() == false) break;
+      RCLCPP_WARN_STREAM(this->get_logger(),
+                         "\033[33m=> processing stacked image: " << stacked_path << "\033[0m");
+      cv::Mat stacked_img = cv::imread(stacked_path, cv::IMREAD_COLOR);
+      if (stacked_img.empty() || stacked_img.rows < 2) {
+        RCLCPP_ERROR(this->get_logger(), "=> failed to read stacked image or too small: %s", stacked_path.c_str());
+        continue;
+      }
+      int half = stacked_img.rows / 2;
+      cv::Mat left_img_bgr = stacked_img(cv::Rect(0, 0, stacked_img.cols, half)).clone();
+      cv::Mat right_img_bgr = stacked_img(cv::Rect(0, half, stacked_img.cols, stacked_img.rows - half)).clone();
+      process_pair(left_img_bgr, right_img_bgr, stacked_path);
+    }
   }
 
   RCLCPP_WARN(this->get_logger(), "\033[32m=> all %d images in %s have been processed\033[0m", cnt,

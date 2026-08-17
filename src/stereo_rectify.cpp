@@ -116,12 +116,19 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
       RCLCPP_WARN_STREAM(logger_, "=> cam_resolution: [" << cam_resolution_[0] << ", " << cam_resolution_[1] << "]");
     }
     RCLCPP_WARN_STREAM(logger_, "=> distortion_model: " << distortion_model_);
+    if (distortion_model_ == "mei") {
+      RCLCPP_WARN_STREAM(logger_, "=> rectify_model: " << rectify_model_);
+    }
     if (distortion_model_ == "equidistant") {
-      RCLCPP_WARN_STREAM(logger_, "=> fov_scale: " << fov_scale_);
-      RCLCPP_WARN_STREAM(logger_, "=> fov_scale_provided: " << std::boolalpha << fov_scale_provided_);
+      RCLCPP_WARN_STREAM(logger_, "=> target_hfov(deg): " << target_hfov_
+                                                          << (target_hfov_ > 0 ? "" : " (auto max-no-black)"));
     }
     if (distortion_model_ == "radtan" || distortion_model_ == "rational_polynomial") {
       RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha_);
+    }
+    if (distortion_model_ == "mei") {
+      RCLCPP_WARN_STREAM(logger_, "=> target_hfov(deg): " << target_hfov_
+                                                          << (target_hfov_ > 0 ? "" : " (auto max-no-black)"));
     }
     RCLCPP_WARN_STREAM(logger_, "=> ---------------------------------------------");
   };
@@ -293,6 +300,28 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
 
       RCLCPP_WARN_STREAM(logger_, "=> xi_left: " << xi_l);
       RCLCPP_WARN_STREAM(logger_, "=> xi_right: " << xi_r);
+
+      /*
+       * Read the optional Mei rectification model.
+       *
+       * Supported values: "RECTIFY_PERSPECTIVE" (default), "RECTIFY_LONGLATI".
+       * It can be stored under cam0, cam1, or the stereo0 node.
+       */
+      std::string rectify_model = "RECTIFY_PERSPECTIVE";
+      if (!cam1_node["rectify_model"].empty()) {
+        cam1_node["rectify_model"] >> rectify_model;
+      } else if (!cam0_node["rectify_model"].empty()) {
+        cam0_node["rectify_model"] >> rectify_model;
+      } else if (!stereo_node["rectify_model"].empty()) {
+        stereo_node["rectify_model"] >> rectify_model;
+      }
+      if (rectify_model != "RECTIFY_PERSPECTIVE" && rectify_model != "RECTIFY_LONGLATI") {
+        RCLCPP_WARN_STREAM(logger_, "Unknown rectify_model: "
+                                        << rectify_model << ", fallback to RECTIFY_PERSPECTIVE");
+        rectify_model = "RECTIFY_PERSPECTIVE";
+      }
+      RCLCPP_WARN_STREAM(logger_, "=> rectify_model: " << rectify_model);
+      rectify_model_ = rectify_model;
     }
 
     /*
@@ -351,22 +380,6 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     }
 
     /*
-     * Read the optional fisheye FOV scale.
-     */
-    float fov_scale = 0.8f;
-    bool fov_scale_provided = false;
-    if (!cam1_node["fov_scale"].empty()) {
-      cam1_node["fov_scale"] >> fov_scale;
-      fov_scale_provided = true;
-    } else if (!cam0_node["fov_scale"].empty()) {
-      cam0_node["fov_scale"] >> fov_scale;
-      fov_scale_provided = true;
-    } else if (!stereo_node["fov_scale"].empty()) {
-      stereo_node["fov_scale"] >> fov_scale;
-      fov_scale_provided = true;
-    }
-
-    /*
      * Read the optional pinhole alpha parameter.
      */
     float alpha = 0.0f;
@@ -376,6 +389,21 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
       cam0_node["alpha"] >> alpha;
     } else if (!stereo_node["alpha"].empty()) {
       stereo_node["alpha"] >> alpha;
+    }
+
+    /*
+     * Read the optional Mei perspective target horizontal FOV (degrees).
+     * If > 0, the perspective rectification focal is computed directly from
+     * this FOV instead of searching the maximum no-black FOV. A narrower FOV
+     * (larger focal) avoids black borders; a wider FOV may introduce them.
+     */
+    double target_hfov = 0.0;
+    if (!cam1_node["target_hfov"].empty()) {
+      cam1_node["target_hfov"] >> target_hfov;
+    } else if (!cam0_node["target_hfov"].empty()) {
+      cam0_node["target_hfov"] >> target_hfov;
+    } else if (!stereo_node["target_hfov"].empty()) {
+      stereo_node["target_hfov"] >> target_hfov;
     }
 
     /*
@@ -391,9 +419,8 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     xi_r_ = xi_r;
     cam_resolution_ = cam0_resolution;
     distortion_model_ = cam0_distortion_model;
-    fov_scale_ = fov_scale;
-    fov_scale_provided_ = fov_scale_provided;
     alpha_ = alpha;
+    target_hfov_ = target_hfov;
     printParameters();
 
     return true;
@@ -467,12 +494,6 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
           fs["distortion_model"] >> distortion_model_;
         }
 
-        fov_scale_ = 0.8f;
-        fov_scale_provided_ = false;
-        if (!fs["fov_scale"].empty()) {
-          fs["fov_scale"] >> fov_scale_;
-          fov_scale_provided_ = true;
-        }
 
         alpha_ = 0.0f;
         if (!fs["alpha"].empty()) {
@@ -525,6 +546,7 @@ static bool has_black_border(const cv::Mat &map1, const cv::Mat &map2, int input
   }
   return false;
 }
+
 static float find_max_no_black_fovscale(const cv::Mat &Kl, const cv::Mat &Dl, const cv::Mat &Kr, const cv::Mat &Dr,
                                         const cv::Mat &R_rl, const cv::Mat &t_rl, int input_w, int input_h,
                                         int output_w, int output_h) {
@@ -606,6 +628,58 @@ static float find_max_no_black_fovscale(const cv::Mat &Kl, const cv::Mat &Dl, co
   }
 
   return low;
+}
+
+/*
+ * Search the fisheye fov_scale that yields a target horizontal FOV (degrees).
+ *
+ * The rectified focal after cv::fisheye::stereoRectify is encoded in Q(2,3); the
+ * resulting HFOV is 2*atan(output_w / (2*fx)). Larger fov_scale -> smaller focal
+ * -> larger HFOV (monotonic), so we binary-search the scale whose HFOV matches
+ * the target. If the target exceeds the achievable maximum, the largest scale is
+ * returned.
+ */
+static float find_fovscale_for_target_hfov(const cv::Mat &Kl, const cv::Mat &Dl, const cv::Mat &Kr, const cv::Mat &Dr,
+                                           const cv::Mat &R_rl, const cv::Mat &t_rl, int input_w, int input_h,
+                                           int output_w, int output_h, double target_hfov_deg) {
+  const cv::Size input_size(input_w, input_h);
+  const cv::Size output_size(output_w, output_h);
+
+  auto hfov_deg = [&](float scale) -> double {
+    cv::Mat Rl, Rr, Pl, Pr, Q;
+    cv::fisheye::stereoRectify(Kl, Dl, Kr, Dr, input_size, R_rl, t_rl, Rl, Rr, Pl, Pr, Q,
+                               cv::fisheye::CALIB_ZERO_DISPARITY, output_size, 0.0, scale);
+    const double fx = Q.at<double>(2, 3);
+    if (fx <= 0.0) return 0.0;
+    return 2.0 * std::atan(static_cast<double>(output_w) / (2.0 * fx)) * 180.0 / M_PI;
+  };
+
+  constexpr float kMinScale = 0.1f;
+  constexpr float kTolerance = 1e-3f;
+  constexpr int kMaxIterations = 50;
+
+  float low = kMinScale;
+  float high = 2.0f;
+  // expand upper bound until HFOV reaches/exceeds the target (capped)
+  while (hfov_deg(high) < target_hfov_deg && high < 50.0f) {
+    low = high;
+    high *= 1.5f;
+  }
+  if (hfov_deg(high) < target_hfov_deg) {
+    // target larger than achievable -> return the largest tried scale
+    return high;
+  }
+  // low -> HFOV < target, high -> HFOV >= target
+  for (int i = 0; i < kMaxIterations; ++i) {
+    const float mid = 0.5f * (low + high);
+    if (hfov_deg(mid) < target_hfov_deg) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+    if ((high - low) < kTolerance) break;
+  }
+  return 0.5f * (low + high);
 }
 
 static bool check_mei_no_black(const cv::Mat &Kl, const cv::Mat &Dl, double xi_l, const cv::Mat &Kr, const cv::Mat &Dr,
@@ -749,6 +823,97 @@ static double find_min_valid_mei_focal_scale(const cv::Mat &Kl, const cv::Mat &D
   return high;
 }
 
+/*
+ * Build a custom longitude-latitude (equirectangular / spherical) remap for the
+ * Mei unified camera model.
+ *
+ * Each output pixel (col, row) is mapped to a unit-sphere ray in the rectified
+ * frame using the convention:
+ *
+ *   tt = (col / (W-1) - 0.5) * PI        // longitude, [-PI/2, PI/2]
+ *   pp = (row / (H-1) - 0.5) * PI        // latitude,  [-PI/2, PI/2]
+ *   ray = (sin(tt), cos(tt)*sin(pp), cos(tt)*cos(pp))   // +Z = forward
+ *
+ * This convention matches the Python longlati disparity -> pointcloud
+ * reconstruction (so the rectified image and the depth/pointcloud computation
+ * are self-consistent). The ray is rotated by iR = R^-1 into the original
+ * camera frame and projected through the Mei model (xi, K, D) to obtain the
+ * source pixel. It is NOT cv::omnidir::RECTIFY_LONGLATI (which uses a
+ * different (-cos(theta), ...) ray convention).
+ *
+ * Knew implicitly is diag((W-1)/PI, (H-1)/PI, 1) with cx=(W-1)/2, cy=(H-1)/2.
+ */
+static void build_mei_longlat_map(const cv::Mat &K, const cv::Mat &D, double xi, const cv::Mat &R,
+                                  const cv::Size &output_size, cv::Mat &map1, cv::Mat &map2) {
+  const int W = output_size.width;
+  const int H = output_size.height;
+  map1.create(H, W, CV_32FC1);
+  map2.create(H, W, CV_32FC1);
+
+  const double fx = K.at<double>(0, 0);
+  const double fy = K.at<double>(1, 1);
+  const double cx = K.at<double>(0, 2);
+  const double cy = K.at<double>(1, 2);
+  const double s = K.at<double>(0, 1); // skew, usually 0
+  const double k1 = D.at<double>(0, 0);
+  const double k2 = D.at<double>(0, 1);
+  const double p1 = D.at<double>(0, 2);
+  const double p2 = D.at<double>(0, 3);
+
+  const cv::Mat iR = R.inv();
+
+  for (int row = 0; row < H; ++row) {
+    float *m1 = map1.ptr<float>(row);
+    float *m2 = map2.ptr<float>(row);
+    const double pp = (H > 1) ? (static_cast<double>(row) / (H - 1) - 0.5) * M_PI : 0.0;
+    const double sin_pp = std::sin(pp);
+    const double cos_pp = std::cos(pp);
+    for (int col = 0; col < W; ++col) {
+      const double tt = (W > 1) ? (static_cast<double>(col) / (W - 1) - 0.5) * M_PI : 0.0;
+      const double sin_tt = std::sin(tt);
+      const double cos_tt = std::cos(tt);
+
+      // rectified-frame sphere ray (+Z forward)
+      const double xt = sin_tt;
+      const double yt = cos_tt * sin_pp;
+      const double wt = cos_tt * cos_pp;
+
+      // rotate into the original camera frame
+      const double _x = iR.at<double>(0, 0) * xt + iR.at<double>(0, 1) * yt + iR.at<double>(0, 2) * wt;
+      const double _y = iR.at<double>(1, 0) * xt + iR.at<double>(1, 1) * yt + iR.at<double>(1, 2) * wt;
+      const double _w = iR.at<double>(2, 0) * xt + iR.at<double>(2, 1) * yt + iR.at<double>(2, 2) * wt;
+
+      const double r = std::sqrt(_x * _x + _y * _y + _w * _w);
+      const double Xs = _x / r;
+      const double Ys = _y / r;
+      const double Zs = _w / r;
+
+      // Mei unified model projection
+      const double denom = Zs + xi;
+      if (!std::isfinite(denom) || std::abs(denom) < 1e-12) {
+        // ray outside the camera FOV -> mark as invalid (black after remap)
+        m1[col] = -1.0f;
+        m2[col] = -1.0f;
+        continue;
+      }
+      const double xu = Xs / denom;
+      const double yu = Ys / denom;
+
+      // polynomial distortion (k1, k2, p1, p2)
+      const double r2 = xu * xu + yu * yu;
+      const double r4 = r2 * r2;
+      const double xd = (1 + k1 * r2 + k2 * r4) * xu + 2 * p1 * xu * yu + p2 * (r2 + 2 * xu * xu);
+      const double yd = (1 + k1 * r2 + k2 * r4) * yu + p1 * (r2 + 2 * yu * yu) + 2 * p2 * xu * yu;
+
+      const double u = fx * xd + s * yd + cx;
+      const double v = fy * yd + cy;
+
+      m1[col] = static_cast<float>(u);
+      m2[col] = static_cast<float>(v);
+    }
+  }
+}
+
 int StereoRectify::build_undistmap(const int &input_width, const int &input_height, const int &output_width,
                                    const int &output_height) {
   if (undistmap_built_) return 0;
@@ -782,8 +947,15 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     cv::initUndistortRectifyMap(Kr, Dr, Rr, Pr, cv::Size(output_width, output_height), CV_32FC1, undistmap1r,
                                 undistmap2r);
   } else if (distortion_model_ == "equidistant") {
-    if (fov_scale_provided_) {
-      if (fov_scale_ <= 0) fov_scale_ = 0.8f;
+    /*
+     * If a target horizontal FOV (target_hfov_, degrees) is set, search the
+     * fov_scale that yields it; otherwise search the maximum no-black fov_scale.
+     * (The legacy yaml "fov_scale" field is not read, to avoid conflicts.)
+     */
+    if (target_hfov_ > 0.0 && target_hfov_ < 180.0) {
+      fov_scale_ = find_fovscale_for_target_hfov(Kl, Dl, Kr, Dr, R_rl, t_rl, input_width, input_height, output_width,
+                                                 output_height, target_hfov_);
+      RCLCPP_WARN_STREAM(logger_, "=> fisheye target HFOV: " << target_hfov_ << " deg -> fov_scale " << fov_scale_);
     } else {
       fov_scale_ = find_max_no_black_fovscale(Kl, Dl, Kr, Dr, R_rl, t_rl, input_width, input_height, output_width,
                                               output_height);
@@ -800,34 +972,70 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     const cv::Size input_size(input_width, input_height);
     const cv::Size output_size(output_width, output_height);
     /*
-     * Compute stereo rectification rotations.
+     * Compute stereo rectification rotations (shared by all rectify models).
      */
     cv::omnidir::stereoRectify(R_rl, t_rl, Rl, Rr);
-    /*
-     * Search maximum FOV without black borders.
-     */
-    double base_focal = 0.0;
-    mei_focal_scale_ =
-        find_min_valid_mei_focal_scale(Kl, Dl, xi_l_, Kr, Dr, xi_r_, Rl, Rr, input_size, output_size, base_focal);
 
-    /*
-     * Build the final perspective intrinsic matrix.
-     */
-    const double rectify_focal = base_focal * mei_focal_scale_;
-    rectify_fx_ = rectify_focal;
-    rectify_fy_ = rectify_focal;
     rectify_cx_ = (output_width - 1) * 0.5;
     rectify_cy_ = (output_height - 1) * 0.5;
-    cv::Mat Knew =
-        (cv::Mat_<double>(3, 3) << rectify_fx_, 0.0, rectify_cx_, 0.0, rectify_fy_, rectify_cy_, 0.0, 0.0, 1.0);
 
-    /*
-     * Generate Mei -> perspective remap.
-     */
-    cv::omnidir::initUndistortRectifyMap(Kl, Dl, xi_l_, Rl, Knew, output_size, CV_32FC1, undistmap1l, undistmap2l,
-                                         cv::omnidir::RECTIFY_PERSPECTIVE);
-    cv::omnidir::initUndistortRectifyMap(Kr, Dr, xi_r_, Rr, Knew, output_size, CV_32FC1, undistmap1r, undistmap2r,
-                                         cv::omnidir::RECTIFY_PERSPECTIVE);
+    if (rectify_model_ == "RECTIFY_LONGLATI") {
+      /*
+       * Custom longitude-latitude (equirectangular / spherical) projection
+       * matching the Python longlati convention (see build_mei_longlat_map):
+       *   tt = (col/(W-1) - 0.5)*PI   in [-PI/2, PI/2]  (longitude, front hemisphere)
+       *   pp = (row/(H-1) - 0.5)*PI   in [-PI/2, PI/2]  (latitude)
+       *   ray = (sin(tt), cos(tt)*sin(pp), cos(tt)*cos(pp))   (+Z forward)
+       *
+       * Knew(0,0) = (W-1)/PI is the longitude pixels-per-radian and is the
+       * focal used by the spherical disparity->pointcloud reconstruction:
+       *   diff = disp / Knew(0,0)        (angular disparity, rad)
+       *   R    = baseline * cos(tt-diff) / sin(diff)   (radial distance, m)
+       * Regions outside the camera FOV stay black (invalid disparity/depth).
+       */
+      rectify_fx_ = (output_width - 1) / M_PI;  // longitude px per rad
+      rectify_fy_ = (output_height - 1) / M_PI; // latitude  px per rad
+
+      build_mei_longlat_map(Kl, Dl, xi_l_, Rl, output_size, undistmap1l, undistmap2l);
+      build_mei_longlat_map(Kr, Dr, xi_r_, Rr, output_size, undistmap1r, undistmap2r);
+
+      RCLCPP_WARN_STREAM(logger_, "=> LONGLATI custom map: f_lon(px/rad)=" << rectify_fx_
+                                                                           << ", f_lat(px/rad)=" << rectify_fy_);
+    } else {
+      /*
+       * Perspective projection.
+       *
+       * If a target horizontal FOV (target_hfov_, degrees) is provided, derive
+       * the rectified focal directly from it:
+       *   fx = output_width / (2 * tan(hfov/2))
+       * which narrows (larger focal) or widens (smaller focal) the view to the
+       * requested FOV. Otherwise search the maximum no-black FOV.
+       */
+      double rectify_focal = 0.0;
+      if (target_hfov_ > 0.0 && target_hfov_ < 180.0) {
+        const double hfov_rad = target_hfov_ * M_PI / 180.0;
+        rectify_focal = static_cast<double>(output_width) / (2.0 * std::tan(hfov_rad / 2.0));
+        // not from the focal search; record a neutral scale for logging
+        mei_focal_scale_ = 1.0;
+        RCLCPP_WARN_STREAM(logger_, "=> Mei perspective target HFOV: " << target_hfov_
+                                                                        << " deg -> focal " << rectify_focal);
+      } else {
+        double base_focal = 0.0;
+        mei_focal_scale_ =
+            find_min_valid_mei_focal_scale(Kl, Dl, xi_l_, Kr, Dr, xi_r_, Rl, Rr, input_size, output_size, base_focal);
+        rectify_focal = base_focal * mei_focal_scale_;
+      }
+
+      rectify_fx_ = rectify_focal;
+      rectify_fy_ = rectify_focal;
+      cv::Mat Knew =
+          (cv::Mat_<double>(3, 3) << rectify_fx_, 0.0, rectify_cx_, 0.0, rectify_fy_, rectify_cy_, 0.0, 0.0, 1.0);
+
+      cv::omnidir::initUndistortRectifyMap(Kl, Dl, xi_l_, Rl, Knew, output_size, CV_32FC1, undistmap1l, undistmap2l,
+                                           cv::omnidir::RECTIFY_PERSPECTIVE);
+      cv::omnidir::initUndistortRectifyMap(Kr, Dr, xi_r_, Rr, Knew, output_size, CV_32FC1, undistmap1r, undistmap2r,
+                                           cv::omnidir::RECTIFY_PERSPECTIVE);
+    }
 
     /*
      * Stereo baseline.
@@ -835,9 +1043,13 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
     rectify_baseline_ = cv::norm(t_rl);
 
     /*
-     * Construct Q manually.
+     * Construct Q manually. Q here only carries fx (= Knew(0,0)) and the
+     * baseline for get_intrinsic(); the actual depth/pointcloud is computed
+     * in stereonet_process / publish_pointcloud2.
      *
-     * Z = fx * B / disparity
+     * PERSPECTIVE: Z = fx * B / disparity            (forward depth, pinhole)
+     * LONGLATI:    R = B * cos(tt - diff) / sin(diff) (radial distance, m)
+     *              where tt = (col-cx)/fx, diff = disparity/fx
      */
     Q = cv::Mat::zeros(4, 4, CV_64F);
     Q.at<double>(0, 0) = 1.0;
@@ -873,8 +1085,11 @@ int StereoRectify::build_undistmap(const int &input_width, const int &input_heig
   if (distortion_model_ == "radtan" || distortion_model_ == "rational_polynomial")
     RCLCPP_WARN_STREAM(logger_, "=> alpha: " << alpha_);
   if (distortion_model_ == "mei") {
+    RCLCPP_WARN_STREAM(logger_, "=> rectify_model: " << rectify_model_);
     RCLCPP_WARN_STREAM(logger_, "=> xi: left=" << xi_l_ << ", right=" << xi_r_);
-    RCLCPP_WARN_STREAM(logger_, "=> Mei max no-black focal_scale: " << mei_focal_scale_);
+    if (rectify_model_ == "RECTIFY_PERSPECTIVE") {
+      RCLCPP_WARN_STREAM(logger_, "=> Mei max no-black focal_scale: " << mei_focal_scale_);
+    }
   }
   double fx = Q.at<double>(2, 3);
   double fy = Q.at<double>(2, 3);

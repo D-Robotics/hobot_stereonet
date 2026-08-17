@@ -30,6 +30,9 @@ public:
 
   // utility functions
   static std::vector<std::pair<std::string, std::string>> find_pairs(const std::string &folder_path);
+  // list all image files (png/jpg/jpeg/bmp) in the folder, sorted by filename
+  static std::vector<std::string> find_images(const std::string &folder_path);
+  static bool is_image_file(const std::string &extension);
   static void save_to_bin(const std::string &filename, const char *data, size_t size);
   static void save_two_to_bin(const std::string &filename, const char *data1, size_t size1, const char *data2,
                               size_t size2);

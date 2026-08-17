@@ -209,6 +209,19 @@ private:
   void publish_pointcloud2(const std::shared_ptr<PubData> &pub_data);
 
   /**
+   * @brief Build a colored point cloud from a disparity/depth map (shared by
+   *        publish_pointcloud2 and the offline SGBM path so the depth math is
+   *        identical). For RECTIFY_LONGLATI the points are triangulated from
+   *        the disparity + pixel position; otherwise from the depth map.
+   * @param disp Disparity map (CV_32FC1), used for LONGLATI
+   * @param depth Depth map (CV_16UC1, mm), used for perspective
+   * @param left_bgr Rectified left BGR image (for color)
+   * @param out_cloud Output point cloud
+   */
+  void build_pointcloud(const cv::Mat &disp, const cv::Mat &depth, const cv::Mat &left_bgr,
+                        pcl::PointCloud<pcl::PointXYZRGB>::Ptr &out_cloud);
+
+  /**
    * @brief Publish the visual image based on the disparity map
    * @param pub_data The processed data containing the disparity map and metadata
    */
