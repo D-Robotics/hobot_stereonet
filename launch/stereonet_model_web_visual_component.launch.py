@@ -144,6 +144,7 @@ def generate_launch_description():
             {"gdc_enable": LaunchConfiguration('mipi_gdc_enable')},
             {"frame_id": LaunchConfiguration('frame_id')},
             {"cal_alpha": LaunchConfiguration('mipi_cal_alpha')},
+            {"cal_rotation": LaunchConfiguration('mipi_cal_rotation')},
             {"stream_mode": LaunchConfiguration('mipi_stream_mode')},
             {"sub_stream_enable": LaunchConfiguration('mipi_sub_stream_enable')},
             {"sub_image_width": LaunchConfiguration('mipi_sub_image_width')},
