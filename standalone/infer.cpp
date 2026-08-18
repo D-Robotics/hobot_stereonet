@@ -127,13 +127,25 @@ bool hasImagePairs(const std::string &dir) {
   return !img_pairs.empty();
 }
 
+bool hasSingleImages(const std::string &dir) {
+  return !FileUtils::find_images(dir).empty();
+}
+
 bool processOneSceneDir(const std::string &scene_dir, const std::string &root_dir, const std::string &result_root,
                         std::shared_ptr<stereonet::StereonetProcess> stereonet_process, int model_input_w,
                         int model_input_h, float uncertainty_th) {
   std::vector<std::pair<std::string, std::string>> img_pairs = FileUtils::find_pairs(scene_dir);
+  std::vector<std::string> single_img_paths;
+  bool use_vert_split = false;
   if (img_pairs.empty()) {
-    LOG_WARN(nullptr, "=> no image pairs found in " << scene_dir);
-    return false;
+    // no left/right named image pairs, fall back to vertically stacked images
+    // (top half is the left image, bottom half is the right image)
+    single_img_paths = FileUtils::find_images(scene_dir);
+    if (single_img_paths.empty()) {
+      LOG_WARN(nullptr, "=> no image pairs or images found in " << scene_dir);
+      return false;
+    }
+    use_vert_split = true;
   }
 
   fs::path root_path = fs::weakly_canonical(root_dir);
@@ -183,20 +195,64 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
     LOG_WARN(nullptr, "=> no intrinsic file found in " << scene_dir);
   }
 
-  bool update_cam_intr = false;
+  // build processing list: original left/right pairs first, then vertically stacked images
+  struct WorkItem {
+    std::string left_path;   // left image path, empty when vert_split
+    std::string right_path;  // right image path, empty when vert_split
+    std::string stacked_path;  // stacked image path, used when vert_split
+    std::string prefix;      // output name prefix
+    bool vert_split = false; // true: stacked image, top half is left, bottom half is right
+  };
+  std::vector<WorkItem> work_items;
   for (auto &img_pair : img_pairs) {
-    LOG_INFO(nullptr, "=> processing image pair: " << img_pair.first << " " << img_pair.second);
+    WorkItem item;
+    item.left_path = img_pair.first;
+    item.right_path = img_pair.second;
+    item.prefix = fs::path(img_pair.first).stem().string();
+    work_items.push_back(item);
+  }
+  if (use_vert_split) {
+    for (const auto &img_path : single_img_paths) {
+      WorkItem item;
+      item.stacked_path = img_path;
+      item.prefix = fs::path(img_path).stem().string();
+      item.vert_split = true;
+      work_items.push_back(item);
+    }
+  }
 
-    // read image
-    std::string left_img_path = img_pair.first;
-    std::string right_img_path = img_pair.second;
-    std::string left_img_name = fs::path(left_img_path).filename().string();
-    std::string right_img_name = fs::path(right_img_path).filename().string();
-    cv::Mat left_img = cv::imread(left_img_path);
-    cv::Mat right_img = cv::imread(right_img_path);
-    if (left_img.empty() || right_img.empty()) {
-      LOG_ERROR(nullptr, "=> image read failed");
-      continue;
+  bool update_cam_intr = false;
+  for (auto &item : work_items) {
+    cv::Mat left_img, right_img;
+    std::string left_img_name, right_img_name;
+    if (!item.vert_split) {
+      LOG_INFO(nullptr, "=> processing image pair: " << item.left_path << " " << item.right_path);
+      left_img = cv::imread(item.left_path);
+      right_img = cv::imread(item.right_path);
+      if (left_img.empty() || right_img.empty()) {
+        LOG_ERROR(nullptr, "=> image read failed");
+        continue;
+      }
+      left_img_name = fs::path(item.left_path).filename().string();
+      right_img_name = fs::path(item.right_path).filename().string();
+    } else {
+      LOG_INFO(nullptr, "=> processing vertically stacked image: " << item.stacked_path
+                              << " (top half is left, bottom half is right)");
+      cv::Mat stacked_img = cv::imread(item.stacked_path);
+      if (stacked_img.empty()) {
+        LOG_ERROR(nullptr, "=> image read failed");
+        continue;
+      }
+      if (stacked_img.rows % 2 != 0) {
+        LOG_ERROR(nullptr, "=> stacked image height is odd, cannot split into two halves: " << item.stacked_path);
+        continue;
+      }
+      int half_h = stacked_img.rows / 2;
+      left_img = stacked_img(cv::Rect(0, 0, stacked_img.cols, half_h)).clone();
+      right_img = stacked_img(cv::Rect(0, half_h, stacked_img.cols, half_h)).clone();
+      std::string stacked_name = fs::path(item.stacked_path).filename().string();
+      left_img_name = "left_" + stacked_name;
+      right_img_name = "right_" + stacked_name;
     }
 
     // resize
@@ -254,7 +310,7 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
                                                    epipolar_visual);
 
     // save
-    std::string prefix = fs::path(left_img_name).stem().string();
+    std::string prefix = item.prefix;
 
     cv::imwrite((fs::path(result_dir) / left_img_name).string(), left_img_resize);
     cv::imwrite((fs::path(result_dir) / right_img_name).string(), right_img_resize);
@@ -332,7 +388,7 @@ int main(int argc, char **argv) {
   int processed_dir_count = 0;
 
   // 1. first process the root directory itself, compatible with "directory directly put images and calibration files"
-  if (hasImagePairs(local_img_dir)) {
+  if (hasImagePairs(local_img_dir) || hasSingleImages(local_img_dir)) {
     if (processOneSceneDir(local_img_dir, local_img_dir, result_root, stereonet_process, model_input_w, model_input_h,
                            uncertainty_th)) {
       ++processed_dir_count;
@@ -344,7 +400,7 @@ int main(int argc, char **argv) {
     if (!entry.is_directory()) continue;
 
     std::string sub_dir = entry.path().string();
-    if (!hasImagePairs(sub_dir)) continue;
+    if (!hasImagePairs(sub_dir) && !hasSingleImages(sub_dir)) continue;
 
     if (processOneSceneDir(sub_dir, local_img_dir, result_root, stereonet_process, model_input_w, model_input_h,
                            uncertainty_th)) {
