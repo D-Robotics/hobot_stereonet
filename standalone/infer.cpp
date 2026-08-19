@@ -17,6 +17,7 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <opencv2/opencv.hpp>
 #include <sstream>
 #include <string>
@@ -131,21 +132,85 @@ bool hasSingleImages(const std::string &dir) {
   return !FileUtils::find_images(dir).empty();
 }
 
+bool hasLeftRightDirs(const std::string &dir) {
+  fs::path left_dir = fs::path(dir) / "left";
+  fs::path right_dir = fs::path(dir) / "right";
+  if (!fs::is_directory(left_dir) || !fs::is_directory(right_dir)) return false;
+
+  // both must contain only image files (no subdirectories)
+  auto has_only_images = [](const fs::path &p) {
+    if (!fs::is_directory(p)) return false;
+    for (const auto &entry : fs::directory_iterator(p)) {
+      if (entry.is_directory()) return false;
+      if (entry.is_regular_file() && !FileUtils::is_image_file(entry.path().extension().string())) return false;
+    }
+    return true;
+  };
+
+  return has_only_images(left_dir) && has_only_images(right_dir);
+}
+
+std::vector<std::pair<std::string, std::string>> findLeftRightPairs(const std::string &dir) {
+  std::vector<std::pair<std::string, std::string>> pairs;
+  fs::path left_dir = fs::path(dir) / "left";
+  fs::path right_dir = fs::path(dir) / "right";
+
+  if (!fs::is_directory(left_dir) || !fs::is_directory(right_dir)) return pairs;
+
+  // collect left images indexed by stem
+  std::map<std::string, std::string> left_map;
+  for (const auto &entry : fs::directory_iterator(left_dir)) {
+    if (!entry.is_regular_file()) continue;
+    if (!FileUtils::is_image_file(entry.path().extension().string())) continue;
+    std::string stem = entry.path().stem().string();
+    left_map[stem] = fs::absolute(entry.path()).string();
+  }
+
+  // match against right images
+  for (const auto &entry : fs::directory_iterator(right_dir)) {
+    if (!entry.is_regular_file()) continue;
+    if (!FileUtils::is_image_file(entry.path().extension().string())) continue;
+    std::string stem = entry.path().stem().string();
+    auto it = left_map.find(stem);
+    if (it != left_map.end()) {
+      pairs.emplace_back(it->second, fs::absolute(entry.path()).string());
+    }
+  }
+
+  std::sort(pairs.begin(), pairs.end(), [](const auto &a, const auto &b) {
+    return fs::path(a.first).filename().string() < fs::path(b.first).filename().string();
+  });
+
+  return pairs;
+}
+
 bool processOneSceneDir(const std::string &scene_dir, const std::string &root_dir, const std::string &result_root,
                         std::shared_ptr<stereonet::StereonetProcess> stereonet_process, int model_input_w,
                         int model_input_h, float uncertainty_th) {
   std::vector<std::pair<std::string, std::string>> img_pairs = FileUtils::find_pairs(scene_dir);
   std::vector<std::string> single_img_paths;
   bool use_vert_split = false;
+  bool use_left_right_dirs = false;
   if (img_pairs.empty()) {
-    // no left/right named image pairs, fall back to vertically stacked images
-    // (top half is the left image, bottom half is the right image)
-    single_img_paths = FileUtils::find_images(scene_dir);
-    if (single_img_paths.empty()) {
-      LOG_WARN(nullptr, "=> no image pairs or images found in " << scene_dir);
-      return false;
+    // try left/right subdirectory mode
+    if (hasLeftRightDirs(scene_dir)) {
+      img_pairs = findLeftRightPairs(scene_dir);
+      if (img_pairs.empty()) {
+        LOG_WARN(nullptr, "=> no matching image pairs found in left/right subdirs: " << scene_dir);
+        return false;
+      }
+      use_left_right_dirs = true;
+      LOG_INFO(nullptr, "=> found " << img_pairs.size() << " image pairs via left/right subdirs");
+    } else {
+      // no left/right named image pairs, fall back to vertically stacked images
+      // (top half is the left image, bottom half is the right image)
+      single_img_paths = FileUtils::find_images(scene_dir);
+      if (single_img_paths.empty()) {
+        LOG_WARN(nullptr, "=> no image pairs or images found in " << scene_dir);
+        return false;
+      }
+      use_vert_split = true;
     }
-    use_vert_split = true;
   }
 
   fs::path root_path = fs::weakly_canonical(root_dir);
@@ -202,6 +267,7 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
     std::string stacked_path;  // stacked image path, used when vert_split
     std::string prefix;      // output name prefix
     bool vert_split = false; // true: stacked image, top half is left, bottom half is right
+    bool left_right_dirs = false; // true: from left/right subdirectories
   };
   std::vector<WorkItem> work_items;
   for (auto &img_pair : img_pairs) {
@@ -209,6 +275,7 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
     item.left_path = img_pair.first;
     item.right_path = img_pair.second;
     item.prefix = fs::path(img_pair.first).stem().string();
+    item.left_right_dirs = use_left_right_dirs;
     work_items.push_back(item);
   }
   if (use_vert_split) {
@@ -233,8 +300,13 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
         LOG_ERROR(nullptr, "=> image read failed");
         continue;
       }
-      left_img_name = fs::path(item.left_path).filename().string();
-      right_img_name = fs::path(item.right_path).filename().string();
+      if (item.left_right_dirs) {
+        left_img_name = "left_" + fs::path(item.left_path).filename().string();
+        right_img_name = "right_" + fs::path(item.right_path).filename().string();
+      } else {
+        left_img_name = fs::path(item.left_path).filename().string();
+        right_img_name = fs::path(item.right_path).filename().string();
+      }
     } else {
       LOG_INFO(nullptr, "=> processing vertically stacked image: " << item.stacked_path
                               << " (top half is left, bottom half is right)");
@@ -388,7 +460,7 @@ int main(int argc, char **argv) {
   int processed_dir_count = 0;
 
   // 1. first process the root directory itself, compatible with "directory directly put images and calibration files"
-  if (hasImagePairs(local_img_dir) || hasSingleImages(local_img_dir)) {
+  if (hasImagePairs(local_img_dir) || hasSingleImages(local_img_dir) || hasLeftRightDirs(local_img_dir)) {
     if (processOneSceneDir(local_img_dir, local_img_dir, result_root, stereonet_process, model_input_w, model_input_h,
                            uncertainty_th)) {
       ++processed_dir_count;
@@ -400,7 +472,13 @@ int main(int argc, char **argv) {
     if (!entry.is_directory()) continue;
 
     std::string sub_dir = entry.path().string();
-    if (!hasImagePairs(sub_dir) && !hasSingleImages(sub_dir)) continue;
+    // skip left/right subdirectories that belong to a left/right-dirs parent,
+    // otherwise they would be picked up as vert-split fallback
+    if (hasLeftRightDirs(fs::path(sub_dir).parent_path().string())) {
+      std::string dirname = fs::path(sub_dir).filename().string();
+      if (dirname == "left" || dirname == "right") continue;
+    }
+    if (!hasImagePairs(sub_dir) && !hasSingleImages(sub_dir) && !hasLeftRightDirs(sub_dir)) continue;
 
     if (processOneSceneDir(sub_dir, local_img_dir, result_root, stereonet_process, model_input_w, model_input_h,
                            uncertainty_th)) {
