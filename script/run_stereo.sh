@@ -53,7 +53,7 @@ mipi_lpwm_enable=True
 mipi_rotation=90.0
 mipi_channel=2
 mipi_channel2=0
-mipi_cal_rotation=0.0
+mipi_cal_rotation=90.0
 
 # calib
 calib_method=none
@@ -134,13 +134,12 @@ ground_roi_width=80
 ground_roi_height=40
 ground_roi_min_valid_points=100
 
-# web
-stereonet_pub_web=True
-codec_sub_topic=/$stereo_node_name/stereonet_visual
-codec_in_format=bgr8
-codec_pub_topic=/image_jpeg
-websocket_image_topic=/image_jpeg
-websocket_channel=0
+# web viewer (pointcloud_web_viewer)
+enable_web_viewer=True
+web_pointcloud_topic=""
+web_image_topic=""
+web_image_topic2=""
+web_server_port=8080
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -265,17 +264,21 @@ while [[ $# -gt 0 ]]; do
     --ground_roi_height) ground_roi_height=$2; shift 2 ;;
     --ground_roi_min_valid_points) ground_roi_min_valid_points=$2; shift 2 ;;
 
-    # web
-    --stereonet_pub_web) stereonet_pub_web=$2; shift 2 ;;
-    --codec_sub_topic) codec_sub_topic=$2; shift 2 ;;
-    --codec_in_format) codec_in_format=$2; shift 2 ;;
-    --codec_pub_topic) codec_pub_topic=$2; shift 2 ;;
-    --websocket_image_topic) websocket_image_topic=$2; shift 2 ;;
-    --websocket_channel) websocket_channel=$2; shift 2 ;;
+    # web viewer
+    --enable_web_viewer) enable_web_viewer=$2; shift 2 ;;
+    --web_pointcloud_topic) web_pointcloud_topic=$2; shift 2 ;;
+    --web_image_topic) web_image_topic=$2; shift 2 ;;
+    --web_image_topic2) web_image_topic2=$2; shift 2 ;;
+    --web_server_port) web_server_port=$2; shift 2 ;;
 
     *) echo "unknown param: $1"; exit 1 ;;
   esac
 done
+
+# web viewer default topics (follow stereo_node_name)
+if [[ -z "$web_pointcloud_topic" ]]; then web_pointcloud_topic=/$stereo_node_name/stereonet_pointcloud2; fi
+if [[ -z "$web_image_topic" ]]; then web_image_topic=/$stereo_node_name/stereonet_visual; fi
+if [[ -z "$web_image_topic2" ]]; then web_image_topic2=$stereo_image_topic; fi
 
 ros2 launch hobot_stereonet stereonet_model_web_visual_$stereonet_version.launch.py \
 stereo_node_name:=$stereo_node_name \
@@ -311,8 +314,8 @@ chessboard_per_rows:=$chessboard_per_rows chessboard_per_cols:=$chessboard_per_c
 feature_epipolar_mode:=$feature_epipolar_mode \
 ground_angle_enable:=$ground_angle_enable ground_roi_center_x:=$ground_roi_center_x ground_roi_center_y:=$ground_roi_center_y \
 ground_roi_width:=$ground_roi_width ground_roi_height:=$ground_roi_height ground_roi_min_valid_points:=$ground_roi_min_valid_points \
-stereonet_pub_web:=$stereonet_pub_web codec_sub_topic:=$codec_sub_topic codec_in_format:=$codec_in_format \
-codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic websocket_channel:=$websocket_channel
+enable_web_viewer:=$enable_web_viewer web_pointcloud_topic:=$web_pointcloud_topic \
+web_image_topic:=$web_image_topic web_image_topic2:=$web_image_topic2 web_server_port:=$web_server_port
 
 
 # ------------------------------------ save once ------------------------------------
@@ -338,9 +341,6 @@ codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic 
 # ------------------------------------ save batch -----------------------------------
 
 # ------------------------------------ save calib -----------------------------------
-# bash run_stereo.sh --codec_sub_topic /image_combine_raw --codec_in_format nv12
-# bash run_stereo.sh --codec_sub_topic /image_combine_raw --codec_in_format nv12 --mipi_image_width 1280 --mipi_image_height 1088 --mipi_gdc_enable False
-# ros2 launch hobot_stereonet codec_web_visual.launch.py codec_sub_topic:=/image_combine_raw codec_in_format:=nv12
 # ros2 run hobot_stereonet_utils save_stereo_img --ros-args -p save_num:=1 -p dir:=/root/data/calib_lh230_0804/raw
 # ------------------------------------ save calib -----------------------------------
 
@@ -360,7 +360,7 @@ codec_pub_topic:=$codec_pub_topic websocket_image_topic:=$websocket_image_topic 
 
 # ------------------------------------ compare --------------------------------------
 # ros2 run mipi_cam mipi_cam --ros-args -p device_mode:=dual -p dual_combine:=1 -p image_width:=1280 -p image_height:=1088 -p rotation:=90.0 -p framerate:=30.0 -p gdc_enable:=True -p frame_ts_type:=realtime --log-level ERROR
-# bash run_stereo.sh --stereo_node_name StereoNetNode1 --stereonet_version v2.4_int16 --codec_sub_topic /StereoNetNode1/stereonet_visual --codec_pub_topic /image_jpeg1 --websocket_image_topic /image_jpeg1 --websocket_channel 0
-# bash run_stereo.sh --stereo_node_name StereoNetNode1 --stereonet_version v2.4_int16 --codec_sub_topic /StereoNetNode1/stereonet_visual --codec_pub_topic /image_jpeg1 --websocket_image_topic /image_jpeg1 --websocket_channel 0 --use_mipi_cam False
-# bash run_stereo.sh --stereo_node_name StereoNetNode2 --stereonet_version v2.4_int8  --codec_sub_topic /StereoNetNode2/stereonet_visual --codec_pub_topic /image_jpeg2 --websocket_image_topic /image_jpeg2 --websocket_channel 1 --use_mipi_cam False
+# bash run_stereo.sh --stereo_node_name StereoNetNode1 --stereonet_version v2.4_int16 --web_server_port 8080
+# bash run_stereo.sh --stereo_node_name StereoNetNode1 --stereonet_version v2.4_int16 --enable_web_viewer False --use_mipi_cam False
+# bash run_stereo.sh --stereo_node_name StereoNetNode2 --stereonet_version v2.4_int8 --web_server_port 8081 --use_mipi_cam False
 # ------------------------------------ compare --------------------------------------

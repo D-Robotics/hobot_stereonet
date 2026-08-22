@@ -228,7 +228,7 @@ public:
    * @param max_depth Maximum depth value (unit: m)
    */
   static void depth_to_pointcloud_rgb(const cv::Mat &depth, const cv::Mat &rgb, const CameraIntrinsic &camera_intrinsic,
-                                      std::vector<PointXYZRGB> &pointcloud, const float &max_depth = 5.0f);
+                                      std::vector<PointXYZRGB> &pointcloud, const float &max_depth = 10.0f);
 
   /**
    * @brief Dump point cloud to PCD file

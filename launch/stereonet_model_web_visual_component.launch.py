@@ -32,10 +32,10 @@ from launch.substitutions import TextSubstitution
 import os
 
 def generate_launch_description():
-    stereonet_pub_web_arg = DeclareLaunchArgument(
-        "stereonet_pub_web",
+    enable_web_viewer_arg = DeclareLaunchArgument(
+        "enable_web_viewer",
         default_value="True",
-        description="stereonet_pub_web, if not, we will disable websocket and codec of stereonet depth",
+        description="enable pointcloud_web_viewer for pointcloud + image visualization",
     )
 
     use_mipi_cam_arg = DeclareLaunchArgument(
@@ -43,25 +43,25 @@ def generate_launch_description():
         default_value="True",
         description="use_mipi_cam",
     )
-    codec_sub_topic_arg = DeclareLaunchArgument(
-        "codec_sub_topic",
+    web_pointcloud_topic_arg = DeclareLaunchArgument(
+        "web_pointcloud_topic",
+        default_value="/StereoNetNode/stereonet_pointcloud2",
+        description="pointcloud topic for web viewer",
+    )
+    web_image_topic_arg = DeclareLaunchArgument(
+        "web_image_topic",
         default_value="/StereoNetNode/stereonet_visual",
-        description="codec_sub_topic",
+        description="first image topic for web viewer",
     )
-    codec_in_format_arg = DeclareLaunchArgument(
-        "codec_in_format",
-        default_value="bgr8",
-        description="codec_in_format",
+    web_image_topic2_arg = DeclareLaunchArgument(
+        "web_image_topic2",
+        default_value="/image_combine_raw",
+        description="second image topic for web viewer",
     )
-    codec_pub_topic_arg = DeclareLaunchArgument(
-        "codec_pub_topic",
-        default_value="/image_jpeg",
-        description="codec_pub_topic",
-    )
-    websocket_image_topic_arg = DeclareLaunchArgument(
-        "websocket_image_topic",
-        default_value="/image_jpeg",
-        description="websocket_image_topic",
+    web_server_port_arg = DeclareLaunchArgument(
+        "web_server_port",
+        default_value="8080",
+        description="web viewer server port",
     )
 
     target_container_name_arg = DeclareLaunchArgument(
@@ -155,38 +155,22 @@ def generate_launch_description():
         ],
     )
 
-    # codec node
-    codec_node = IncludeLaunchDescription(
+    # pointcloud web viewer (replaces codec + websocket, shows pointcloud + two images)
+    web_viewer = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory("hobot_codec"),
-                "launch/hobot_codec_encode.launch.py",
+                get_package_share_directory("pointcloud_web_viewer"),
+                "launch/pointcloud_web_viewer.launch.py",
             )
         ),
         launch_arguments={
-            "codec_in_mode": "ros",
-            "codec_out_mode": "ros",
-            "codec_sub_topic": LaunchConfiguration("codec_sub_topic"),
-            "codec_in_format": LaunchConfiguration("codec_in_format"),
-            "codec_pub_topic": LaunchConfiguration("codec_pub_topic"),
-            "codec_out_format": "jpeg",
-            "log_level": "warn",
+            "mode": "online",
+            "pointcloud_topic": LaunchConfiguration("web_pointcloud_topic"),
+            "image_topic": LaunchConfiguration("web_image_topic"),
+            "image_topic2": LaunchConfiguration("web_image_topic2"),
+            "server_port": LaunchConfiguration("web_server_port"),
         }.items(),
-        condition=IfCondition(LaunchConfiguration("stereonet_pub_web")),
-    )
-
-    # web node
-    web_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("websocket"), "launch/websocket.launch.py"
-            )
-        ),
-        launch_arguments={
-            "websocket_image_topic": LaunchConfiguration("websocket_image_topic"),
-            "websocket_only_show_image": "true",
-        }.items(),
-        condition=IfCondition(LaunchConfiguration("stereonet_pub_web")),
+        condition=IfCondition(LaunchConfiguration("enable_web_viewer")),
     )
 
     return LaunchDescription(
@@ -287,13 +271,13 @@ def generate_launch_description():
                 'mipi_sub_image_height',
                 default_value='1088',
                 description='mipi camera sub stream image height'),
-            stereonet_pub_web_arg,
+            enable_web_viewer_arg,
             use_mipi_cam_arg,
             target_container_name_arg,
-            codec_sub_topic_arg,
-            codec_in_format_arg,
-            codec_pub_topic_arg,
-            websocket_image_topic_arg,
+            web_pointcloud_topic_arg,
+            web_image_topic_arg,
+            web_image_topic2_arg,
+            web_server_port_arg,
             shared_mem_node,
             container,
             stereonet_model_component,
@@ -310,7 +294,6 @@ def generate_launch_description():
                     ])
                 )
             ),
-            codec_node,
-            web_node,
+            web_viewer,
         ]
     )

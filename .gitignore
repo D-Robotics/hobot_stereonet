@@ -5,3 +5,4 @@ platform_private
 standalone/build
 src/*.dep
 src/*.obj
+__pycache__
