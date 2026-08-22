@@ -557,10 +557,12 @@ void StereoNetNode::set_subscription_publisher() {
   } else {
     stereo_image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
         stereo_image_topic_, 1, std::bind(&StereoNetNode::stereo_image_callback, this, std::placeholders::_1));
-    camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-        camera_info_topic_, 10, std::bind(&StereoNetNode::camera_info_callback, this, std::placeholders::_1));
-    left_camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-        left_camera_info_topic_, 10, std::bind(&StereoNetNode::left_camera_info_callback, this, std::placeholders::_1));
+    if (calib_method_ == "none") {
+      camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+          camera_info_topic_, 10, std::bind(&StereoNetNode::camera_info_callback, this, std::placeholders::_1));
+      left_camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+          left_camera_info_topic_, 10, std::bind(&StereoNetNode::left_camera_info_callback, this, std::placeholders::_1));
+    }
   }
 
   // Set up publishers
@@ -584,14 +586,16 @@ void StereoNetNode::set_subscription_publisher() {
   }
 
   // Set monitor timer
-  monitor_timer_ = this->create_wall_timer(std::chrono::milliseconds(5000), [this]() {
-    if (!camera_intrinsic_->is_valid()) {
-      RCLCPP_ERROR(this->get_logger(), "\033[31m=> Haven't received any camera info from topic %s\033[0m",
-                   camera_info_topic_.c_str());
-    } else {
-      monitor_timer_->cancel();
-    }
-  });
+  if (calib_method_ == "none") {
+    monitor_timer_ = this->create_wall_timer(std::chrono::milliseconds(5000), [this]() {
+      if (!camera_intrinsic_->is_valid()) {
+        RCLCPP_ERROR(this->get_logger(), "\033[31m=> Haven't received any camera info from topic %s\033[0m",
+                     camera_info_topic_.c_str());
+      } else {
+        monitor_timer_->cancel();
+      }
+    });
+  }
 }
 
 void StereoNetNode::set_dnn_model() {
