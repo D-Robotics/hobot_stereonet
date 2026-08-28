@@ -76,7 +76,7 @@ max_disp_diff=1.0
 pointcloud_height_min=-5.0
 pointcloud_height_max=5.0
 pointcloud_depth_max=5.0
-pointcloud_downsample_step=2
+pointcloud_downsample_step=1
 pointcloud_coord=ROS
 
 # pcl filter
@@ -140,6 +140,7 @@ web_pointcloud_topic=""
 web_image_topic=""
 web_image_topic2=""
 web_server_port=8080
+max_points=100000
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -270,6 +271,7 @@ while [[ $# -gt 0 ]]; do
     --web_image_topic) web_image_topic=$2; shift 2 ;;
     --web_image_topic2) web_image_topic2=$2; shift 2 ;;
     --web_server_port) web_server_port=$2; shift 2 ;;
+    --max_points) max_points=$2; shift 2 ;;
 
     *) echo "unknown param: $1"; exit 1 ;;
   esac
@@ -315,7 +317,8 @@ feature_epipolar_mode:=$feature_epipolar_mode \
 ground_angle_enable:=$ground_angle_enable ground_roi_center_x:=$ground_roi_center_x ground_roi_center_y:=$ground_roi_center_y \
 ground_roi_width:=$ground_roi_width ground_roi_height:=$ground_roi_height ground_roi_min_valid_points:=$ground_roi_min_valid_points \
 enable_web_viewer:=$enable_web_viewer web_pointcloud_topic:=$web_pointcloud_topic \
-web_image_topic:=$web_image_topic web_image_topic2:=$web_image_topic2 web_server_port:=$web_server_port
+web_image_topic:=$web_image_topic web_image_topic2:=$web_image_topic2 web_server_port:=$web_server_port \
+max_points:=$max_points
 
 
 # ------------------------------------ save once ------------------------------------
