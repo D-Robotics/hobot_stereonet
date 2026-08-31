@@ -266,14 +266,19 @@ int StereonetProcess::postprocess(const InferenceHandle &handle, const double &u
   auto disp_tensor = outputs[0];
   auto spx_tensor = outputs[1];
   const int32_t *disp_shape = disp_tensor.properties.validShape.dimensionSize;
+  int disp_c_dim = disp_shape[1];
   int disp_h_dim = disp_shape[2];
   int disp_w_dim = disp_shape[3];
   const int32_t *spx_shape = spx_tensor.properties.validShape.dimensionSize;
+  int spx_c_dim = spx_shape[1];
   int spx_h_dim = spx_shape[2];
   int spx_w_dim = spx_shape[3];
 
   // postprocess
-  if (post_version_ == "v2.0" || (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
+  if (output_count_ == 2 && disp_c_dim == 9 && spx_c_dim == 36 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim) {
+    // V3.2
+    ret_code = postprocess_convex_upsampling_2x_logits(outputs, disp);
+  } else if (post_version_ == "v2.0" || (output_count_ == 2 && disp_h_dim == spx_h_dim && disp_w_dim == spx_w_dim)) {
     ret_code = postprocess_convex_upsampling(outputs, disp);
   } else if (post_version_ == "v2.2" || post_version_ == "v2.3" || post_version_ == "v2.4" ||
              (output_count_ == 2 && disp_h_dim * 4 == spx_h_dim && disp_w_dim * 4 == spx_w_dim)) {
@@ -1001,6 +1006,252 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
   return 0;
 }
 
+int StereonetProcess::postprocess_convex_upsampling_2x_logits(const std::vector<hbDNNTensor> &tensors,
+                                                              cv::Mat &out_mat) {
+  if (tensors.size() < 2) {
+    LOG_ERROR(logger_, "=> postprocess_convex_upsampling_2x_logits: tensors.size() < 2");
+    return -1;
+  }
+
+  const hbDNNTensor &unfold_tensor = tensors[0];
+  const hbDNNTensor &mask_tensor = tensors[1];
+
+  const auto &unfold_prop = unfold_tensor.properties;
+  const auto &mask_prop = mask_tensor.properties;
+
+  // ------------------------------------------------------------
+  // 1. Check tensor shape
+  //
+  // unfold_info : [1, 9,  H, W]
+  // mask_logits : [1, 36, H, W]
+  //
+  // 36 = 9 * 2 * 2
+  // ------------------------------------------------------------
+  if (unfold_prop.validShape.numDimensions != 4 || mask_prop.validShape.numDimensions != 4) {
+    LOG_ERROR(logger_, "=> convex upsample expects 4D NCHW tensors");
+    return -1;
+  }
+
+  const int32_t *unfold_shape = unfold_prop.validShape.dimensionSize;
+  const int32_t *mask_shape = mask_prop.validShape.dimensionSize;
+
+  const int32_t n = unfold_shape[0];
+  const int32_t unfold_c = unfold_shape[1];
+  const int32_t h = unfold_shape[2];
+  const int32_t w = unfold_shape[3];
+
+  const int32_t mask_n = mask_shape[0];
+  const int32_t mask_c = mask_shape[1];
+  const int32_t mask_h = mask_shape[2];
+  const int32_t mask_w = mask_shape[3];
+
+  constexpr int32_t kKernel = 9;
+  constexpr int32_t kUpsample = 2;
+  constexpr int32_t kSubPixels = kUpsample * kUpsample; // 4
+
+  if (n != 1 || mask_n != 1 || unfold_c != kKernel || mask_c != kKernel * kSubPixels || h != mask_h || w != mask_w) {
+    LOG_ERROR(logger_, "=> invalid convex upsample shape, "
+                       "unfold=["
+                           << n << "," << unfold_c << "," << h << "," << w << "], mask=[" << mask_n << "," << mask_c
+                           << "," << mask_h << "," << mask_w << "]");
+    return -1;
+  }
+
+  // ------------------------------------------------------------
+  // 2. Current model outputs F32
+  // ------------------------------------------------------------
+  if (unfold_prop.tensorType != HB_DNN_TENSOR_TYPE_F32 || mask_prop.tensorType != HB_DNN_TENSOR_TYPE_F32) {
+    LOG_ERROR(logger_, "=> convex upsample currently only supports F32, "
+                       "unfold="
+                           << magic_enum::enum_name(static_cast<hbDNNDataType>(unfold_prop.tensorType))
+                           << ", mask=" << magic_enum::enum_name(static_cast<hbDNNDataType>(mask_prop.tensorType)));
+    return -1;
+  }
+
+  // ------------------------------------------------------------
+  // 3. Get tensor memory
+  // ------------------------------------------------------------
+  const auto *unfold_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(unfold_tensor, 0).virAddr);
+
+  const auto *mask_base = reinterpret_cast<const float *>(TENSOR_SYSMEM(mask_tensor, 0).virAddr);
+
+  if (unfold_base == nullptr || mask_base == nullptr) {
+    LOG_ERROR(logger_, "=> convex upsample tensor virAddr is null");
+    return -1;
+  }
+
+  // ------------------------------------------------------------
+  // 4. Read stride
+  //
+  // stride[] unit is byte.
+  //
+  // Example:
+  //
+  // unfold:
+  //   stride[1] = 184320 bytes/channel
+  //   stride[2] = 1152   bytes/row
+  //   stride[3] = 4      bytes/pixel
+  //
+  // ------------------------------------------------------------
+  const auto *unfold_stride = unfold_prop.stride;
+  const auto *mask_stride = mask_prop.stride;
+
+  if (unfold_stride == nullptr || mask_stride == nullptr) {
+    LOG_ERROR(logger_, "=> convex upsample tensor stride is null");
+    return -1;
+  }
+
+  constexpr int32_t elem_size = sizeof(float);
+
+  if (unfold_stride[1] % elem_size != 0 || unfold_stride[2] % elem_size != 0 || unfold_stride[3] % elem_size != 0 ||
+      mask_stride[1] % elem_size != 0 || mask_stride[2] % elem_size != 0 || mask_stride[3] % elem_size != 0) {
+    LOG_ERROR(logger_, "=> invalid F32 tensor stride");
+    return -1;
+  }
+
+  const int64_t unfold_c_stride = static_cast<int64_t>(unfold_stride[1]) / elem_size;
+  const int64_t unfold_h_stride = static_cast<int64_t>(unfold_stride[2]) / elem_size;
+  const int64_t unfold_w_stride = static_cast<int64_t>(unfold_stride[3]) / elem_size;
+
+  const int64_t mask_c_stride = static_cast<int64_t>(mask_stride[1]) / elem_size;
+  const int64_t mask_h_stride = static_cast<int64_t>(mask_stride[2]) / elem_size;
+  const int64_t mask_w_stride = static_cast<int64_t>(mask_stride[3]) / elem_size;
+
+  // ------------------------------------------------------------
+  // 5. Output:
+  //
+  // [H, W] -> [2H, 2W]
+  // 160x288 -> 320x576
+  // ------------------------------------------------------------
+  const int32_t out_h = h * kUpsample;
+  const int32_t out_w = w * kUpsample;
+
+  out_mat = cv::Mat::zeros(out_h, out_w, CV_32FC1);
+
+  // ------------------------------------------------------------
+  // 6. Convex upsampling
+  //
+  // Python:
+  //
+  // mask =
+  //   mask_logits.reshape(N, 1, 9, 2, 2, H, W)
+  //
+  // Therefore original mask channel mapping:
+  //
+  // channel = k * 4 + dy * 2 + dx
+  //
+  // k  : 0~8
+  // dy : 0~1
+  // dx : 0~1
+  //
+  // For every low-resolution pixel:
+  //
+  //   generate:
+  //
+  //   (2y,   2x)
+  //   (2y,   2x+1)
+  //   (2y+1, 2x)
+  //   (2y+1, 2x+1)
+  //
+  // Each output pixel:
+  //
+  // disp =
+  //   sum_k softmax(mask_logits[k]) * unfold_info[k]
+  //
+  // ------------------------------------------------------------
+  for (int32_t y = 0; y < h; ++y) {
+    for (int32_t x = 0; x < w; ++x) {
+
+      // One low-resolution pixel generates 2x2 output pixels.
+      for (int32_t dy = 0; dy < kUpsample; ++dy) {
+        float *out_row = out_mat.ptr<float>(y * kUpsample + dy);
+
+        for (int32_t dx = 0; dx < kUpsample; ++dx) {
+
+          // ----------------------------------------------------
+          // Step 1:
+          // Find max logit for numerically stable softmax.
+          //
+          // Python:
+          //
+          // x = x - x.max(axis=2)
+          // ----------------------------------------------------
+          float max_logit = -std::numeric_limits<float>::infinity();
+
+          for (int32_t k = 0; k < kKernel; ++k) {
+            const int32_t mask_channel = k * kSubPixels + dy * kUpsample + dx;
+
+            const float *mask_c_ptr = mask_base + static_cast<int64_t>(mask_channel) * mask_c_stride;
+
+            const float logit =
+                mask_c_ptr[static_cast<int64_t>(y) * mask_h_stride + static_cast<int64_t>(x) * mask_w_stride];
+
+            max_logit = std::max(max_logit, logit);
+          }
+
+          // ----------------------------------------------------
+          // Step 2:
+          // Calculate softmax denominator.
+          // ----------------------------------------------------
+          float softmax_sum = 0.0f;
+
+          float exp_logits[kKernel];
+
+          for (int32_t k = 0; k < kKernel; ++k) {
+            const int32_t mask_channel = k * kSubPixels + dy * kUpsample + dx;
+
+            const float *mask_c_ptr = mask_base + static_cast<int64_t>(mask_channel) * mask_c_stride;
+
+            const float logit =
+                mask_c_ptr[static_cast<int64_t>(y) * mask_h_stride + static_cast<int64_t>(x) * mask_w_stride];
+
+            const float e = std::exp(logit - max_logit);
+
+            exp_logits[k] = e;
+            softmax_sum += e;
+          }
+
+          if (softmax_sum <= 0.0f) {
+            out_row[x * kUpsample + dx] = 0.0f;
+            continue;
+          }
+
+          // ----------------------------------------------------
+          // Step 3:
+          //
+          // weighted sum:
+          //
+          // disp = sum(weight[k] * unfold[k])
+          // ----------------------------------------------------
+          float value = 0.0f;
+
+          const float inv_softmax_sum = 1.0f / softmax_sum;
+
+          for (int32_t k = 0; k < kKernel; ++k) {
+            const float weight = exp_logits[k] * inv_softmax_sum;
+
+            const float *unfold_c_ptr = unfold_base + static_cast<int64_t>(k) * unfold_c_stride;
+
+            const float disp_value =
+                unfold_c_ptr[static_cast<int64_t>(y) * unfold_h_stride + static_cast<int64_t>(x) * unfold_w_stride];
+
+            value += weight * disp_value;
+          }
+
+          // ----------------------------------------------------
+          // Equivalent to Python:
+          //
+          // transpose + reshape
+          // ----------------------------------------------------
+          out_row[x * kUpsample + dx] = value;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
 int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tensors) {
   static bool prt_flag = true;
   int ret_code = 0;
@@ -1316,7 +1567,7 @@ void StereonetProcess::longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat 
         depth_ptr[j] = 65535;
         continue;
       }
-      const double col_angle = static_cast<double>(j) * pi_w; // = j*PI/(cols-1)
+      const double col_angle = static_cast<double>(j) * pi_w;         // = j*PI/(cols-1)
       const double mgnt = bl * std::sin(col_angle - diff) / sin_diff; // meters
       if (!std::isfinite(mgnt) || mgnt <= 0.0) {
         depth_ptr[j] = 0;
@@ -1329,7 +1580,8 @@ void StereonetProcess::longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat 
   }
 }
 
-void StereonetProcess::disparity_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic) {
+void StereonetProcess::disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                          const CameraIntrinsic &camera_intrinsic) {
   if (camera_intrinsic.rectify_model == "RECTIFY_LONGLATI") {
     longlati_disparity_to_depth(disp, depth, camera_intrinsic);
   } else {
