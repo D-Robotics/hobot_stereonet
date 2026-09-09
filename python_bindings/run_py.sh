@@ -2,13 +2,11 @@
 cd $(dirname "$0")
 echo "=> curr dir: $(pwd)"
 
+# Usage (same as ./infer): python3 infer.py [model_path] [local_img_dir] [uncertainty_th]
+# The image dir is processed recursively; each scene dir needs camera_intrinsic.txt
+# (or K.txt) and a left/right image pair.
 python3 infer.py \
-  --model ../config/DStereoV2.4_int16_uncertainty.bin \
-  --left ../standalone/img/2/left000001.png \
-  --right ../standalone/img/2/right000001.png \
-  --out_dir ./result \
-  --uncertainty_th 0.0 \
-  --fx 300.0 \
-  --baseline 0.06 \
-  --doffs 0.0 \
-  --save_vis
+  ../config/DStereoV2.4_int16_uncertainty.bin \
+  ../standalone/img \
+  0.0 \
+  --out_dir ./result

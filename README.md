@@ -13,7 +13,7 @@
 
 ## Quick Start
 
-- 中文文档：https://developer.d-robotics.cc/rdk_doc/Robot_development/boxs/spatial/hobot_stereonet
+- Chinese Document: https://developer.d-robotics.cc/rdk_doc/Robot_development/boxs/spatial/hobot_stereonet
 - English Document: https://developer.d-robotics.cc/rdk_doc/en/Robot_development/boxs/spatial/hobot_stereonet
 
 ## Git LFS Setup

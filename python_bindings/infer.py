@@ -11,6 +11,88 @@ sys.path.append(BUILD_DIR)
 import dstereonet
 
 
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp"}
+
+
+# ================================ file utils (mirror FileUtils in file_utils.cpp) ================================
+
+def is_image_file(filename):
+    return os.path.splitext(filename)[1] in IMAGE_EXTS
+
+
+def find_images(folder):
+    """List all image files in the folder, sorted by filename (FileUtils::find_images)."""
+    if not os.path.isdir(folder):
+        return []
+    images = []
+    for f in sorted(os.listdir(folder)):
+        p = os.path.join(folder, f)
+        if os.path.isfile(p) and is_image_file(f):
+            images.append(os.path.abspath(p))
+    return images
+
+
+def find_pairs(folder):
+    """Find left/right image pairs by replacing 'left' with 'right' in the filename
+    (FileUtils::find_pairs)."""
+    if not os.path.isdir(folder):
+        return []
+    pairs = []
+    for f in sorted(os.listdir(folder)):
+        p = os.path.join(folder, f)
+        if not os.path.isfile(p):
+            continue
+        if is_image_file(f) and "left" in f:
+            right_path = os.path.join(folder, f.replace("left", "right", 1))
+            if os.path.exists(right_path):
+                pairs.append((os.path.abspath(p), os.path.abspath(right_path)))
+    pairs.sort(key=lambda x: os.path.basename(x[0]))
+    return pairs
+
+
+def _only_images(folder):
+    if not os.path.isdir(folder):
+        return False
+    for entry in os.listdir(folder):
+        p = os.path.join(folder, entry)
+        if os.path.isdir(p):
+            return False
+        if os.path.isfile(p) and not is_image_file(entry):
+            return False
+    return True
+
+
+def has_left_right_dirs(folder):
+    """True if the folder has left/ and right/ subdirectories containing only images."""
+    return _only_images(os.path.join(folder, "left")) and _only_images(os.path.join(folder, "right"))
+
+
+def find_left_right_pairs(folder):
+    """Match images between left/ and right/ subdirectories by stem (infer.cpp findLeftRightPairs)."""
+    left_dir = os.path.join(folder, "left")
+    right_dir = os.path.join(folder, "right")
+    if not (os.path.isdir(left_dir) and os.path.isdir(right_dir)):
+        return []
+
+    left_map = {}
+    for f in os.listdir(left_dir):
+        p = os.path.join(left_dir, f)
+        if os.path.isfile(p) and is_image_file(f):
+            left_map[os.path.splitext(f)[0]] = os.path.abspath(p)
+
+    pairs = []
+    for f in os.listdir(right_dir):
+        p = os.path.join(right_dir, f)
+        if os.path.isfile(p) and is_image_file(f):
+            stem = os.path.splitext(f)[0]
+            if stem in left_map:
+                pairs.append((left_map[stem], os.path.abspath(p)))
+    pairs.sort(key=lambda x: os.path.basename(x[0]))
+    return pairs
+
+
+# ================================ data helpers ================================
+
 def write_pfm(path, image, scale=1.0):
     if image.dtype != np.float32:
         image = image.astype(np.float32)
@@ -61,129 +143,301 @@ def bgr_to_nv12_opencv(bgr):
     return nv12
 
 
-def disparity_to_depth_mm(disp, fx, baseline_m, doffs=0.0, invalid_depth_mm=0):
-    disp = disp.astype(np.float32)
-    denom = disp + float(doffs)
+def read_camera_intrinsic(file_path):
+    """Read camera intrinsic from a file, matching readCameraIntrinsicFromFile in infer.cpp.
 
-    depth_m = np.zeros_like(disp, dtype=np.float32)
-    valid = denom > 1e-6
-    depth_m[valid] = (fx * baseline_m) / denom[valid]
+    Supported formats (comments starting with '#' and blank lines are ignored):
+      - 5 values : fx fy cx cy baseline
+      - 10 values: 3x3 K (fx 0 cx / 0 fy cy / 0 0 1) followed by baseline
+    Returns a dict {fx, fy, cx, cy, baseline, doffs}, or None on failure.
+    """
+    values = []
+    try:
+        with open(file_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                for tok in line.split():
+                    values.append(float(tok))
+    except (OSError, ValueError):
+        return None
 
-    depth_mm = np.full_like(disp, invalid_depth_mm, dtype=np.uint16)
-
-    valid_mm = valid & np.isfinite(depth_m) & (depth_m > 0.0) & (depth_m < 65.535)
-    depth_mm[valid_mm] = np.round(depth_m[valid_mm] * 1000.0).astype(np.uint16)
-
-    return depth_mm
-
-
-def render_disp_for_vis(disp, max_disp=192.0):
-    disp_vis = np.clip(disp, 0, max_disp)
-    disp_vis = (disp_vis / max_disp * 255.0).astype(np.uint8)
-    disp_vis = cv2.applyColorMap(disp_vis, cv2.COLORMAP_JET)
-    return disp_vis
+    if len(values) == 5:
+        return {"fx": values[0], "fy": values[1], "cx": values[2], "cy": values[3],
+                "baseline": values[4], "doffs": 0.0}
+    if len(values) == 10:
+        return {"fx": values[0], "cx": values[2], "fy": values[4], "cy": values[5],
+                "baseline": values[9], "doffs": 0.0}
+    return None
 
 
-def load_and_prepare_bgr(img_path, target_w, target_h):
-    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-    if img is None:
-        raise FileNotFoundError(f"Failed to read image: {img_path}")
+def build_camera_intrinsic(intr):
+    """Build a dstereonet.CameraIntrinsic from a parsed intrinsic dict.
 
-    if img.shape[1] != target_w or img.shape[0] != target_h:
-        img = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+    A None dict yields a default (all-zero) intrinsic, matching the C++ behavior of
+    an uninitialized CameraIntrinsic (is_valid() == false).
+    """
+    cam = dstereonet.CameraIntrinsic()
+    if intr is not None:
+        cam.fx = float(intr["fx"])
+        cam.fy = float(intr["fy"])
+        cam.cx = float(intr["cx"])
+        cam.cy = float(intr["cy"])
+        cam.baseline = float(intr["baseline"])
+        cam.doffs = float(intr.get("doffs", 0.0))
+        cam.rectify_model = intr.get("rectify_model", "RECTIFY_PERSPECTIVE")
+    return cam
 
-    return img
 
+def save_camera_intrinsic(result_dir, cam):
+    """Write camera_intrinsic.txt and K.txt, matching infer.cpp saveCameraIntrinsic."""
+    os.makedirs(result_dir, exist_ok=True)
+    with open(os.path.join(result_dir, "camera_intrinsic.txt"), "w") as f:
+        f.write("# fx fy cx cy baseline(m)\n")
+        f.write(f"{cam.fx} {cam.fy} {cam.cx} {cam.cy} {cam.baseline}\n")
+    with open(os.path.join(result_dir, "K.txt"), "w") as f:
+        f.write(f"{cam.fx} 0.0 {cam.cx} 0.0 {cam.fy} {cam.cy} 0.0 0.0 1.0\n")
+        f.write(f"{cam.baseline}\n")
+
+
+# ================================ scene processing ================================
+
+def process_one_scene_dir(scene_dir, root_dir, result_root, net, model_w, model_h, uncertainty_th):
+    img_pairs = find_pairs(scene_dir)
+    single_img_paths = []
+    use_vert_split = False
+    use_left_right_dirs = False
+
+    if not img_pairs:
+        if has_left_right_dirs(scene_dir):
+            img_pairs = find_left_right_pairs(scene_dir)
+            if not img_pairs:
+                print(f"[WARN] no matching image pairs found in left/right subdirs: {scene_dir}")
+                return False
+            use_left_right_dirs = True
+            print(f"[INFO] found {len(img_pairs)} image pairs via left/right subdirs")
+        else:
+            single_img_paths = find_images(scene_dir)
+            if not single_img_paths:
+                print(f"[WARN] no image pairs or images found in {scene_dir}")
+                return False
+            use_vert_split = True
+
+    # result dir: <result_root>/<root_name>/<relative path>
+    root_path = os.path.realpath(root_dir)
+    scene_path = os.path.realpath(scene_dir)
+    root_name = os.path.basename(root_path)
+    rel_path = os.path.relpath(scene_path, root_path)
+    if rel_path in ("", "."):
+        result_dir = os.path.join(result_root, root_name)
+    else:
+        result_dir = os.path.join(result_root, root_name, rel_path)
+    os.makedirs(result_dir, exist_ok=True)
+
+    print(f"[INFO] ==============================================")
+    print(f"[INFO] processing folder: {scene_dir}")
+    print(f"[INFO] result dir: {result_dir}")
+
+    # read intrinsic (camera_intrinsic.txt then K.txt), same as infer.cpp
+    intrinsic = None
+    for name in ("camera_intrinsic.txt", "K.txt"):
+        p = os.path.join(scene_dir, name)
+        if os.path.exists(p):
+            intrinsic = read_camera_intrinsic(p)
+            if intrinsic is not None:
+                print(f"[INFO] cam intrinsic [fx,fy,cx,cy,baseline]: "
+                      f"[{intrinsic['fx']}, {intrinsic['fy']}, {intrinsic['cx']}, "
+                      f"{intrinsic['cy']}, {intrinsic['baseline']}]")
+                break
+            print(f"[WARN] failed to parse intrinsic file: {p}")
+    if intrinsic is None:
+        print(f"[WARN] no intrinsic file found in {scene_dir}")
+
+    # build work items
+    work_items = []
+    for (lp, rp) in img_pairs:
+        work_items.append({
+            "left_path": lp, "right_path": rp, "stacked_path": "",
+            "prefix": os.path.splitext(os.path.basename(lp))[0],
+            "vert_split": False, "left_right_dirs": use_left_right_dirs,
+        })
+    if use_vert_split:
+        for sp in single_img_paths:
+            work_items.append({
+                "left_path": "", "right_path": "", "stacked_path": sp,
+                "prefix": os.path.splitext(os.path.basename(sp))[0],
+                "vert_split": True, "left_right_dirs": False,
+            })
+
+    update_cam_intr = False
+    cam = None
+    for item in work_items:
+        # read / split images
+        if not item["vert_split"]:
+            left_img = cv2.imread(item["left_path"], cv2.IMREAD_COLOR)
+            right_img = cv2.imread(item["right_path"], cv2.IMREAD_COLOR)
+            if left_img is None or right_img is None:
+                print(f"[ERROR] image read failed: {item['left_path']} / {item['right_path']}")
+                continue
+            if item["left_right_dirs"]:
+                left_img_name = "left_" + os.path.basename(item["left_path"])
+                right_img_name = "right_" + os.path.basename(item["right_path"])
+            else:
+                left_img_name = os.path.basename(item["left_path"])
+                right_img_name = os.path.basename(item["right_path"])
+        else:
+            print(f"[INFO] processing vertically stacked image: {item['stacked_path']}")
+            stacked_img = cv2.imread(item["stacked_path"], cv2.IMREAD_COLOR)
+            if stacked_img is None:
+                print(f"[ERROR] image read failed: {item['stacked_path']}")
+                continue
+            if stacked_img.shape[0] % 2 != 0:
+                print(f"[ERROR] stacked image height is odd, cannot split: {item['stacked_path']}")
+                continue
+            half_h = stacked_img.shape[0] // 2
+            left_img = stacked_img[0:half_h, :].copy()
+            right_img = stacked_img[half_h:, :].copy()
+            stacked_name = os.path.basename(item["stacked_path"])
+            left_img_name = "left_" + stacked_name
+            right_img_name = "right_" + stacked_name
+
+        # resize
+        if left_img.shape[1] != model_w or left_img.shape[0] != model_h:
+            left_img_resize = cv2.resize(left_img, (model_w, model_h), interpolation=cv2.INTER_LINEAR)
+            right_img_resize = cv2.resize(right_img, (model_w, model_h), interpolation=cv2.INTER_LINEAR)
+            # scale intrinsic once per scene (same as infer.cpp)
+            if not update_cam_intr and intrinsic is not None:
+                intrinsic["fx"] *= model_w / float(left_img.shape[1])
+                intrinsic["cx"] *= model_w / float(left_img.shape[1])
+                intrinsic["fy"] *= model_h / float(left_img.shape[0])
+                intrinsic["cy"] *= model_h / float(left_img.shape[0])
+                update_cam_intr = True
+        else:
+            left_img_resize = left_img
+            right_img_resize = right_img
+
+        # build the CameraIntrinsic once (after the one-time resize scale above)
+        if cam is None:
+            cam = build_camera_intrinsic(intrinsic)
+            if cam.is_valid():
+                save_camera_intrinsic(result_dir, cam)
+
+        # convert to nv12
+        left_nv12 = np.ascontiguousarray(bgr_to_nv12_opencv(left_img_resize), dtype=np.uint8)
+        right_nv12 = np.ascontiguousarray(bgr_to_nv12_opencv(right_img_resize), dtype=np.uint8)
+
+        expected_size = model_w * model_h * 3 // 2
+        if left_nv12.size != expected_size or right_nv12.size != expected_size:
+            print(f"[ERROR] NV12 size mismatch: {left_nv12.size} / {right_nv12.size} != {expected_size}")
+            continue
+
+        # infer
+        disp, uncert = net.forward_sync(left_nv12, right_nv12, uncertainty_th)
+        disp = np.asarray(disp, dtype=np.float32)
+
+        # depth (only when intrinsic is valid, same as infer.cpp)
+        depth_mm = None
+        if cam.is_valid():
+            depth_mm = dstereonet.StereonetProcess.perspective_disparity_to_depth(disp, cam)
+
+        # epipolar alignment check (always, same as infer.cpp)
+        epipolar_visual = dstereonet.check_epipolar_alignment(left_img_resize, right_img_resize, cam)
+
+        # save (mirror infer.cpp)
+        prefix = item["prefix"]
+        cv2.imwrite(os.path.join(result_dir, left_img_name), left_img_resize)
+        cv2.imwrite(os.path.join(result_dir, right_img_name), right_img_resize)
+        write_pfm(os.path.join(result_dir, f"disp_{prefix}.pfm"), disp)
+        if uncert is not None:
+            write_pfm(os.path.join(result_dir, f"uncert_{prefix}.pfm"),
+                      np.asarray(uncert, dtype=np.float32))
+        if epipolar_visual is not None:
+            cv2.imwrite(os.path.join(result_dir, f"epipolar_visual_{prefix}.png"), epipolar_visual)
+
+        visual_disp = dstereonet.StereonetProcess.render_disp_or_depth(disp)
+        cv2.imwrite(os.path.join(result_dir, f"visual_disp_{prefix}.png"), visual_disp)
+        visual_disp_sf = dstereonet.StereonetProcess.render_disp_or_depth(
+            disp, 0.0, 192.0, 0.0, 10000.0, True, 100, 2.0, 8)
+        cv2.imwrite(os.path.join(result_dir, f"visual_disp_sf_{prefix}.png"), visual_disp_sf)
+
+        if cam.is_valid():
+            cv2.imwrite(os.path.join(result_dir, f"depth_{prefix}.png"), depth_mm)
+            visual = dstereonet.StereonetProcess.convert_visual_img(left_img_resize, disp, depth_mm, cam)
+            cv2.imwrite(os.path.join(result_dir, f"visual_{prefix}.png"), visual)
+
+            pointcloud = dstereonet.StereonetProcess.depth_to_pointcloud_rgb(depth_mm, left_img_resize, cam)
+            dstereonet.StereonetProcess.dump_pcd_file_rgb(
+                os.path.join(result_dir, f"pointcloud_{prefix}.pcd"), pointcloud)
+
+    return True
+
+
+# ================================ main ================================
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, help="StereoNet model path")
-    parser.add_argument("--left", required=True, help="left png path")
-    parser.add_argument("--right", required=True, help="right png path")
-    parser.add_argument("--out_dir", default="./output", help="output directory")
-    parser.add_argument("--uncertainty_th", type=float, default=0.3)
-
-    parser.add_argument("--fx", type=float, required=True, help="focal length fx in pixels")
-    parser.add_argument("--baseline", type=float, required=True, help="baseline in meters")
-    parser.add_argument("--doffs", type=float, default=0.0, help="disparity offset")
-
+    parser = argparse.ArgumentParser(
+        description="Standalone StereoNet inference (folder input, same usage as ./infer)")
+    parser.add_argument("model_path", nargs="?", default="./model/DStereoV2.4_int16.bin",
+                        help="path to stereo model (.bin), default ./model/DStereoV2.4_int16.bin")
+    parser.add_argument("local_img_dir", nargs="?", default="./img",
+                        help="path to local image directory, default ./img")
+    parser.add_argument("uncertainty_th", nargs="?", type=float, default=-0.10,
+                        help="uncertainty threshold, default -0.10")
+    parser.add_argument("--out_dir", default="./result", help="result root directory, default ./result")
     parser.add_argument("--post_version", default="auto")
     parser.add_argument("--max_memory_count", type=int, default=5)
-    parser.add_argument("--save_vis", action="store_true")
-
     args = parser.parse_args()
 
-    os.makedirs(args.out_dir, exist_ok=True)
+    model_path = args.model_path
+    local_img_dir = args.local_img_dir
+    uncertainty_th = args.uncertainty_th
 
+    if not os.path.exists(model_path):
+        print(f"[ERROR] model file not exist: {model_path}")
+        return -1
+    if not os.path.isdir(local_img_dir):
+        print(f"[ERROR] local image directory not exist or not directory: {local_img_dir}")
+        return -1
+
+    # init StereoNetProcess
     net = dstereonet.StereonetProcess()
-    net.init(args.model, args.post_version, args.max_memory_count)
-
+    net.init(model_path, args.post_version, args.max_memory_count)
     model_w, model_h = net.get_model_input_size()
     print(f"[INFO] model input size: {model_w} x {model_h}")
 
-    left_bgr = load_and_prepare_bgr(args.left, model_w, model_h)
-    right_bgr = load_and_prepare_bgr(args.right, model_w, model_h)
+    result_root = args.out_dir
+    os.makedirs(result_root, exist_ok=True)
 
-    left_nv12 = bgr_to_nv12_opencv(left_bgr)
-    right_nv12 = bgr_to_nv12_opencv(right_bgr)
+    root = os.path.abspath(local_img_dir)
+    processed_dir_count = 0
 
-    left_nv12 = np.ascontiguousarray(left_nv12, dtype=np.uint8)
-    right_nv12 = np.ascontiguousarray(right_nv12, dtype=np.uint8)
+    # 1. process the root directory itself
+    if find_pairs(root) or find_images(root) or has_left_right_dirs(root):
+        if process_one_scene_dir(root, root, result_root, net, model_w, model_h, uncertainty_th):
+            processed_dir_count += 1
 
-    expected_size = model_w * model_h * 3 // 2
-    if left_nv12.size != expected_size:
-        raise RuntimeError(f"left NV12 size mismatch: {left_nv12.size} != {expected_size}")
-    if right_nv12.size != expected_size:
-        raise RuntimeError(f"right NV12 size mismatch: {right_nv12.size} != {expected_size}")
+    # 2. recursively process all subdirectories
+    for sub_dir, _, _ in os.walk(root):
+        if sub_dir == root:
+            continue
+        # skip left/right subdirectories that belong to a left/right-dirs parent
+        parent = os.path.dirname(sub_dir)
+        if has_left_right_dirs(parent):
+            if os.path.basename(sub_dir) in ("left", "right"):
+                continue
+        if not (find_pairs(sub_dir) or find_images(sub_dir) or has_left_right_dirs(sub_dir)):
+            continue
+        if process_one_scene_dir(sub_dir, root, result_root, net, model_w, model_h, uncertainty_th):
+            processed_dir_count += 1
 
-    disp, uncert = net.forward_sync(left_nv12, right_nv12, args.uncertainty_th)
-    if uncert is None:
-      print("uncert is empty")
+    if processed_dir_count == 0:
+        print(f"[WARN] no valid scene directory found under: {local_img_dir}")
 
-    disp = np.asarray(disp, dtype=np.float32)
-    #uncert = np.asarray(uncert, dtype=np.float32)
-
-    print(f"[INFO] disp shape: {disp.shape}, dtype: {disp.dtype}")
-    #print(f"[INFO] uncert shape: {uncert.shape}, dtype: {uncert.dtype}")
-
-    disp_pfm_path = os.path.join(args.out_dir, "disp.pfm")
-    write_pfm(disp_pfm_path, disp)
-    print(f"[INFO] saved disparity pfm: {disp_pfm_path}")
-
-    depth_mm = disparity_to_depth_mm(
-        disp=disp,
-        fx=args.fx,
-        baseline_m=args.baseline,
-        doffs=args.doffs
-    )
-
-    depth_png_path = os.path.join(args.out_dir, "depth_mm.png")
-    ok = cv2.imwrite(depth_png_path, depth_mm)
-    if not ok:
-        raise RuntimeError(f"Failed to save depth png: {depth_png_path}")
-    print(f"[INFO] saved depth png(uint16 mm): {depth_png_path}")
-
-    #uncert_npy_path = os.path.join(args.out_dir, "uncert.npy")
-    #np.save(uncert_npy_path, uncert)
-    #print(f"[INFO] saved uncertainty npy: {uncert_npy_path}")
-
-    if args.save_vis:
-        disp_vis = render_disp_for_vis(disp, max_disp=192.0)
-        cv2.imwrite(os.path.join(args.out_dir, "disp_vis.png"), disp_vis)
-
-        depth_vis = depth_mm.astype(np.float32)
-        valid = depth_vis > 0
-        if np.any(valid):
-            vmin = np.percentile(depth_vis[valid], 2)
-            vmax = np.percentile(depth_vis[valid], 98)
-            depth_vis = np.clip(depth_vis, vmin, vmax)
-            depth_vis = ((depth_vis - vmin) / max(vmax - vmin, 1e-6) * 255.0).astype(np.uint8)
-            depth_vis[~valid] = 0
-            depth_vis = cv2.applyColorMap(depth_vis, cv2.COLORMAP_JET)
-            cv2.imwrite(os.path.join(args.out_dir, "depth_vis.png"), depth_vis)
-
-        print(f"[INFO] saved visualization images to: {args.out_dir}")
+    print(f"[INFO] ==============================================")
+    print(f"[INFO] done, processed dir count: {processed_dir_count}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

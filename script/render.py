@@ -39,12 +39,12 @@ args = parser.parse_args()
 
 
 def is_cv16uc1(image):
-    # 检查图像数据类型和通道数
+    # Check image data type and channel count
     return image.dtype == np.uint16 and len(image.shape) == 2
 
 
 def is_cv32fc1(image):
-    # 检查图像数据类型和通道数
+    # Check image data type and channel count
     return image.dtype == np.float32 and len(image.shape) == 2
 
 
@@ -137,11 +137,11 @@ if __name__ == '__main__':
         values3 = flattened_data[(flattened_data > percentile2) & (flattened_data <= percentile3)]
         values4 = flattened_data[flattened_data > percentile3]
         # norm data
-        # Jet伪彩色映射（0到1范围）的颜色段：
-        # 0.0 - 0.25：从深蓝色逐渐过渡到浅蓝色
-        # 0.25 - 0.5：从浅蓝色逐渐过渡到青绿色
-        # 0.5 - 0.75：从青绿色逐渐过渡到黄色
-        # 0.75 - 1.0：从黄色逐渐过渡到红色
+        # Jet pseudo-color mapping color segments (0 to 1 range):
+        # 0.0 - 0.25: from dark blue gradually transitioning to light blue
+        # 0.25 - 0.5: from light blue gradually transitioning to cyan-green
+        # 0.5 - 0.75: from cyan-green gradually transitioning to yellow
+        # 0.75 - 1.0: from yellow gradually transitioning to red
         values1_norm = (values1 - np.min(values1)) / (percentile1 - np.min(values1)) * 0.25
         values2_norm = 0.25 + (values2 - percentile1) / (percentile2 - percentile1) * 0.25
         values3_norm = 0.5 + (values3 - percentile2) / (percentile3 - percentile2) * 0.25

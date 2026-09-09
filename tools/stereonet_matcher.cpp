@@ -1,4 +1,4 @@
-// Copyright (c) 2025，D-Robotics.
+// Copyright (c) 2025,D-Robotics.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -117,7 +117,7 @@ int get_image2(const std::string &image_path, cv::Mat &left_img,
   if (i_num < left_file_names.size()) {
     std::string file_name;
     size_t lastDot = left_file_names[i_num].find_last_of('.');
-    // 分离文件名和后缀
+    // Split filename and extension
     if (lastDot == std::string::npos) {
       file_name = left_file_names[i_num];
     } else {
@@ -161,7 +161,7 @@ void draw_text(cv::Mat &image) {
   int thickness = 1;
 
   cv::Size text_size = cv::getTextSize(text, font, font_scale, thickness, nullptr);
-  cv::Point box_bottom_right(text_origin.x + std::max(text_size.width, 200), text_origin.y + 20); // 文本框大小
+  cv::Point box_bottom_right(text_origin.x + std::max(text_size.width, 200), text_origin.y + 20); // Text box size
 
   cv::rectangle(image, text_origin - cv::Point(5, text_size.height + 5), box_bottom_right, cv::Scalar(0, 0, 0), cv::FILLED);
   cv::putText(image, text, text_origin, font, font_scale, cv::Scalar(255, 255, 255), thickness);
@@ -264,20 +264,20 @@ int main(int argc, char** argv) {
 
     cv::Ptr<cv::ORB> orb = cv::ORB::create(1000);
 
-    // 检测关键点并计算描述符
+    // Detect keypoints and compute descriptors
     std::vector<cv::KeyPoint> keypoints1, keypoints2;
     cv::Mat descriptors1, descriptors2;
     orb->detectAndCompute(img_left, cv::Mat(), keypoints1, descriptors1);
     orb->detectAndCompute(img_right, cv::Mat(), keypoints2, descriptors2);
 
-    // 检查是否成功提取描述符
+    // Check whether descriptors were extracted successfully
     if (descriptors1.empty() || descriptors2.empty()) {
       std::cerr << "Error: Could not compute descriptors!" << std::endl;
       continue;
     }
 
-    // 创建 BFMatcher 进行特征匹配
-    cv::BFMatcher matcher(cv::NORM_HAMMING, true); // NORM_HAMMING 用于二进制特征描述符
+    // Create BFMatcher for feature matching
+    cv::BFMatcher matcher(cv::NORM_HAMMING, true); // NORM_HAMMING is used for binary feature descriptors
     std::vector<cv::DMatch> matches;
     std::vector<cv::DMatch> filtered_matches;
     matcher.match(descriptors1, descriptors2, matches);
@@ -297,21 +297,21 @@ int main(int argc, char** argv) {
       }
     }
 
-    // 按匹配质量排序
+    // Sort by match quality
     std::sort(finalMatches.begin(), finalMatches.end(), [](const cv::DMatch& a, const cv::DMatch& b) {
       return a.distance < b.distance;
     });
     const int max_matches = 10;
-    const float RADIUS = 50.0f; // 半径限制
+    const float RADIUS = 50.0f; // Radius limit
     std::vector<cv::KeyPoint> selected_keypoints1;
     for (const auto& match : finalMatches) {
-      const cv::KeyPoint& kp1 = keypoints1[match.queryIdx]; // img1 中的点
+      const cv::KeyPoint& kp1 = keypoints1[match.queryIdx]; // Point in img1
       if (!isWithinRadius(kp1, selected_keypoints1, RADIUS)) {
         selected_keypoints1.push_back(kp1);
         filtered_matches.push_back(match);
       }
       if (filtered_matches.size() >= max_matches) {
-        break; // 筛选出前 10 个点后停止
+        break; // Stop after filtering out the first 10 points
       }
     }
 

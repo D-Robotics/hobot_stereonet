@@ -1,4 +1,4 @@
-// Copyright (c) 2025，D-Robotics.
+// Copyright (c) 2025,D-Robotics.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -2631,7 +2631,7 @@ bool StereoNetNode::judge_top_is_left_by_ORB(const cv::Mat &top_bgr, const cv::M
       negative_disp++;
   }
 
-  // judge: positive disparity > negative disparity → top is left image
+  // judge: positive disparity > negative disparity -> top is left image
   if (positive_disp > negative_disp)
     return true;
   else

@@ -1,4 +1,4 @@
-// Copyright (c) 2025，D-Robotics.
+// Copyright (c) 2025,D-Robotics.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,23 +27,38 @@ void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, con
   orb->detectAndCompute(right_img, cv::noArray(), kp2, desc2);
   if (desc1.empty() || desc2.empty()) return;
 
-  // === 2. match ===
-  std::vector<cv::DMatch> matches;
+  // === 2. match (knn + ratio test to reject ambiguous matches) ===
+  // A one-way match() forces a match for every descriptor and yields many false
+  // correspondences. On a rectified pair those false matches tend to land on the
+  // same scanline (yL == yR), so the epipolar error below collapses to 0. Use a
+  // ratio test to keep only unambiguous matches.
+  std::vector<std::vector<cv::DMatch>> knn_matches;
   cv::BFMatcher matcher(cv::NORM_HAMMING);
-  matcher.match(desc1, desc2, matches);
-  if (matches.empty()) return;
+  matcher.knnMatch(desc1, desc2, knn_matches, 2);
+  if (knn_matches.empty()) return;
+
+  const float ratio_thresh = 0.75f;
+  std::vector<cv::DMatch> good_matches;
+  good_matches.reserve(knn_matches.size());
+  for (const auto &km : knn_matches) {
+    if (km.size() < 2) continue;  // no second candidate -> skip
+    if (km[0].distance < ratio_thresh * km[1].distance) {
+      good_matches.push_back(km[0]);
+    }
+  }
+  if (good_matches.empty()) return;
 
   // === 3. sort by distance ===
-  std::sort(matches.begin(), matches.end(),
+  std::sort(good_matches.begin(), good_matches.end(),
             [](const cv::DMatch &a, const cv::DMatch &b) { return a.distance < b.distance; });
-  int use_match = std::min(100, (int)matches.size());
-  std::vector<cv::DMatch> good_matches(matches.begin(), matches.begin() + use_match);
+  if (good_matches.size() > 100) good_matches.resize(100);
 
   // === 4. calculate epipolar alignment error & reprojection error ===
   cv::Mat right_with_proj = right_img.clone();
   double total_reproj_error = 0.0;
 
   double mean_reproj_error = 0.0;
+  int valid_cnt = 0;
   if (cam->is_valid()) {
     for (const auto &m : good_matches) {
       const auto &kpL = kp1[m.queryIdx];
@@ -74,11 +89,12 @@ void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, con
       // calculate reprojection error
       float err = std::sqrt((xR_proj - xR) * (xR_proj - xR) + (yR_proj - yR) * (yR_proj - yR));
       total_reproj_error += err;
+      valid_cnt++;
 
       // draw reprojection point
       cv::circle(right_with_proj, cv::Point2f(xR_proj, yR_proj), 5, cv::Scalar(255, 0, 0), -1);
     }
-    mean_reproj_error = total_reproj_error / good_matches.size();
+    mean_reproj_error = valid_cnt > 0 ? total_reproj_error / valid_cnt : 0.0;
   }
 
   // === 4. show ===

@@ -1,4 +1,4 @@
-// Copyright (c) 2025，D-Robotics.
+// Copyright (c) 2025,D-Robotics.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 
 #if __has_include(<rclcpp/rclcpp.hpp>)
 #define HOBOT_HAS_RCLCPP 1
-#pragma message("Detected rclcpp.hpp → ROS2 logging enabled")
+#pragma message("Detected rclcpp.hpp -> ROS2 logging enabled")
 #else
 #define HOBOT_HAS_RCLCPP 0
-#pragma message("rclcpp.hpp not found → non-ROS logging enabled")
+#pragma message("rclcpp.hpp not found -> non-ROS logging enabled")
 #endif
 
 #if HOBOT_HAS_RCLCPP

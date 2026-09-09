@@ -6,35 +6,61 @@ and outputs disparity maps, depth maps, visualization images, point clouds, etc.
 ## Build
 
 -   Dependencies: OpenCV (image processing), Eigen (matrix operations),
-    DNN (X5 BPU interface), NEON (ARM instruction acceleration).
-    All of these libraries are located in the `3rdparty` directory.
+    DNN (BPU interface), NEON (ARM instruction acceleration).
+    These libraries are resolved at build time from a sysroot (cross-compile)
+    or from `/usr` (native board build), and at runtime from the board's
+    system library paths (`/usr/hobot/lib`, `/usr/lib/aarch64-linux-gnu`).
+    For the Arm GNU Toolchain (buildroot) build only, the full dependency
+    closure (headers + runtime libraries) is bundled into `3rdparty/` and
+    committed, so that build compiles and runs independently of the sysroot
+    (see below).
 
--   Download the compiler
+-   Build: run the build script for the target platform. The script
+    auto-detects the host architecture:
 
-    -   Download link:
-        https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
+    -   On an x86_64 host it cross-compiles with `aarch64-linux-gnu-gcc/g++`
+        against `sysroot_docker/usr_x5` (or `usr_s100`).
+    -   On an `aarch64` board it compiles natively against `/usr`.
 
-    -   This example uses `arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz `.
-        Please download the corresponding version and extract it.
+    S600 only supports native (on-board) compilation.
 
-        ``` bash
-        tar -xvf arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz -C /opt
-        ```
-
--   Use cross-compilation for building. Make sure the compiler path in `run_build_X5.sh` matches your own installation.
-
-``` cmake
-cmake -DCMAKE_BUILD_TYPE=Release .. \
-  -DCMAKE_C_COMPILER=/opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc \
-  -DCMAKE_CXX_COMPILER=/opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++
-```
-
--   Enter the `standalone` directory and run the build script:
+    `run_build_X5.sh` additionally supports the Arm GNU Toolchain for
+    buildroot users, selected explicitly via a command-line argument
+    (X5 only): pass `arm` for an interactive prompt (default bin dir
+    `/opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin`),
+    or pass the bin dir path directly. Auto-detection never selects the Arm
+    GNU Toolchain on its own - it always prefers the native compiler or
+    `aarch64-linux-gnu-*`.
 
 ``` bash
 cd standalone
-bash run_build_X5.sh
+bash run_build_X5.sh     # or run_build_S100.sh / run_build_S600.sh
+
+# X5 with the Arm GNU Toolchain (buildroot):
+bash run_build_X5.sh arm                            # interactive prompt for the bin dir
+bash run_build_X5.sh /path/to/arm-gnu-toolchain/bin # use the given bin dir directly
 ```
+
+-   **Self-contained Arm GNU build**: for the Arm GNU Toolchain build only, the
+    script populates `standalone/3rdparty/` from the sysroot once, and it is
+    committed so the build compiles and runs without the sysroot. It is sorted
+    into subdirectories by origin:
+
+    | Directory   | Contents                                                        |
+    | ----------- | --------------------------------------------------------------- |
+    | `include/`  | Compile-time headers: `eigen3/` (Eigen), `opencv4/` (OpenCV 4.x), `dnn/` (BPU interface) |
+    | `hobot/`    | D-Robotics BPU libraries (`libdnn`, `libcnn_intf`, `libhbmem`, `libhbrt_bayes_aarch64`, `libalog`), plus unversioned `.so` link symlinks |
+    | `opencv/`   | OpenCV modules (`core`, `imgproc`, `imgcodecs`, `features2d`, `flann`), plus unversioned `.so` link symlinks |
+    | `gdal/`     | `libgdal.so.30` (pulled in by OpenCV imgcodecs)                 |
+    | `deps/`     | Everything else: gdal's ~119 transitive deps, plus a matching `libstdc++`/`libgcc_s` (which provides `GLIBCXX_3.4.30` that the older Arm GNU toolchain's libstdc++ lacks) |
+
+    Those directories serve both compile (`-I`/`-L`/`-rpath-link`) and run: the
+    executables carry a transitive `$ORIGIN/3rdparty/{hobot,opencv,gdal,deps}`
+    rpath, so they find the bundled libraries on a buildroot board without any
+    `ldconfig` or `LD_LIBRARY_PATH` setup. glibc's own libraries (`libc`, `libm`,
+    `ld-linux`, ...) are intentionally not bundled and come from the board's
+    system glibc. When the sysroot is present the script re-populates `3rdparty/`
+    from it; otherwise the committed `3rdparty/` is used as-is.
 
 - After compilation, a test package `StereoInfer_X5.tar.gz` will be generated in the `build` directory.
 The package includes two executables:
@@ -53,18 +79,17 @@ tar -zxvf StereoInfer_X5.tar.gz
 
 ## Run
 
--   After extracting the test package, go into the `StereoInfer`
-    directory and run the script to create symbolic links:
-
-``` bash
-cd /userdata/StereoInfer
-bash make_ln.sh
-```
+-   After extracting the test package, go into the `StereoInfer` directory.
+    Shared libraries are resolved via the board's `ldconfig`
+    (`/usr/hobot/lib` and `/usr/lib/aarch64-linux-gnu` are already covered),
+    so no `LD_LIBRARY_PATH` or symlink setup is needed. For the buildroot
+    package, the bundled libraries are resolved from the adjacent `3rdparty/`
+    directory via the embedded rpath instead, which is also automatic.
 
 ### 1. Run performance test
 
 ``` bash
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/StereoInfer/3rdparty/lib_opencv4.5.4/lib/
+cd /userdata/StereoInfer
 ./test_perf ./model/DStereoV2.4_int16_uncertainty.bin 1 30 0.10
 ```
 
@@ -100,7 +125,6 @@ The following files will be generated in the `result` directory:
 ### 2. Run inference
 
 ``` bash
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/userdata/StereoInfer/3rdparty/lib_opencv4.5.4/lib/
 ./infer ./model/DStereoV2.4_int16_uncertainty.bin ./img 0.10
 ``` 
 
