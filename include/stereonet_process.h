@@ -200,8 +200,7 @@ public:
    * @param depth Output depth map (CV_16UC1, millimeters)
    * @param camera_intrinsic Camera intrinsic parameters (fx = f_lon, baseline in m)
    */
-  static void longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
-                                          const CameraIntrinsic &camera_intrinsic);
+  static void longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic);
 
   /**
    * @brief Dispatch disparity->depth conversion based on camera_intrinsic.rectify_model.
@@ -339,6 +338,14 @@ private:
    * @return 0 on success, -1 on failure
    */
   int postprocess_only_disp(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
+
+  /**
+   * @brief Postprocess the output tensors using convex upsampling with logits
+   * @param tensors Vector of output tensors from the model
+   * @param out_mat Output matrix to hold the processed result
+   * @return 0 on success, -1 on failure
+   */
+  int postprocess_convex_upsampling_2x_logits(const std::vector<hbDNNTensor> &tensors, cv::Mat &out_mat);
 
   // ===================================== member variables =======================================
   rclcpp::Logger logger_;
