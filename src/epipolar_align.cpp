@@ -28,7 +28,7 @@ static std::vector<cv::Point3f> create_chessboard_points(int cols, int rows, dou
 
 void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::Mat &right_img,
                                              const cv::Size &pattern_size, double square_size,
-                                             const std::shared_ptr<stereonet::CameraIntrinsic> &cam,
+                                             const stereonet::CameraIntrinsic &cam,
                                              cv::Mat &visualize) {
   if (left_img.empty() || right_img.empty()) return;
   cv::hconcat(left_img, right_img, visualize);
@@ -97,7 +97,7 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
   // === 5. reproject error ===
   std::vector<cv::Point3f> obj_pts = create_chessboard_points(pattern_size.width, pattern_size.height, square_size);
   // K, D
-  cv::Mat K = (cv::Mat_<double>(3, 3) << cam->fx, 0, cam->cx, 0, cam->fy, cam->cy, 0, 0, 1);
+  cv::Mat K = (cv::Mat_<double>(3, 3) << cam.fx, 0, cam.cx, 0, cam.fy, cam.cy, 0, 0, 1);
   cv::Mat D = cv::Mat::zeros(5, 1, CV_64F); // assume already distorted
   cv::Mat rvec, tvec;
   bool pnp_ok = cv::solvePnP(obj_pts, cornersL, K, D, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
@@ -128,15 +128,15 @@ void EpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::
 
     // right camera coordinate (baseline along +X)
     cv::Mat Xc_R = Xc_L.clone();
-    Xc_R.at<double>(0) -= cam->baseline;
+    Xc_R.at<double>(0) -= cam.baseline;
 
     // project to right image
     double x = Xc_R.at<double>(0);
     double y = Xc_R.at<double>(1);
     double z = Xc_R.at<double>(2);
 
-    double u = cam->fx * x / z + cam->cx;
-    double v = cam->fy * y / z + cam->cy;
+    double u = cam.fx * x / z + cam.cx;
+    double v = cam.fy * y / z + cam.cy;
 
     proj_pts_right.emplace_back(u, v);
   }

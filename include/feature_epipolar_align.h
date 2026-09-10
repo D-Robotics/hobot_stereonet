@@ -19,7 +19,6 @@
 #include <vector>
 #include <cmath>
 #include <numeric>
-#include <memory>
 #include "camera_intrinsic.h"
 
 class FeatureEpipolarAlign {
@@ -29,7 +28,7 @@ public:
 
   // utility functions
   static void check_epipolar_alignment(const cv::Mat &left_img, const cv::Mat &right_img,
-                                       const std::shared_ptr<stereonet::CameraIntrinsic> &cam, cv::Mat &visualize);
+                                       const stereonet::CameraIntrinsic &cam, cv::Mat &visualize);
 };
 
 #endif // HOBOT_STEREONET_INCLUDE_FEATURE_EPIPOLAR_ALIGN_H_

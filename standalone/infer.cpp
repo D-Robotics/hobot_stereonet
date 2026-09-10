@@ -372,13 +372,7 @@ bool processOneSceneDir(const std::string &scene_dir, const std::string &root_di
 
     // epipolar check
     cv::Mat epipolar_visual;
-    auto camera_intrinsic_ptr = std::make_shared<stereonet::CameraIntrinsic>();
-    camera_intrinsic_ptr->fx = camera_intrinsic.fx;
-    camera_intrinsic_ptr->fy = camera_intrinsic.fy;
-    camera_intrinsic_ptr->cx = camera_intrinsic.cx;
-    camera_intrinsic_ptr->cy = camera_intrinsic.cy;
-    camera_intrinsic_ptr->baseline = camera_intrinsic.baseline;
-    FeatureEpipolarAlign::check_epipolar_alignment(left_img_resize, right_img_resize, camera_intrinsic_ptr,
+    FeatureEpipolarAlign::check_epipolar_alignment(left_img_resize, right_img_resize, camera_intrinsic,
                                                    epipolar_visual);
 
     // save

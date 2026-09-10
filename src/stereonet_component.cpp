@@ -1987,10 +1987,10 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
       }
     }
   } else if (render_type_.rfind("distance", 0) == 0) {
-    static double fb = camera_intrinsic_->baseline * camera_intrinsic_->fx;
+    double fb = camera_intrinsic_->baseline * camera_intrinsic_->fx;
     static double z_near_ema_mm = -1;
     static int frame_cnt = 0;
-    static int interval = use_local_image_flag_ ? 1 : 5;
+    int interval = use_local_image_flag_ ? 1 : 5;
     if (render_z_near_ > 0.0) {
       z_near_ema_mm = render_z_near_ * 1000.0;
     } else {
@@ -2004,47 +2004,56 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
         }
       }
     }
-    double z_far = z_near_ema_mm + render_z_range_ * 1000.0;
-    int d_max = static_cast<int>(fb / (z_near_ema_mm / 1000.0) - camera_intrinsic_->doffs);
-    int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
-    // pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / (d_max - d_min), -d_min * 255.0 / (d_max - d_min));
-    // visual_img.setTo(0, pub_data->disp < d_min);
-    // visual_img.setTo(255, pub_data->disp > d_max);
-    // cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
+    if (z_near_ema_mm <= 0) {
+      // No valid depth yet (disparity is all zero): render disparity directly
+      // instead of a garbage mapping from a negative near depth.
+      pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / render_max_disp_);
+    } else {
+      double z_far = z_near_ema_mm + render_z_range_ * 1000.0;
+      int d_max = static_cast<int>(fb / (z_near_ema_mm / 1000.0) - camera_intrinsic_->doffs);
+      int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
 
-    float32x4_t v_dmin = vdupq_n_f32(d_min);
-    float32x4_t v_zero = vdupq_n_f32(0.f);
-    float32x4_t v_255 = vdupq_n_f32(255.f);
-    const float scale = 255.0f / (d_max - d_min);
-    float32x4_t v_scale = vdupq_n_f32(scale);
-    visual_img.create(pub_data->disp.size(), CV_8UC1);
+      float32x4_t v_dmin = vdupq_n_f32(d_min);
+      float32x4_t v_zero = vdupq_n_f32(0.f);
+      float32x4_t v_255 = vdupq_n_f32(255.f);
+      const float scale = 255.0f / (d_max - d_min);
+      float32x4_t v_scale = vdupq_n_f32(scale);
+      visual_img.create(pub_data->disp.size(), CV_8UC1);
 
 #pragma omp parallel for schedule(static)
-    for (int y = 0; y < pub_data->disp.rows; ++y) {
-      const float *dptr = pub_data->disp.ptr<float>(y);
-      uchar *optr = visual_img.ptr<uchar>(y);
-      int x = 0;
-      for (; x <= pub_data->disp.cols - 4; x += 4) {
-        float32x4_t v = vld1q_f32(dptr + x);
-        v = vsubq_f32(v, v_dmin);
-        v = vmulq_f32(v, v_scale);
-        v = vmaxq_f32(v, v_zero);
-        v = vminq_f32(v, v_255);
-        uint8x8_t u8 = vqmovn_u16(vcombine_u16(vmovn_u32(vcvtq_u32_f32(v)), vdup_n_u16(0)));
-        vst1_u8(optr + x, u8);
-      }
+      for (int y = 0; y < pub_data->disp.rows; ++y) {
+        const float *dptr = pub_data->disp.ptr<float>(y);
+        uchar *optr = visual_img.ptr<uchar>(y);
+        int x = 0;
+        for (; x <= pub_data->disp.cols - 4; x += 4) {
+          float32x4_t v = vld1q_f32(dptr + x);
+          v = vsubq_f32(v, v_dmin);
+          v = vmulq_f32(v, v_scale);
+          v = vmaxq_f32(v, v_zero);
+          v = vminq_f32(v, v_255);
+          uint8x8_t u8 = vqmovn_u16(vcombine_u16(vmovn_u32(vcvtq_u32_f32(v)), vdup_n_u16(0)));
+          // Store only the 4 valid grayscale bytes: vst1_u8 on the 8-lane vector
+          // would write 4 spurious zero bytes past this row (and past the buffer
+          // on the last row), racing across OpenMP row chunks and intermittently
+          // leaving black pixels on the left edge.
+          vst1_lane_u8(optr + x + 0, u8, 0);
+          vst1_lane_u8(optr + x + 1, u8, 1);
+          vst1_lane_u8(optr + x + 2, u8, 2);
+          vst1_lane_u8(optr + x + 3, u8, 3);
+        }
 
-      // tail
-      for (; x < pub_data->disp.cols; ++x) {
-        float d = dptr[x];
-        uchar v;
-        if (d <= d_min)
-          v = 0;
-        else if (d >= d_max)
-          v = 255;
-        else
-          v = static_cast<uchar>((d - d_min) * scale);
-        optr[x] = v;
+        // tail
+        for (; x < pub_data->disp.cols; ++x) {
+          float d = dptr[x];
+          uchar v;
+          if (d <= d_min)
+            v = 0;
+          else if (d >= d_max)
+            v = 255;
+          else
+            v = static_cast<uchar>((d - d_min) * scale);
+          optr[x] = v;
+        }
       }
     }
     cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
@@ -2247,7 +2256,7 @@ void StereoNetNode::publish_epipolar_image(const std::shared_ptr<PubData> &pub_d
     }
     EpipolarAlign::check_epipolar_alignment(origin_left_img, origin_right_img,
                                             cv::Size(chessboard_per_rows_, chessboard_per_cols_),
-                                            chessboard_square_size_, orignal_camera_intrinsic_, visual_img);
+                                            chessboard_square_size_, *orignal_camera_intrinsic_, visual_img);
   } else {
     cv::Mat left_img = pub_data->left_bgr;
     cv::Mat right_img = pub_data->right_bgr;
@@ -2256,7 +2265,7 @@ void StereoNetNode::publish_epipolar_image(const std::shared_ptr<PubData> &pub_d
       return;
     }
     EpipolarAlign::check_epipolar_alignment(left_img, right_img, cv::Size(chessboard_per_rows_, chessboard_per_cols_),
-                                            chessboard_square_size_, camera_intrinsic_, visual_img);
+                                            chessboard_square_size_, *camera_intrinsic_, visual_img);
   }
   // ===================================== publish visual image ============================================
   if (visual_img.empty()) return;
@@ -2286,7 +2295,7 @@ void StereoNetNode::publish_feature_epipolar_image(const std::shared_ptr<PubData
       RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[31m=> epipolar image is empty\033[0m");
       return;
     }
-    FeatureEpipolarAlign::check_epipolar_alignment(origin_left_img, origin_right_img, orignal_camera_intrinsic_,
+    FeatureEpipolarAlign::check_epipolar_alignment(origin_left_img, origin_right_img, *orignal_camera_intrinsic_,
                                                    visual_img);
   } else {
     cv::Mat left_img = pub_data->left_bgr;
@@ -2295,7 +2304,7 @@ void StereoNetNode::publish_feature_epipolar_image(const std::shared_ptr<PubData
       RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[31m=> epipolar image is empty\033[0m");
       return;
     }
-    FeatureEpipolarAlign::check_epipolar_alignment(left_img, right_img, camera_intrinsic_, visual_img);
+    FeatureEpipolarAlign::check_epipolar_alignment(left_img, right_img, *camera_intrinsic_, visual_img);
   }
   // ===================================== publish visual image ============================================
   if (visual_img.empty()) return;

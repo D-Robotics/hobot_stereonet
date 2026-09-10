@@ -63,6 +63,11 @@ def generate_launch_description():
         default_value="8080",
         description="web viewer server port",
     )
+    web_image_layout_arg = DeclareLaunchArgument(
+        "web_image_layout",
+        default_value="horizontal",
+        description="web viewer image layout: horizontal (side-by-side) | vertical (top-bottom)",
+    )
 
     target_container_name_arg = DeclareLaunchArgument(
         "target_container_name",
@@ -168,6 +173,7 @@ def generate_launch_description():
             "pointcloud_topic": LaunchConfiguration("web_pointcloud_topic"),
             "image_topic": LaunchConfiguration("web_image_topic"),
             "image_topic2": LaunchConfiguration("web_image_topic2"),
+            "image_layout": LaunchConfiguration("web_image_layout"),
             "server_port": LaunchConfiguration("web_server_port"),
         }.items(),
         condition=IfCondition(LaunchConfiguration("enable_web_viewer")),
@@ -281,6 +287,7 @@ def generate_launch_description():
             web_pointcloud_topic_arg,
             web_image_topic_arg,
             web_image_topic2_arg,
+            web_image_layout_arg,
             web_server_port_arg,
             shared_mem_node,
             container,

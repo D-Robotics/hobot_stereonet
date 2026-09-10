@@ -28,7 +28,7 @@ public:
 
   // utility functions
   static void check_epipolar_alignment(const cv::Mat &left_img, const cv::Mat &right_img, const cv::Size &pattern_size,
-                                       double square_size, const std::shared_ptr<stereonet::CameraIntrinsic> &cam,
+                                       double square_size, const stereonet::CameraIntrinsic &cam,
                                        cv::Mat &visualize);
 };
 

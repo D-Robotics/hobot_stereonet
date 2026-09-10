@@ -272,9 +272,8 @@ PYBIND11_MODULE(dstereonet, m) {
   m.def(
       "check_epipolar_alignment",
       [](const py::array &left_img, const py::array &right_img, const CameraIntrinsic &camera_intrinsic) -> py::object {
-        auto cam_ptr = std::make_shared<CameraIntrinsic>(camera_intrinsic);
         cv::Mat visualize;
-        FeatureEpipolarAlign::check_epipolar_alignment(numpy_to_mat(left_img), numpy_to_mat(right_img), cam_ptr,
+        FeatureEpipolarAlign::check_epipolar_alignment(numpy_to_mat(left_img), numpy_to_mat(right_img), camera_intrinsic,
                                                        visualize);
         if (visualize.empty()) {
           return py::none();

@@ -15,7 +15,7 @@
 #include "feature_epipolar_align.h"
 
 void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, const cv::Mat &right_img,
-                                                    const std::shared_ptr<stereonet::CameraIntrinsic> &cam,
+                                                    const stereonet::CameraIntrinsic &cam,
                                                     cv::Mat &visualize) {
   if (left_img.empty() || right_img.empty()) return;
 
@@ -59,7 +59,7 @@ void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, con
 
   double mean_reproj_error = 0.0;
   int valid_cnt = 0;
-  if (cam->is_valid()) {
+  if (cam.is_valid()) {
     for (const auto &m : good_matches) {
       const auto &kpL = kp1[m.queryIdx];
       const auto &kpR = kp2[m.trainIdx];
@@ -73,18 +73,18 @@ void FeatureEpipolarAlign::check_epipolar_alignment(const cv::Mat &left_img, con
       if (disparity <= 0.1f) continue; // avoid divide by zero
 
       // depth
-      float Z = cam->fx * cam->baseline / disparity;
+      float Z = cam.fx * cam.baseline / disparity;
 
       // backproject to 3D
-      float X = (xL - cam->cx) * Z / cam->fx;
-      float Y = (yL - cam->cy) * Z / cam->fy;
+      float X = (xL - cam.cx) * Z / cam.fx;
+      float Y = (yL - cam.cy) * Z / cam.fy;
 
       // transform to right camera
-      float Xr = X - cam->baseline;
+      float Xr = X - cam.baseline;
 
       // project
-      float xR_proj = cam->fx * Xr / Z + cam->cx;
-      float yR_proj = cam->fy * Y / Z + cam->cy;
+      float xR_proj = cam.fx * Xr / Z + cam.cx;
+      float yR_proj = cam.fy * Y / Z + cam.cy;
 
       // calculate reprojection error
       float err = std::sqrt((xR_proj - xR) * (xR_proj - xR) + (yR_proj - yR) * (yR_proj - yR));

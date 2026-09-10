@@ -139,6 +139,7 @@ enable_web_viewer=True
 web_pointcloud_topic=""
 web_image_topic=""
 web_image_topic2=""
+web_image_layout=vertical
 web_server_port=8080
 max_points=100000
 
@@ -270,6 +271,7 @@ while [[ $# -gt 0 ]]; do
     --web_pointcloud_topic) web_pointcloud_topic=$2; shift 2 ;;
     --web_image_topic) web_image_topic=$2; shift 2 ;;
     --web_image_topic2) web_image_topic2=$2; shift 2 ;;
+    --web_image_layout) web_image_layout=$2; shift 2 ;;
     --web_server_port) web_server_port=$2; shift 2 ;;
     --max_points) max_points=$2; shift 2 ;;
 
@@ -317,7 +319,7 @@ feature_epipolar_mode:=$feature_epipolar_mode \
 ground_angle_enable:=$ground_angle_enable ground_roi_center_x:=$ground_roi_center_x ground_roi_center_y:=$ground_roi_center_y \
 ground_roi_width:=$ground_roi_width ground_roi_height:=$ground_roi_height ground_roi_min_valid_points:=$ground_roi_min_valid_points \
 enable_web_viewer:=$enable_web_viewer web_pointcloud_topic:=$web_pointcloud_topic \
-web_image_topic:=$web_image_topic web_image_topic2:=$web_image_topic2 web_server_port:=$web_server_port \
+web_image_topic:=$web_image_topic web_image_topic2:=$web_image_topic2 web_image_layout:=$web_image_layout web_server_port:=$web_server_port \
 max_points:=$max_points
 
 
