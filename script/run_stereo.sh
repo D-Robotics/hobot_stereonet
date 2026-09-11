@@ -10,11 +10,10 @@ fi
 
 ros2 pkg prefix mipi_cam
 ros2 pkg prefix hobot_stereonet
-
-rm -rfv performance_*.txt
+ros2 pkg prefix pointcloud_web_viewer
 
 # stereonet version
-stereonet_version=v2.4_int16
+stereonet_version=v2.7_int16
 
 # node name
 stereo_node_name=StereoNetNode
@@ -76,7 +75,7 @@ max_disp_diff=1.0
 pointcloud_height_min=-5.0
 pointcloud_height_max=5.0
 pointcloud_depth_max=5.0
-pointcloud_downsample_step=1
+pointcloud_downsample_step=2
 pointcloud_coord=ROS
 
 # pcl filter
@@ -141,7 +140,8 @@ web_image_topic=""
 web_image_topic2=""
 web_image_layout=vertical
 web_server_port=8080
-max_points=100000
+max_points=40000
+max_points_explicit=False
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -273,7 +273,7 @@ while [[ $# -gt 0 ]]; do
     --web_image_topic2) web_image_topic2=$2; shift 2 ;;
     --web_image_layout) web_image_layout=$2; shift 2 ;;
     --web_server_port) web_server_port=$2; shift 2 ;;
-    --max_points) max_points=$2; shift 2 ;;
+    --max_points) max_points=$2; max_points_explicit=True; shift 2 ;;
 
     *) echo "unknown param: $1"; exit 1 ;;
   esac
@@ -282,7 +282,18 @@ done
 # web viewer default topics (follow stereo_node_name)
 if [[ -z "$web_pointcloud_topic" ]]; then web_pointcloud_topic=/$stereo_node_name/stereonet_pointcloud2; fi
 if [[ -z "$web_image_topic" ]]; then web_image_topic=/$stereo_node_name/stereonet_visual; fi
-if [[ -z "$web_image_topic2" ]]; then web_image_topic2=$stereo_image_topic; fi
+# web_image_topic2 (image_combine_raw) is disabled by default; pass --web_image_topic2 to enable it
+
+# point budget: 40000 without image_combine_raw, 34000 with it (unless --max_points is given)
+if [[ -n "$web_image_topic2" && "$max_points_explicit" != "True" ]]; then
+  max_points=34000
+fi
+
+# build the optional image_topic2 launch arg (omit when empty, else 'name:=' becomes malformed)
+web_image_topic2_arg=""
+if [[ -n "$web_image_topic2" ]]; then
+  web_image_topic2_arg="web_image_topic2:=$web_image_topic2"
+fi
 
 ros2 launch hobot_stereonet stereonet_model_web_visual_$stereonet_version.launch.py \
 stereo_node_name:=$stereo_node_name \
@@ -319,7 +330,7 @@ feature_epipolar_mode:=$feature_epipolar_mode \
 ground_angle_enable:=$ground_angle_enable ground_roi_center_x:=$ground_roi_center_x ground_roi_center_y:=$ground_roi_center_y \
 ground_roi_width:=$ground_roi_width ground_roi_height:=$ground_roi_height ground_roi_min_valid_points:=$ground_roi_min_valid_points \
 enable_web_viewer:=$enable_web_viewer web_pointcloud_topic:=$web_pointcloud_topic \
-web_image_topic:=$web_image_topic web_image_topic2:=$web_image_topic2 web_image_layout:=$web_image_layout web_server_port:=$web_server_port \
+web_image_topic:=$web_image_topic $web_image_topic2_arg web_image_layout:=$web_image_layout web_server_port:=$web_server_port \
 max_points:=$max_points
 
 

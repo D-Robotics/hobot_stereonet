@@ -51,8 +51,8 @@ def generate_launch_description():
     ))
     node_list.append(DeclareLaunchArgument(
         'web_image_topic2',
-        default_value='/image_combine_raw',
-        description='second image topic for web viewer'
+        default_value='',
+        description='second image topic for web viewer (empty = disabled)'
     ))
     node_list.append(DeclareLaunchArgument(
         'web_server_port',
