@@ -27,7 +27,7 @@ def generate_launch_description():
 
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
-        'config',
+        'model',
         'dstereo_s100_320_1280_704_wall_floor.hbm'
     )
 

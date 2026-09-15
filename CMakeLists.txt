@@ -168,7 +168,7 @@ install(
   RUNTIME DESTINATION bin
 )
 install(TARGETS stereonet_model_node DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY model/${LAUNCH_DIR}/ DESTINATION share/${PROJECT_NAME}/model)
 file(GLOB LAUNCH_FILES
   launch/*launch.py
   launch/${LAUNCH_DIR}/*launch.py

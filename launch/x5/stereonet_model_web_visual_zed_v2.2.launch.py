@@ -40,7 +40,7 @@ def generate_launch_description():
     node_list.append(zed_cam)
 
     stereonet_model_file_path = os.path.join(
-        get_package_share_directory("hobot_stereonet"), "config", "DStereoV2.2.bin"
+        get_package_share_directory("hobot_stereonet"), "model", "DStereoV2.2.bin"
     )
 
     # stereonet node

@@ -28,7 +28,7 @@ from launch_ros.descriptions import ComposableNode
 def generate_launch_description():
     stereonet_model_file_path = os.path.join(
         get_package_share_directory("hobot_stereonet"),
-        "config",
+        "model",
         "DStereoV2.0.bin",
     )
 

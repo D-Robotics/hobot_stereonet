@@ -1,2 +1,2 @@
-config/S100_DStereoV3*.hbm filter=lfs diff=lfs merge=lfs -text
-config/S600_DStereoV3*.hbm filter=lfs diff=lfs merge=lfs -text
+model/s100/S100_DStereoV3*.hbm filter=lfs diff=lfs merge=lfs -text
+model/s600/S600_DStereoV3*.hbm filter=lfs diff=lfs merge=lfs -text

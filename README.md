@@ -69,7 +69,7 @@ git lfs ls-files
 Example output:
 
 ```text
-xxxxxxxxxx * config/dstereo_s600_640_350_v3.0.hbm
+xxxxxxxxxx * model/s600/S600_DStereoV3.2.0_320x576.hbm
 ```
 
 ### Common Issues
@@ -113,8 +113,10 @@ hobot_stereonet/
 │   ├── x5/                      # RDK X5 specific launch files
 │   ├── s100/                    # RDK S100 specific launch files
 │   └── *.launch.py              # Generic launch files
-├── config/                      # Configuration files
-│   └── *.bin                    # Model files
+├── model/                       # Model files
+│   ├── x5/                      # RDK X5 model files (.bin)
+│   ├── s100/                    # RDK S100 model files (.hbm)
+│   └── s600/                    # RDK S600 model files (.hbm)
 ├── script/                      # Python utilities
 ├── tools/                       # C++ tools
 ├── standalone/                  # Standalone (non-ROS) version

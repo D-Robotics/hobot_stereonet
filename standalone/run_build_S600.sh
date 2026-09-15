@@ -35,7 +35,7 @@ make -j$(nproc)
 
 echo "=> ================="
 mkdir model
-cp -r ../../config/S600*.hbm ./model/
+cp -r ../../model/s600/* ./model/
 cp -r ../img ./
 mkdir result
 tar -zcf StereoInfer_S600.tar.gz \

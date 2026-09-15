@@ -33,7 +33,7 @@ bash run_py.sh
 `run_py.sh` is a thin wrapper that calls:
 
 ``` bash
-python3 infer.py ../config/DStereoV2.4_int16_uncertainty.bin ../standalone/img 0.0 --out_dir ./result
+python3 infer.py ../model/x5/DStereoV2.4_int16_uncertainty.bin ../standalone/img 0.0 --out_dir ./result
 ```
 
 ### Usage

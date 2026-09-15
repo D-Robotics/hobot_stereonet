@@ -210,7 +210,7 @@ make -j$(nproc)
 
 echo "=> ================="
 mkdir model
-cp -r ../../config/DStereoV*.bin ./model/
+cp -r ../../model/x5/* ./model/
 cp -r ../img ./
 mkdir result
 if [ "$BUNDLE_RUNTIME" = "1" ]; then
