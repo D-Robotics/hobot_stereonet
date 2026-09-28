@@ -380,6 +380,32 @@ StereoRectify::StereoRectify(const std::string &stereo_calib_file_path, const rc
     }
 
     /*
+     * Detect a vertical (top/bottom) baseline from the translation direction.
+     *
+     * stereoRectify always horizontalizes the epipolar lines by rotating the
+     * rectified frame so the baseline aligns with the x-axis. For a vertical
+     * baseline this rotation is ~90 deg about the optical axis, which leaves
+     * the rectified point cloud sideways relative to the physical camera frame.
+     * Record the direction so the point cloud can be rotated back to upright.
+     *
+     *   t_rl = t_cam1_cam0; |t_y| > |t_x|  => vertical rig.
+     *   The sign of t_y picks the rotation direction:
+     *     t_y < 0 (cam0 above cam1) => +1 : (X, Y) -> (-Y, X)
+     *     t_y > 0 (cam0 below cam1) => -1 : (X, Y) -> ( Y, -X)
+     */
+    pointcloud_rotate_dir_ = 0;
+    {
+      const double tx = t_rl.at<double>(0, 0);
+      const double ty = t_rl.at<double>(1, 0);
+      if (std::fabs(ty) > std::fabs(tx)) {
+        pointcloud_rotate_dir_ = (ty < 0.0) ? 1 : -1;
+        RCLCPP_WARN_STREAM(logger_, "=> vertical (top/bottom) baseline detected: t_rl=["
+                                        << tx << ", " << ty << "], pointcloud_rotate_dir="
+                                        << pointcloud_rotate_dir_);
+      }
+    }
+
+    /*
      * Read the optional pinhole alpha parameter.
      */
     float alpha = 0.0f;
@@ -581,12 +607,19 @@ static float find_max_no_black_fovscale(const cv::Mat &Kl, const cv::Mat &Dl, co
    * larger  -> smaller focal -> larger FOV -> easier to have black border
    *
    * We search the maximum valid scale.
+   *
+   * NOTE: some OpenCV versions (e.g. 5.x) ignore the fov_scale argument of
+   * cv::fisheye::stereoRectify, so the rectification is actually independent of
+   * fov_scale. In that case even the minimum scale may still produce a small
+   * border (e.g. a top/bottom rig, where stereoRectify rotates the cameras
+   * ~90°), so the strict no-black search must not fail hard: accept the minimum
+   * scale and let the border pixels become invalid disparity/depth.
    */
 
   float low = kMinScale;
 
   if (!is_valid(low)) {
-    throw std::runtime_error("Even minimum fisheye fov_scale has black border");
+    return low;
   }
 
   /*

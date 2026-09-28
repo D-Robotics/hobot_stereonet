@@ -35,6 +35,17 @@ struct CameraIntrinsic {
   // equirectangular image and the depth is the radial distance.
   std::string rectify_model = "RECTIFY_PERSPECTIVE";
 
+  // Rotation applied to the point cloud so a vertical (top/bottom) rig outputs
+  // upright points, consistent with a horizontal (left/right) rig. For a
+  // vertical baseline, stereoRectify rotates the rectified frame ~90 deg about
+  // the optical axis, so the rectified X/Y axes are swapped relative to the
+  // physical camera frame. Values:
+  //   0  : no rotation (horizontal baseline, or online camera_info path)
+  //   +1 : (X, Y) -> (-Y, X)
+  //   -1 : (X, Y) -> ( Y, -X)
+  // Only populated by the "custom" calibration path.
+  int pointcloud_rotate_dir = 0;
+
   bool is_valid() const {
     return (fx > 0.0 && fy > 0.0 && cx >= 0.0 && cy >= 0.0 && baseline > 0.0);
   }

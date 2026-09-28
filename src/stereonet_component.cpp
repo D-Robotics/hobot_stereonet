@@ -655,6 +655,7 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
     stereo_rectifier_->get_intrinsic(camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx,
                                      camera_intrinsic_->cy, camera_intrinsic_->baseline);
     camera_intrinsic_->rectify_model = stereo_rectifier_->get_rectify_model();
+    camera_intrinsic_->pointcloud_rotate_dir = stereo_rectifier_->get_pointcloud_rotate_dir();
     camera_info_updated_ = true;
   }
 
@@ -1392,6 +1393,7 @@ void StereoNetNode::build_pointcloud(const cv::Mat &disp, const cv::Mat &depth, 
   const float fy = camera_intrinsic_->fy;
   const float cx = camera_intrinsic_->cx;
   const float cy = camera_intrinsic_->cy;
+  const int rotate_dir = camera_intrinsic_->pointcloud_rotate_dir;
 
   int num_threads = omp_get_max_threads();
   std::vector<std::vector<pcl::PointXYZRGB>> thread_points(num_threads);
@@ -1442,6 +1444,13 @@ void StereoNetNode::build_pointcloud(const cv::Mat &disp, const cv::Mat &depth, 
         if (Z <= 0) continue;
         X = (u - cx) * Z / fx;
         Y = (v - cy) * Z / fy;
+      }
+      if (rotate_dir != 0) {
+        // Vertical (top/bottom) rig: rotate the rectified point back ~90 deg so
+        // the output is upright, consistent with a horizontal left/right rig.
+        const float Xr = X, Yr = Y;
+        X = -static_cast<float>(rotate_dir) * Yr;
+        Y = static_cast<float>(rotate_dir) * Xr;
       }
       if (Z <= 0 || Z > pointcloud_depth_max_) continue;
       if (-Y > pointcloud_height_max_ || -Y < pointcloud_height_min_) continue;
@@ -2077,6 +2086,33 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   cv::Mat mask = (pub_data->disp == 0);
   visual_img.setTo(cv::Vec3b(0, 0, 0), mask);
 
+  // For a vertical (top/bottom) rig the rectified content is sideways. Rotate
+  // the left image and the disparity visual 90 deg so the composite is upright,
+  // then draw all text/overlays below on the rotated image so the text stays
+  // horizontal. The depth map and intrinsic are rotated identically so the
+  // depth-sampling overlays (grid depth, measure ROI, ground angle) stay
+  // consistent with what is shown.
+  const int rotate_dir = camera_intrinsic_->pointcloud_rotate_dir;
+  cv::Mat depth_rot = pub_data->depth;
+  CameraIntrinsic intr_rot = *camera_intrinsic_;
+  if (rotate_dir != 0) {
+    const int code = (rotate_dir > 0) ? cv::ROTATE_90_CLOCKWISE : cv::ROTATE_90_COUNTERCLOCKWISE;
+    cv::rotate(left_bgr, left_bgr, code);
+    cv::rotate(visual_img, visual_img, code);
+    cv::rotate(depth_rot, depth_rot, code);
+    if (rotate_dir > 0) {
+      intr_rot.fx = camera_intrinsic_->fy;
+      intr_rot.fy = camera_intrinsic_->fx;
+      intr_rot.cx = height - 1 - camera_intrinsic_->cy;
+      intr_rot.cy = camera_intrinsic_->cx;
+    } else {
+      intr_rot.fx = camera_intrinsic_->fy;
+      intr_rot.fy = camera_intrinsic_->fx;
+      intr_rot.cx = camera_intrinsic_->cy;
+      intr_rot.cy = width - 1 - camera_intrinsic_->cx;
+    }
+    std::swap(width, height);
+  }
   cv::vconcat(left_bgr, visual_img, visual_img);
   // ===================================== render depth =====================================================
   double font_scale = std::min(left_bgr.cols, left_bgr.rows) / 700.0;
@@ -2097,7 +2133,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     for (int j = 1; j < set_num; ++j) {
       int x = i * x_step;
       int y = j * y_step;
-      float depth_value = pub_data->depth.at<uint16_t>(y, x) * 0.001f; // convert mm to m
+      float depth_value = depth_rot.at<uint16_t>(y, x) * 0.001f; // convert mm to m
       std::stringstream depth_text;
       depth_text << std::fixed << std::setprecision(depth_decimal_num_) << depth_value << "m";
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, y - 5), cv::FONT_HERSHEY_SIMPLEX, font_scale,
@@ -2106,7 +2142,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                   font_scale, CV_RGB(255, 255, 255), 2);
       if (measure_mode_) {
         if (i == set_num / 2 && j == set_num / 2) {
-          RoiVec roi = extract_center_roi(pub_data->depth, x, y, roi_size_);
+          RoiVec roi = extract_center_roi(depth_rot, x, y, roi_size_);
           roi_buffer.push_back(roi);
           if (roi_buffer.size() > 10) roi_buffer.pop_front();
           std::vector<uint16_t> merged = merge_and_filter_valid(roi_buffer);
@@ -2148,13 +2184,13 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
 
             for (size_t i = 0; i < lines.size(); ++i)
               cv::putText(visual_img, lines[i],
-                          cv::Point(x - roi_size_ * 2, y - (lines.size() - i) * roi_size_ * 3 + pub_data->depth.rows),
+                          cv::Point(x - roi_size_ * 2, y - (lines.size() - i) * roi_size_ * 3 + left_bgr.rows),
                           cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 0, 255), 2);
 
             cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2),
                           cv::Point(x + roi_size_ / 2, y + roi_size_ / 2), cv::Scalar(0, 0, 255), 2);
-            cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2 + pub_data->depth.rows),
-                          cv::Point(x + roi_size_ / 2, y + roi_size_ / 2 + pub_data->depth.rows), cv::Scalar(0, 0, 255),
+            cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2 + left_bgr.rows),
+                          cv::Point(x + roi_size_ / 2, y + roi_size_ / 2 + left_bgr.rows), cv::Scalar(0, 0, 255),
                           2);
           }
         }
@@ -2163,24 +2199,37 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   }
   // ===================================== render performance metrics =======================================
   if (render_perf_ && !save_result_flag_ && !do_save_result_once_) {
-    std::stringstream perf_text;
-    perf_text << "FPS: " << std::fixed << std::setprecision(2) << pub_data->fps << " Latency: " << pub_data->latency
-              << "ms CPU: " << pub_data->cpu_usage << "% BPU: " << pub_data->bpu_usage << "%";
+    std::stringstream perf_line1, perf_line2;
+    perf_line1 << "FPS: " << std::fixed << std::setprecision(2) << pub_data->fps << " Latency: " << pub_data->latency
+               << "ms";
+    perf_line2 << "CPU: " << pub_data->cpu_usage << "% BPU: " << pub_data->bpu_usage << "%";
     static int text_height = 0;
     if (text_height == 0) {
       int baseline = 0;
-      cv::Size textSize = cv::getTextSize(perf_text.str(), cv::FONT_HERSHEY_SIMPLEX, font_scale, 2, &baseline);
+      cv::Size textSize = cv::getTextSize(perf_line1.str() + " " + perf_line2.str(), cv::FONT_HERSHEY_SIMPLEX,
+                                          font_scale, 2, &baseline);
       text_height = textSize.height + baseline;
     }
-    cv::putText(visual_img, perf_text.str(), cv::Point(10, text_height), cv::FONT_HERSHEY_SIMPLEX, font_scale,
-                CV_RGB(0, 0, 255), 2);
-    if (!top_is_left_) {
-      cv::putText(visual_img, "top is not left image,", cv::Point(10, text_height * 2), cv::FONT_HERSHEY_SIMPLEX,
-                  font_scale, CV_RGB(0, 0, 255), 2);
-      cv::putText(visual_img, "please swap the mipi cables,", cv::Point(10, text_height * 3), cv::FONT_HERSHEY_SIMPLEX,
-                  font_scale, CV_RGB(0, 0, 255), 2);
-      cv::putText(visual_img, "or set the mipi_channel and mipi_channel2 parameters.", cv::Point(10, text_height * 4),
+    // For a vertical rig the rotated image is narrow, so the single metrics line
+    // is clipped; split it into two lines instead.
+    if (rotate_dir != 0) {
+      cv::putText(visual_img, perf_line1.str(), cv::Point(10, text_height), cv::FONT_HERSHEY_SIMPLEX, font_scale,
+                  CV_RGB(0, 0, 255), 2);
+      cv::putText(visual_img, perf_line2.str(), cv::Point(10, text_height * 2), cv::FONT_HERSHEY_SIMPLEX, font_scale,
+                  CV_RGB(0, 0, 255), 2);
+    } else {
+      cv::putText(visual_img, perf_line1.str() + " " + perf_line2.str(), cv::Point(10, text_height),
                   cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 0, 255), 2);
+    }
+    if (!top_is_left_) {
+      const int warn_start = (rotate_dir != 0) ? text_height * 3 : text_height * 2;
+      cv::putText(visual_img, "top is not left image,", cv::Point(10, warn_start), cv::FONT_HERSHEY_SIMPLEX,
+                  font_scale, CV_RGB(0, 0, 255), 2);
+      cv::putText(visual_img, "please swap the mipi cables,", cv::Point(10, warn_start + text_height),
+                  cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 0, 255), 2);
+      cv::putText(visual_img, "or set the mipi_channel and mipi_channel2 parameters.",
+                  cv::Point(10, warn_start + 2 * text_height), cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 0, 255),
+                  2);
     }
   }
   // ===================================== render ground angle ===============================================
@@ -2204,7 +2253,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     cv::Rect ground_roi(x0, y0, roi_w, roi_h);
 
     double ground_angle_deg = 0.0;
-    bool ok = compute_ground_xz_angle(pub_data->depth, *camera_intrinsic_, ground_roi, ground_roi_min_valid_points_,
+    bool ok = compute_ground_xz_angle(depth_rot, intr_rot, ground_roi, ground_roi_min_valid_points_,
                                       ground_angle_deg);
 
     // Draw ROI on upper left image and lower depth visualization.

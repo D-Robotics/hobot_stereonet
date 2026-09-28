@@ -75,6 +75,12 @@ public:
    */
   std::string get_rectify_model() const { return rectify_model_; }
 
+  /**
+   * @brief Get the point cloud rotation direction for a vertical (top/bottom) rig.
+   *        0 = no rotation, +1 = (X,Y)->(-Y,X), -1 = (X,Y)->(Y,-X).
+   */
+  int get_pointcloud_rotate_dir() const { return pointcloud_rotate_dir_; }
+
 private:
   // logger
   rclcpp::Logger logger_;
@@ -88,6 +94,9 @@ private:
   std::string distortion_model_;
   // Mei rectification model: "RECTIFY_PERSPECTIVE" (default) or "RECTIFY_LONGLATI".
   std::string rectify_model_ = "RECTIFY_PERSPECTIVE";
+  // Point cloud rotation direction for a vertical (top/bottom) rig (see
+  // CameraIntrinsic::pointcloud_rotate_dir).
+  int pointcloud_rotate_dir_ = 0;
   float fov_scale_ = 0.8f;
   float alpha_ = 0.0f;
 
