@@ -14,7 +14,18 @@
 
 #include "stereonet_process.h"
 
+#include <cmath>
+#include <cstdlib>
+
 namespace stereonet {
+namespace {
+// ImageNet normalization (R, G, B) required by the "rgb_fp16_mae" model, whose
+// quantized graph does NOT fold normalization into the weights. Matches the ONNX
+// reference infer_onnx_full.py: (x/255 - mean) / std.
+constexpr float kImagenetMean[3] = {0.485f, 0.456f, 0.406f};
+constexpr float kImagenetStd[3] = {0.229f, 0.224f, 0.225f};
+}  // namespace
+
 StereonetProcess::StereonetProcess(const rclcpp::Logger &logger) : logger_(logger) {
 }
 
@@ -48,9 +59,20 @@ StereonetProcess::~StereonetProcess() {
 int StereonetProcess::init(const std::string &model_path, const std::string &post_version,
                            const int &max_memory_count) {
   int ret_code = 0;
+
   // load model
   model_path_ = model_path;
   post_version_ = post_version;
+
+  // The S600 DStereoV310 800x1280 models are large and need user-defined L2M sizes
+  // on the BPU. hbDNN reads this from the process environment during model init, so
+  // set it BEFORE hbDNNInitializeFromFiles(). Detect via the model FILE PATH here,
+  // because the internal model name is only known after init.
+  if (model_path_.find("S600_DStereoV310_800x1280") != std::string::npos) {
+    setenv("HB_DNN_USER_DEFINED_L2M_SIZES", "6:6:6:6", 1);
+    LOG_WARN(logger_, "=> set HB_DNN_USER_DEFINED_L2M_SIZES=6:6:6:6 (S600_DStereoV310_800x1280 model)");
+  }
+
   const char *model_path_cstr = model_path_.c_str();
   ret_code = hbDNNInitializeFromFiles(&packed_dnn_handle_, &model_path_cstr, 1);
   HB_CHECK_SUCCESS(logger_, ret_code, "hbDNNInitializeFromFiles failed");
@@ -73,11 +95,25 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
   LOG_WARN(logger_, "=> input_count: " << input_count_);
   LOG_WARN(logger_, "=> output_count: " << output_count_);
 
+  // Detect models that need RGB input with ImageNet normalization applied BEFORE
+  // S16 quantization (e.g. the "rgb_fp16_mae" model). For these the normalization
+  // is NOT folded into the quantized graph, unlike the raw-pixel S16 models.
+  if (model_name_list_[0] != nullptr &&
+      std::string(model_name_list_[0]).find("rgb_fp16_mae") != std::string::npos) {
+    input_needs_imagenet_norm_ = true;
+  }
+  LOG_WARN(logger_, "=> input_needs_imagenet_norm: " << (input_needs_imagenet_norm_ ? "true" : "false"));
+
   // get model input size from input tensor[0]
   hbDNNTensorProperties properties;
   ret_code = hbDNNGetInputTensorProperties(&properties, dnn_handle_, 0);
 #if defined(PLATFORM_S100) || defined(PLATFORM_S600)
-  properties.quantizeAxis = 3;
+  if (properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    // S16 tensor input is NCHW (e.g. RGB planer), read H/W from dim[2]/dim[3]
+    properties.quantizeAxis = 1;
+  } else {
+    properties.quantizeAxis = 3;
+  }
 #endif
   hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
 
@@ -88,6 +124,15 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
     model_input_w_ = 640;
     inner_model_input_h_ = 308;
     inner_model_input_w_ = 560;
+    LOG_WARN(logger_,
+             "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
+  } else if (model_input_h_ == 700 && model_input_w_ == 1120) {
+    // special case for S600 S16 model: input tensor is 1120x700, output disp is 1280x800.
+    // Feed the outer 1280x800 resolution (matches output) and downscale to inner in forward().
+    model_input_h_ = 800;
+    model_input_w_ = 1280;
+    inner_model_input_h_ = 700;
+    inner_model_input_w_ = 1120;
     LOG_WARN(logger_,
              "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
   }
@@ -130,10 +175,17 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, I
       cv::Mat right_img_bgr(model_input_h_, model_input_w_, CV_8UC3);
       ImgConvertUtils::nv12_to_bgr24_neon(left_img_data, left_img_bgr.data, model_input_w_, model_input_h_);
       ImgConvertUtils::nv12_to_bgr24_neon(right_img_data, right_img_bgr.data, model_input_w_, model_input_h_);
-      cv::resize(left_img_bgr, left_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_));
-      cv::resize(right_img_bgr, right_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_));
+      // The V3.10 model is a disparity super-resolution net: it takes the full
+      // frame downscaled to the inner resolution (0.875x) and outputs full-res
+      // disparity. Match the ONNX reference (infer_onnx_full.py): resize the whole
+      // frame with INTER_LINEAR. Do NOT center-crop - cropping discards the scene
+      // edges the model expects and corrupts the disparity.
+      cv::resize(left_img_bgr, left_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_), 0, 0, cv::INTER_LINEAR);
+      cv::resize(right_img_bgr, right_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_), 0, 0, cv::INTER_LINEAR);
       const int align_width = ((left_img_bgr.cols + 63) / 64) * 64;
-      if (align_width != left_img_bgr.cols) {
+      // Only pad the width for the U8 NV12 model (its Y plane needs a 64-byte aligned width).
+      // The S16 NCHW tensor handles alignment internally via its stride, so skip padding for it.
+      if (align_width != left_img_bgr.cols && input_tensor_type_ == HB_DNN_TENSOR_TYPE_U8) {
         const int pad_right = align_width - left_img_bgr.cols;
         cv::copyMakeBorder(left_img_bgr, left_img_bgr, 0, 0, 0, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
         cv::copyMakeBorder(right_img_bgr, right_img_bgr, 0, 0, 0, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
@@ -1278,8 +1330,8 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
 #endif
 
 #if defined(PLATFORM_S100) || defined(PLATFORM_S600)
-    if ((properties.tensorType != HB_DNN_TENSOR_TYPE_U8)) {
-      LOG_ERROR(logger_, "=> input tensor type is not in [HB_DNN_TENSOR_TYPE_U8]");
+    if ((properties.tensorType != HB_DNN_TENSOR_TYPE_U8) && (properties.tensorType != HB_DNN_TENSOR_TYPE_S16)) {
+      LOG_ERROR(logger_, "=> input tensor type is not in [HB_DNN_TENSOR_TYPE_U8, HB_DNN_TENSOR_TYPE_S16]");
       return -1;
     }
 #endif
@@ -1342,7 +1394,7 @@ int StereonetProcess::prepare_input_tensor(std::vector<hbDNNTensor> &input_tenso
 #endif
 
 #if defined(PLATFORM_S100) || defined(PLATFORM_S600)
-    if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8) {
+    if (properties.tensorType == HB_DNN_TENSOR_TYPE_U8 || properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
       ret_code = hbSysAllocCachedMem(&tensor.sysMem, properties.alignedByteSize);
       HB_CHECK_SUCCESS(logger_, ret_code, "hbSysAllocCachedMem failed");
       if (prt_flag) LOG_WARN(logger_, "=> input tensor size: " << tensor.sysMem.memSize);
@@ -1444,12 +1496,12 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
 #endif
 
 #if defined(PLATFORM_S100) || defined(PLATFORM_S600)
-  hbDNNTensor &left_input_y_tensor = input_tensors[0];
-  hbDNNTensor &left_input_uv_tensor = input_tensors[1];
-  hbDNNTensor &right_input_y_tensor = input_tensors[2];
-  hbDNNTensor &right_input_uv_tensor = input_tensors[3];
-
   if (input_tensor_type_ == HB_DNN_TENSOR_TYPE_U8) {
+    hbDNNTensor &left_input_y_tensor = input_tensors[0];
+    hbDNNTensor &left_input_uv_tensor = input_tensors[1];
+    hbDNNTensor &right_input_y_tensor = input_tensors[2];
+    hbDNNTensor &right_input_uv_tensor = input_tensors[3];
+
     // fill image data into memory
     ret_code = hbSysWriteMem(&left_input_y_tensor.sysMem, (char *)left_img_data, left_input_y_tensor.sysMem.memSize);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysWriteMem failed");
@@ -1472,8 +1524,88 @@ int StereonetProcess::fill_img_to_input_tensor(std::vector<hbDNNTensor> &input_t
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
     ret_code = hbSysFlushMem(&right_input_uv_tensor.sysMem, HB_SYS_MEM_CACHE_CLEAN);
     HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
+  } else if (input_tensor_type_ == HB_DNN_TENSOR_TYPE_S16) {
+    // S16 NCHW planer input: 2 tensors (img1 = left, img2 = right), each [1, C, H, W].
+    // The incoming NV12 image is converted back to BGR24, reordered to RGB planer and
+    // quantized to S16. Raw-pixel models use q = round(pixel / scale); the rgb_fp16_mae
+    // model additionally applies ImageNet normalization before quantizing (see below).
+    hbDNNTensor &left_tensor = input_tensors[0];
+    hbDNNTensor &right_tensor = input_tensors[1];
+
+    auto fill_s16_tensor = [&](hbDNNTensor &tensor, uint8_t *nv12_data) -> int {
+      const hbDNNTensorProperties &props = tensor.properties;
+      if (props.validShape.numDimensions != 4) {
+        LOG_ERROR(logger_, "=> S16 input tensor must be 4D [N, C, H, W], got " << props.validShape.numDimensions);
+        return -1;
+      }
+      const int32_t *shape = props.validShape.dimensionSize;
+      const int32_t c = shape[1];
+      const int32_t h = shape[2];
+      const int32_t w = shape[3];
+      if (c != 3) {
+        LOG_ERROR(logger_, "=> S16 input tensor channel must be 3, got " << c);
+        return -1;
+      }
+
+      // NCHW stride in unit of S16 element (stride[] is in bytes)
+      const int64_t c_stride = props.stride[1] / static_cast<int32_t>(sizeof(int16_t));
+      const int64_t h_stride = props.stride[2] / static_cast<int32_t>(sizeof(int16_t));
+
+      // per-channel quantization scale (fallback to 1.0 if no scale info)
+      float scales[3] = {1.0f, 1.0f, 1.0f};
+      if (props.quantiType == SCALE && props.scale.scaleData != nullptr && props.scale.scaleLen > 0) {
+        for (int32_t i = 0; i < 3; ++i) {
+          scales[i] = (props.scale.scaleLen >= c) ? props.scale.scaleData[i] : props.scale.scaleData[0];
+        }
+      }
+
+      // NV12 -> BGR24 (channel order: B, G, R)
+      std::vector<uint8_t> bgr(static_cast<size_t>(w) * h * 3);
+      ImgConvertUtils::nv12_to_bgr24_neon(nv12_data, bgr.data(), w, h);
+
+      // The HBM de-quantizes the S16 tensor back to float via float = int16 * scale,
+      // so the S16 value must encode whatever float the model's first layer expects.
+      //  * Raw-pixel models (default): the ImageNet normalization is folded into the
+      //    quantized graph, so encode raw pixels: q = round(pixel / scale).
+      //  * rgb_fp16_mae model: normalization is NOT folded in, so normalize first:
+      //    q = round(((pixel/255 - mean) / std) / scale).
+      int16_t *dst = reinterpret_cast<int16_t *>(tensor.sysMem.virAddr);
+      // Saturating float -> int16 (values stay well within range; clamp is defensive).
+      auto to_i16 = [](float v) -> int16_t {
+        v = std::round(v);
+        if (v >= 32767.0f) return 32767;
+        if (v <= -32768.0f) return -32768;
+        return static_cast<int16_t>(v);
+      };
+      for (int32_t y = 0; y < h; ++y) {
+        for (int32_t x = 0; x < w; ++x) {
+          const uint8_t *px = &bgr[(static_cast<size_t>(y) * w + x) * 3];
+          // BGR -> NCHW planer RGB (channel 0 = R, 1 = G, 2 = B).
+          float r, g, b;
+          if (input_needs_imagenet_norm_) {
+            r = ((px[2] / 255.0f - kImagenetMean[0]) / kImagenetStd[0]) / scales[0];
+            g = ((px[1] / 255.0f - kImagenetMean[1]) / kImagenetStd[1]) / scales[1];
+            b = ((px[0] / 255.0f - kImagenetMean[2]) / kImagenetStd[2]) / scales[2];
+          } else {
+            r = px[2] / scales[0];
+            g = px[1] / scales[1];
+            b = px[0] / scales[2];
+          }
+          dst[y * h_stride + x] = to_i16(r);
+          dst[c_stride + y * h_stride + x] = to_i16(g);
+          dst[2 * c_stride + y * h_stride + x] = to_i16(b);
+        }
+      }
+
+      return hbSysFlushMem(&tensor.sysMem, HB_SYS_MEM_CACHE_CLEAN);
+    };
+
+    ret_code = fill_s16_tensor(left_tensor, left_img_data);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
+    ret_code = fill_s16_tensor(right_tensor, right_img_data);
+    HB_CHECK_SUCCESS(logger_, ret_code, "hbSysFlushMem failed");
   } else {
-    LOG_ERROR(logger_, "=> input_tensor_type is not in [HB_DNN_TENSOR_TYPE_U8]");
+    LOG_ERROR(logger_, "=> input_tensor_type is not in [HB_DNN_TENSOR_TYPE_U8, HB_DNN_TENSOR_TYPE_S16]");
     return -1;
   }
 #endif

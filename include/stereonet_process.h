@@ -358,6 +358,10 @@ private:
   int output_count_ = 0;
 
   int32_t input_tensor_type_;
+  // True when the loaded model needs RGB input with ImageNet normalization applied
+  // BEFORE S16 quantization (e.g. the "rgb_fp16_mae" model). Unlike the raw-pixel
+  // S16 models, this model's normalization is NOT folded into the quantized graph.
+  bool input_needs_imagenet_norm_ = false;
 
   int max_memory_count_ = 5;
   std::deque<std::atomic_bool> idle_tensor_;
