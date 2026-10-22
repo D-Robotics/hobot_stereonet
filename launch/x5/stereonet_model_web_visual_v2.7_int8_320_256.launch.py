@@ -28,7 +28,7 @@ def generate_launch_description():
     stereonet_model_file_path =  os.path.join(
         get_package_share_directory('hobot_stereonet'),
         'model',
-        'DStereoV25_v8_int16.bin'
+        'DStereoV2.7_int8_320_256.bin'
     )
 
     # stereonet node

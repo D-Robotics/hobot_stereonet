@@ -917,6 +917,7 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
 
   switch (tensors[0].properties.tensorType) {
   case HB_DNN_TENSOR_TYPE_S32: disp_elem_size = 4; break;
+  case HB_DNN_TENSOR_TYPE_S16: disp_elem_size = 2; break;
   case HB_DNN_TENSOR_TYPE_F32: disp_elem_size = 4; break;
   default: LOG_ERROR(logger_, "=> unsupported disp tensor type."); return -1;
   }
@@ -991,6 +992,50 @@ int StereonetProcess::postprocess_convex_upsampling_with_interp(const std::vecto
           const int32_t idx_x3 = std::min((x + 3) / scale_w, disp_w_dim - 1);
 
           int32x4_t disp_s32 = {disp_row[idx_x0], disp_row[idx_x1], disp_row[idx_x2], disp_row[idx_x3]};
+          int16x4_t spx_s16 = vld1_s16(spx_row + x);
+          int32x4_t spx_s32 = vmovl_s16(spx_s16);
+
+          float32x4_t disp_f32 = vcvtq_f32_s32(disp_s32);
+          float32x4_t spx_f32 = vcvtq_f32_s32(spx_s32);
+          float32x4_t mul_f32 = vmulq_n_f32(vmulq_f32(disp_f32, spx_f32), cur_scale);
+
+          float32x4_t out_f32 = vld1q_f32(out_row + x);
+          out_f32 = vaddq_f32(out_f32, mul_f32);
+          vst1q_f32(out_row + x, out_f32);
+        }
+        for (; x < spx_w_dim; ++x) {
+          const int32_t idx_x = std::min(x / scale_w, disp_w_dim - 1);
+          out_row[x] += static_cast<float>(disp_row[idx_x]) * static_cast<float>(spx_row[x]) * cur_scale;
+        }
+      }
+    }
+  } else if (tensors[0].properties.tensorType == HB_DNN_TENSOR_TYPE_S16 &&
+             tensors[1].properties.tensorType == HB_DNN_TENSOR_TYPE_S16) {
+    auto disp_base = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[0], 0).virAddr);
+    auto spx_base = reinterpret_cast<int16_t *>(TENSOR_SYSMEM(tensors[1], 0).virAddr);
+
+    for (int32_t c = 0; c < spx_c_dim; ++c) {
+      const float cur_disp_scale = disp_per_channel_scale ? disp_scale[c] : (*disp_scale);
+      const float cur_scale = cur_disp_scale * spx_scale_val;
+
+      const int16_t *disp_c_ptr = disp_base + c * disp_c_stride;
+      const int16_t *spx_c_ptr = spx_base + c * spx_c_stride;
+
+      for (int32_t y = 0; y < spx_h_dim; ++y) {
+        const int32_t idx_y = std::min(y / scale_h, disp_h_dim - 1);
+        float *out_row = result_ptr + y * spx_w_dim;
+        const int16_t *spx_row = spx_c_ptr + y * spx_h_stride;
+        const int16_t *disp_row = disp_c_ptr + idx_y * disp_h_stride;
+
+        int32_t x = 0;
+        for (; x <= spx_w_dim - 4; x += 4) {
+          const int32_t idx_x0 = std::min((x + 0) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x1 = std::min((x + 1) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x2 = std::min((x + 2) / scale_w, disp_w_dim - 1);
+          const int32_t idx_x3 = std::min((x + 3) / scale_w, disp_w_dim - 1);
+
+          int16x4_t disp_s16 = {disp_row[idx_x0], disp_row[idx_x1], disp_row[idx_x2], disp_row[idx_x3]};
+          int32x4_t disp_s32 = vmovl_s16(disp_s16);
           int16x4_t spx_s16 = vld1_s16(spx_row + x);
           int32x4_t spx_s32 = vmovl_s16(spx_s16);
 

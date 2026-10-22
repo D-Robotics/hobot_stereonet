@@ -32,7 +32,7 @@
 #include "BS_thread_pool.hpp"
 #include "pub_data.h"
 #endif
-#ifdef PLATFORM_S600
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
 #include "img_convert_utils.h"
 #endif
 
