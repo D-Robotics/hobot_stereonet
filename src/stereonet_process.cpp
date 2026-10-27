@@ -117,6 +117,19 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
 #endif
   hbGetInputTensorHW(properties, model_input_h_, model_input_w_);
 
+#ifdef PLATFORM_S100
+  if (model_input_h_ == 280 && model_input_w_ == 504) {
+    // special case for S100 DStereoV310: input tensor is 504x280 (0.875x of 576x320 output).
+    // Feed the outer 576x320 resolution (matches output) and downscale to inner in forward().
+    model_input_h_ = 320;
+    model_input_w_ = 576;
+    inner_model_input_h_ = 280;
+    inner_model_input_w_ = 504;
+    LOG_WARN(logger_,
+             "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
+  }
+#endif
+
 #ifdef PLATFORM_S600
   if (model_input_h_ == 308 && model_input_w_ == 560) {
     // special case for S600 model
@@ -169,22 +182,27 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, I
       LOG_ERROR(logger_, "=> no idle tensor");
       return -1;
     }
-#ifdef PLATFORM_S600
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
     if (inner_model_input_h_ > 0 && inner_model_input_w_ > 0) {
       cv::Mat left_img_bgr(model_input_h_, model_input_w_, CV_8UC3);
       cv::Mat right_img_bgr(model_input_h_, model_input_w_, CV_8UC3);
       ImgConvertUtils::nv12_to_bgr24_neon(left_img_data, left_img_bgr.data, model_input_w_, model_input_h_);
       ImgConvertUtils::nv12_to_bgr24_neon(right_img_data, right_img_bgr.data, model_input_w_, model_input_h_);
-      // The V3.10 model is a disparity super-resolution net: it takes the full
+      // The DStereoV3.10 model is a disparity super-resolution net: it takes the full
       // frame downscaled to the inner resolution (0.875x) and outputs full-res
       // disparity. Match the ONNX reference (infer_onnx_full.py): resize the whole
       // frame with INTER_LINEAR. Do NOT center-crop - cropping discards the scene
       // edges the model expects and corrupts the disparity.
       cv::resize(left_img_bgr, left_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_), 0, 0, cv::INTER_LINEAR);
       cv::resize(right_img_bgr, right_img_bgr, cv::Size(inner_model_input_w_, inner_model_input_h_), 0, 0, cv::INTER_LINEAR);
-      const int align_width = ((left_img_bgr.cols + 63) / 64) * 64;
-      // Only pad the width for the U8 NV12 model (its Y plane needs a 64-byte aligned width).
-      // The S16 NCHW tensor handles alignment internally via its stride, so skip padding for it.
+#ifdef PLATFORM_S100
+      const int align_width = ALIGN_32(left_img_bgr.cols);
+#else
+      const int align_width = ALIGN_64(left_img_bgr.cols);
+#endif
+      // Only pad the width for the U8 NV12 model: its Y/UV plane rows must match the
+      // tensor stride (32-byte aligned on S100, 64-byte on S600). The S16 NCHW tensor
+      // handles alignment internally via its stride, so skip padding for it.
       if (align_width != left_img_bgr.cols && input_tensor_type_ == HB_DNN_TENSOR_TYPE_U8) {
         const int pad_right = align_width - left_img_bgr.cols;
         cv::copyMakeBorder(left_img_bgr, left_img_bgr, 0, 0, 0, pad_right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
@@ -200,7 +218,7 @@ int StereonetProcess::forward(uint8_t *left_img_data, uint8_t *right_img_data, I
     } else {
 #endif
       ret_code = fill_img_to_input_tensor(batch_input_tensors_[idle_tensor_id], left_img_data, right_img_data);
-#ifdef PLATFORM_S600
+#if defined(PLATFORM_S100) || defined(PLATFORM_S600)
     }
 #endif
   }
