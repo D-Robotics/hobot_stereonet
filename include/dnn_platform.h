@@ -64,7 +64,22 @@ static int hbDNNInfer(hbDNNTaskHandle_t *taskHandle, hbDNNTensor **output, hbDNN
     std::cout << "hbDNNInferV2 failed: " << ret << std::endl;
     return ret;
   }
-  inferCtrlParam->backend = HB_UCP_BPU_CORE_ANY;
+  // Multi-core (core_num>1) models must be submitted to specific BPU cores;
+  // hbUCPSubmitTask rejects HB_UCP_BPU_CORE_ANY for them. Query the compile
+  // core count and, for multi-core, OR together the required core bitmask.
+  int32_t bpu_core_num = 1;
+  if (hbDNNGetCompileBpuCoreNum(&bpu_core_num, dnnHandle) != HB_DNN_SUCCESS) {
+    bpu_core_num = 1;
+  }
+  if (bpu_core_num > 1) {
+    uint64_t cores = 0;
+    for (int32_t i = 0; i < bpu_core_num; ++i) {
+      cores |= (HB_UCP_BPU_CORE_0 << i);
+    }
+    inferCtrlParam->backend = cores;
+  } else {
+    inferCtrlParam->backend = HB_UCP_BPU_CORE_ANY;
+  }
   ret = hbUCPSubmitTask(*taskHandle, inferCtrlParam);
   if (ret != HB_DNN_SUCCESS) {
     std::cout << "hbUCPSubmitTask failed: " << ret << std::endl;

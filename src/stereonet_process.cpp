@@ -148,6 +148,24 @@ int StereonetProcess::init(const std::string &model_path, const std::string &pos
     inner_model_input_w_ = 1120;
     LOG_WARN(logger_,
              "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
+  } else if (model_input_h_ == 476 && model_input_w_ == 840) {
+    // special case for S600 DStereoV310 960x544: input tensor is 840x476 (0.875x of 960x544 output).
+    // Feed the outer 960x544 resolution (matches output) and downscale to inner in forward().
+    model_input_h_ = 544;
+    model_input_w_ = 960;
+    inner_model_input_h_ = 476;
+    inner_model_input_w_ = 840;
+    LOG_WARN(logger_,
+             "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
+  } else if (model_input_h_ == 420 && model_input_w_ == 560) {
+    // special case for S600 DStereoV310 640x480: input tensor is 560x420 (0.875x of 640x480 output).
+    // Feed the outer 640x480 resolution (matches output) and downscale to inner in forward().
+    model_input_h_ = 480;
+    model_input_w_ = 640;
+    inner_model_input_h_ = 420;
+    inner_model_input_w_ = 560;
+    LOG_WARN(logger_,
+             "=> inner_model_input_h: " << inner_model_input_h_ << ", inner_model_input_w: " << inner_model_input_w_);
   }
 #endif
   LOG_WARN(logger_, "=> model_input_h: " << model_input_h_ << ", model_input_w: " << model_input_w_);
