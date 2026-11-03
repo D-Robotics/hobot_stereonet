@@ -15,6 +15,9 @@
 #ifndef HOBOT_STEREONET_INCLUDE_CAMERA_INTRINSIC_H_
 #define HOBOT_STEREONET_INCLUDE_CAMERA_INTRINSIC_H_
 
+#include <cmath>
+#include <string>
+
 namespace stereonet {
 
 /**
@@ -29,10 +32,19 @@ struct CameraIntrinsic {
   double baseline = 0.0; // in meters
   double doffs = 0.0;
 
-  // Mei omnidirectional rectification model: "RECTIFY_PERSPECTIVE" (default)
-  // or "RECTIFY_LONGLATI" (longitude-latitude / spherical projection).
-  // For LONGLATI, fx is the longitude pixels-per-radian of the rectified
-  // equirectangular image and the depth is the radial distance.
+  // Output projection of the rectified image, independent of the distortion
+  // model. Supported values:
+  //   "RECTIFY_PERSPECTIVE"  pinhole. Depth = Z = fx * baseline / disparity.
+  //   "RECTIFY_LONGLATI"     equirectangular (spherical) unrolling.
+  //   "RECTIFY_CYLINDRICAL"  cylindrical projection.
+  // For the two angular models the horizontal mapping is identical
+  // (u = fx * phi, with phi the azimuth), so they share the same depth formula
+  //   Z = baseline / (tan(phi_l) - tan(phi_r)),  phi_r = phi_l - disparity / fx
+  // where fx is the longitude pixels-per-radian (=W/HFOV_rad) of the rectified
+  // angular image and Z is the forward depth along the optical axis. They
+  // differ only in the vertical mapping (equirectangular: v = fy*lambda;
+  // cylindrical: v = fy*tan(lambda)), which affects only the point cloud
+  // back-projection.
   std::string rectify_model = "RECTIFY_PERSPECTIVE";
 
   // Rotation applied to the point cloud so a vertical (top/bottom) rig outputs
@@ -50,6 +62,31 @@ struct CameraIntrinsic {
     return (fx > 0.0 && fy > 0.0 && cx >= 0.0 && cy >= 0.0 && baseline > 0.0);
   }
 };
+
+/**
+ * @brief Compute the horizontal/vertical field-of-view (degrees) of a rectified
+ * image of size (W, H) with focal (fx, fy), honoring the projection model:
+ *   RECTIFY_PERSPECTIVE : pinhole,      HFOV = 2*atan(W/2fx), VFOV = 2*atan(H/2fy)
+ *   RECTIFY_LONGLATI    : equirect,     HFOV = W/fx,          VFOV = H/fy
+ *   RECTIFY_CYLINDRICAL : cylindrical,  HFOV = W/fx,          VFOV = 2*atan(H/2fy)
+ * For the two angular models fx/fy are pixels-per-radian (the longitude focal),
+ * so the horizontal FOV is simply W/fx rad; re-applying the pinhole formula to a
+ * px/rad focal yields a meaningless number.
+ */
+inline void compute_fov_deg(const std::string &rectify_model, double fx, double fy, int W, int H,
+                            double &hfov_deg, double &vfov_deg) {
+  constexpr double kRad2Deg = 180.0 / 3.14159265358979323846;
+  if (rectify_model == "RECTIFY_LONGLATI") {
+    hfov_deg = (fx > 0.0) ? (W / fx) * kRad2Deg : 0.0;
+    vfov_deg = (fy > 0.0) ? (H / fy) * kRad2Deg : 0.0;
+  } else if (rectify_model == "RECTIFY_CYLINDRICAL") {
+    hfov_deg = (fx > 0.0) ? (W / fx) * kRad2Deg : 0.0;
+    vfov_deg = (fy > 0.0) ? 2.0 * std::atan(H / (2.0 * fy)) * kRad2Deg : 0.0;
+  } else {
+    hfov_deg = (fx > 0.0) ? 2.0 * std::atan(W / (2.0 * fx)) * kRad2Deg : 0.0;
+    vfov_deg = (fy > 0.0) ? 2.0 * std::atan(H / (2.0 * fy)) * kRad2Deg : 0.0;
+  }
+}
 
 } // namespace stereonet
 

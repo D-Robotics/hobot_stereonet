@@ -211,9 +211,10 @@ private:
   /**
    * @brief Build a colored point cloud from a disparity/depth map (shared by
    *        publish_pointcloud2 and the offline SGBM path so the depth math is
-   *        identical). For RECTIFY_LONGLATI the points are triangulated from
-   *        the disparity + pixel position; otherwise from the depth map.
-   * @param disp Disparity map (CV_32FC1), used for LONGLATI
+   *        identical). For RECTIFY_LONGLATI / RECTIFY_CYLINDRICAL the points
+   *        are triangulated from the disparity + pixel position; otherwise
+   *        from the depth map.
+   * @param disp Disparity map (CV_32FC1), used for the angular models
    * @param depth Depth map (CV_16UC1, mm), used for perspective
    * @param left_bgr Rectified left BGR image (for color)
    * @param out_cloud Output point cloud

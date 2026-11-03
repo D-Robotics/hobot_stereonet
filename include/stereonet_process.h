@@ -180,36 +180,43 @@ public:
                                              const CameraIntrinsic &camera_intrinsic);
 
   /**
-   * @brief Convert a longitude-latitude (equirectangular / spherical) rectified
-   *        stereo disparity map to a depth map.
+   * @brief Convert an angular (equirectangular / cylindrical) rectified stereo
+   *        disparity map to a depth map.
    *
-   * For RECTIFY_LONGLATI the rectified image is an unrolling of the unit sphere
-   * (column -> longitude, row -> latitude). The disparity d (pixels) relates to
-   * the angular disparity by d = f_lon * dphi, and the baseline B subtends an
-   * angle ~B/R at a point of radial distance R, giving:
+   * For RECTIFY_LONGLATI and RECTIFY_CYLINDRICAL the rectified image shares the
+   * same horizontal mapping u = fx * phi (phi = azimuth), so both share the same
+   * triangulation. The left and right azimuths differ by the angular disparity
+   * dphi = disparity / fx, giving the forward depth along the optical axis:
    *
-   *   R = baseline * f_lon / disparity
+   *   Z = baseline / (tan(phi_l) - tan(phi_r)),  phi_r = phi_l - disparity / fx
    *
-   * where f_lon = camera_intrinsic.fx (longitude pixels-per-radian, = Knew(0,0)
-   * used to build the longlati map) and baseline is in meters. This matches
-   * cv::omnidir::stereoReconstruct for RECTIFY_LONGLATI. The output depth is the
-   * radial distance R expressed in millimeters (CV_16UC1), consistent with
-   * perspective_disparity_to_depth's output format.
+   * where fx = (cols-1)/PI is the azimuth pixels-per-radian of the rectified
+   * angular image and baseline is in meters. The output depth is the forward
+   * depth Z expressed in millimeters (CV_16UC1), consistent with
+   * perspective_disparity_to_depth's output format (forward depth).
    *
    * @param disp Input disparity map (CV_32FC1, pixels)
    * @param depth Output depth map (CV_16UC1, millimeters)
-   * @param camera_intrinsic Camera intrinsic parameters (fx = f_lon, baseline in m)
+   * @param camera_intrinsic Camera intrinsic parameters (baseline in m)
    */
-  static void longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic);
+  static void angular_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                         const CameraIntrinsic &camera_intrinsic);
 
   /**
    * @brief Dispatch disparity->depth conversion based on camera_intrinsic.rectify_model.
-   *        Uses longlati_disparity_to_depth for RECTIFY_LONGLATI, else perspective_disparity_to_depth.
+   *        Uses angular_disparity_to_depth for RECTIFY_LONGLATI / RECTIFY_CYLINDRICAL,
+   *        else perspective_disparity_to_depth.
    */
   static void disparity_to_depth(const cv::Mat &disp, cv::Mat &depth, const CameraIntrinsic &camera_intrinsic);
 
   /**
    * @brief Convert depth map to point cloud
+   *
+   * Back-projection depends on camera_intrinsic.rectify_model: pinhole for
+   * RECTIFY_PERSPECTIVE (X = (u-cx)*Z/fx), angular for RECTIFY_LONGLATI /
+   * RECTIFY_CYLINDRICAL (forward depth Z back-projected via the azimuth phi and
+   * elevation lambda of the pixel).
+   *
    * @param depth Input depth map
    * @param camera_intrinsic Camera intrinsic parameters
    * @param pointcloud Output point cloud
@@ -219,7 +226,8 @@ public:
                                   std::vector<PointXYZ> &pointcloud, const float &max_depth = 5.0f);
 
   /**
-   * @brief Convert depth map to point cloud with RGB
+   * @brief Convert depth map to point cloud with RGB (projection-aware, see
+   *        depth_to_pointcloud).
    * @param depth Input depth map
    * @param rgb Input RGB image
    * @param camera_intrinsic Camera intrinsic parameters

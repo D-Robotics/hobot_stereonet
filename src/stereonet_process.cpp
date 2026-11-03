@@ -1748,21 +1748,22 @@ void StereonetProcess::perspective_disparity_to_depth(const cv::Mat &disp, cv::M
   }
 }
 
-void StereonetProcess::longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
-                                                   const CameraIntrinsic &camera_intrinsic) {
+void StereonetProcess::angular_disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
+                                                 const CameraIntrinsic &camera_intrinsic) {
   depth.create(disp.size(), CV_16UC1);
   const int rows = disp.rows;
   const int cols = disp.cols;
 
-  // Spherical (longitude-latitude) stereo triangulation, matching the Python
-  // longlati reconstruction:
-  //   pi_w = PI / (W-1)               // radians per pixel of longitude (= 1/fx)
-  //   diff = pi_w * disparity         // angular disparity (rad)
-  //   tt   = (col/(W-1) - 0.5) * PI   // longitude of the pixel (rad)
-  //   mgnt = baseline * sin(col*pi_w - diff) / sin(diff)   // radial distance (m)
-  // The scalar depth stored here is mgnt converted to millimeters.
+  // Angular (equirectangular / cylindrical) stereo triangulation. Both share
+  // the same horizontal mapping u = fx * phi, so the left/right azimuths differ
+  // by the angular disparity dphi = disparity / fx, giving the forward depth:
+  //   fx   = camera_intrinsic.fx    // azimuth pixels per radian (W/HFOV_rad)
+  //   phi  = (col - cx) / fx        // azimuth of the pixel
+  //   Z    = baseline / (tan(phi_l) - tan(phi_r)),  phi_r = phi_l - disparity/fx
   const double bl = camera_intrinsic.baseline; // meters
-  const double pi_w = (cols > 1) ? (M_PI / (cols - 1)) : 0.0;
+  const double fx = camera_intrinsic.fx;       // angular focal, matches remap
+  const double cx = camera_intrinsic.cx;
+  const double inv_fx = 1.0 / fx;
 
   for (int i = 0; i < rows; ++i) {
     const float *disp_ptr = disp.ptr<float>(i);
@@ -1773,20 +1774,26 @@ void StereonetProcess::longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat 
         depth_ptr[j] = 0;
         continue;
       }
-      const double diff = pi_w * d;
-      const double sin_diff = std::sin(diff);
-      if (sin_diff <= 1e-12) {
+      const double phi_l = (j - cx) * inv_fx;
+      const double cos_phi = std::cos(phi_l);
+      if (std::abs(cos_phi) < 1e-6) {
+        // azimuth near +-90 deg: forward depth degenerates to ~0
+        depth_ptr[j] = 0;
+        continue;
+      }
+      const double phi_r = phi_l - d * inv_fx;
+      const double denom = std::tan(phi_l) - std::tan(phi_r);
+      if (denom <= 1e-9) {
         // angular disparity too small (very far) or invalid -> saturate
         depth_ptr[j] = 65535;
         continue;
       }
-      const double col_angle = static_cast<double>(j) * pi_w;         // = j*PI/(cols-1)
-      const double mgnt = bl * std::sin(col_angle - diff) / sin_diff; // meters
-      if (!std::isfinite(mgnt) || mgnt <= 0.0) {
+      const double Z = bl / denom; // forward depth, meters
+      if (!std::isfinite(Z) || Z <= 0.0) {
         depth_ptr[j] = 0;
         continue;
       }
-      double mm = mgnt * 1000.0;
+      double mm = Z * 1000.0;
       if (mm > 65535.0) mm = 65535.0;
       depth_ptr[j] = static_cast<uint16_t>(mm);
     }
@@ -1795,8 +1802,9 @@ void StereonetProcess::longlati_disparity_to_depth(const cv::Mat &disp, cv::Mat 
 
 void StereonetProcess::disparity_to_depth(const cv::Mat &disp, cv::Mat &depth,
                                           const CameraIntrinsic &camera_intrinsic) {
-  if (camera_intrinsic.rectify_model == "RECTIFY_LONGLATI") {
-    longlati_disparity_to_depth(disp, depth, camera_intrinsic);
+  if (camera_intrinsic.rectify_model == "RECTIFY_LONGLATI" ||
+      camera_intrinsic.rectify_model == "RECTIFY_CYLINDRICAL") {
+    angular_disparity_to_depth(disp, depth, camera_intrinsic);
   } else {
     perspective_disparity_to_depth(disp, depth, camera_intrinsic);
   }
@@ -1811,22 +1819,47 @@ void StereonetProcess::depth_to_pointcloud(const cv::Mat &depth, const CameraInt
   pointcloud.clear();
   pointcloud.resize(static_cast<size_t>(rows) * cols); // allocate once
 
+  const bool is_angular = (camera_intrinsic.rectify_model == "RECTIFY_LONGLATI" ||
+                           camera_intrinsic.rectify_model == "RECTIFY_CYLINDRICAL");
+  const bool is_cylindrical = (camera_intrinsic.rectify_model == "RECTIFY_CYLINDRICAL");
+
+  // pinhole back-projection params
   const float inv_fx = 1.0f / camera_intrinsic.fx;
   const float inv_fy = 1.0f / camera_intrinsic.fy;
   const float cx = camera_intrinsic.cx;
   const float cy = camera_intrinsic.cy;
 
+  // angular back-projection params (azimuth/elevation of the rectified image)
+  const double ang_fx = camera_intrinsic.fx;
+  const double ang_fy = camera_intrinsic.fy;
+  const double ang_cx = camera_intrinsic.cx;
+  const double ang_cy = camera_intrinsic.cy;
+
   size_t out_idx = 0;
   for (int i = 0; i < rows; ++i) {
     const uint16_t *dptr = depth.ptr<uint16_t>(i);
-    const float y_factor = (i - cy) * inv_fy; // reuse per row
+    const float y_factor = (i - cy) * inv_fy; // reuse per row (pinhole)
+    double tan_lam = 0.0;                     // elevation tangent (angular)
+    if (is_angular) {
+      const double yn = (i - ang_cy) / ang_fy;
+      tan_lam = is_cylindrical ? yn : std::tan(yn);
+    }
     for (int j = 0; j < cols; ++j) {
       const uint16_t d = dptr[j];
       if (d == 0) continue;        // invalid depth
       const float Z = d * 0.001f;  // mm -> m
       if (Z > max_depth) continue; // invalid depth
-      const float X = (j - cx) * Z * inv_fx;
-      const float Y = y_factor * Z;
+      float X, Y;
+      if (is_angular) {
+        const double phi = (j - ang_cx) / ang_fx;
+        const double cos_phi = std::cos(phi);
+        if (std::abs(cos_phi) < 1e-6) continue;
+        X = static_cast<float>(Z * std::tan(phi));
+        Y = static_cast<float>(Z * tan_lam / cos_phi);
+      } else {
+        X = (j - cx) * Z * inv_fx;
+        Y = y_factor * Z;
+      }
       pointcloud[out_idx++] = PointXYZ(X, Y, Z);
     }
   }
@@ -1844,23 +1877,48 @@ void StereonetProcess::depth_to_pointcloud_rgb(const cv::Mat &depth, const cv::M
   pointcloud.clear();
   pointcloud.resize(static_cast<size_t>(rows) * cols); // allocate once
 
+  const bool is_angular = (camera_intrinsic.rectify_model == "RECTIFY_LONGLATI" ||
+                           camera_intrinsic.rectify_model == "RECTIFY_CYLINDRICAL");
+  const bool is_cylindrical = (camera_intrinsic.rectify_model == "RECTIFY_CYLINDRICAL");
+
+  // pinhole back-projection params
   const float inv_fx = 1.0f / camera_intrinsic.fx;
   const float inv_fy = 1.0f / camera_intrinsic.fy;
   const float cx = camera_intrinsic.cx;
   const float cy = camera_intrinsic.cy;
 
+  // angular back-projection params (azimuth/elevation of the rectified image)
+  const double ang_fx = camera_intrinsic.fx;
+  const double ang_fy = camera_intrinsic.fy;
+  const double ang_cx = camera_intrinsic.cx;
+  const double ang_cy = camera_intrinsic.cy;
+
   size_t out_idx = 0;
   for (int i = 0; i < rows; ++i) {
     const uint16_t *dptr = depth.ptr<uint16_t>(i);
     const cv::Vec3b *rgb_ptr = rgb.ptr<cv::Vec3b>(i);
-    const float y_factor = (i - cy) * inv_fy; // reuse per row
+    const float y_factor = (i - cy) * inv_fy; // reuse per row (pinhole)
+    double tan_lam = 0.0;                     // elevation tangent (angular)
+    if (is_angular) {
+      const double yn = (i - ang_cy) / ang_fy;
+      tan_lam = is_cylindrical ? yn : std::tan(yn);
+    }
     for (int j = 0; j < cols; ++j) {
       const uint16_t d = dptr[j];
       if (d == 0) continue;        // invalid depth
       const float Z = d * 0.001f;  // mm -> m
       if (Z > max_depth) continue; // invalid depth
-      const float X = (j - cx) * Z * inv_fx;
-      const float Y = y_factor * Z;
+      float X, Y;
+      if (is_angular) {
+        const double phi = (j - ang_cx) / ang_fx;
+        const double cos_phi = std::cos(phi);
+        if (std::abs(cos_phi) < 1e-6) continue;
+        X = static_cast<float>(Z * std::tan(phi));
+        Y = static_cast<float>(Z * tan_lam / cos_phi);
+      } else {
+        X = (j - cx) * Z * inv_fx;
+        Y = y_factor * Z;
+      }
       pointcloud[out_idx++] = PointXYZRGB(X, Y, Z, rgb_ptr[j][2], rgb_ptr[j][1], rgb_ptr[j][0]);
     }
   }

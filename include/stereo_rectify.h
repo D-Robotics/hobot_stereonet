@@ -71,7 +71,8 @@ public:
   void get_intrinsic(double &fx, double &fy, double &cx, double &cy, double &baseline) const;
 
   /**
-   * @brief Get the rectification model name, e.g. "RECTIFY_PERSPECTIVE" or "RECTIFY_LONGLATI".
+   * @brief Get the rectification model name: "RECTIFY_PERSPECTIVE",
+   *        "RECTIFY_LONGLATI", or "RECTIFY_CYLINDRICAL".
    */
   std::string get_rectify_model() const { return rectify_model_; }
 
@@ -92,7 +93,9 @@ private:
   cv::Mat Kl_, Kr_, Dl_, Dr_, R_rl_, t_rl_;
   std::vector<int> cam_resolution_;
   std::string distortion_model_;
-  // Mei rectification model: "RECTIFY_PERSPECTIVE" (default) or "RECTIFY_LONGLATI".
+  // Output projection of the rectified image (independent of distortion model):
+  // "RECTIFY_PERSPECTIVE" (default), "RECTIFY_LONGLATI" (equirectangular), or
+  // "RECTIFY_CYLINDRICAL".
   std::string rectify_model_ = "RECTIFY_PERSPECTIVE";
   // Point cloud rotation direction for a vertical (top/bottom) rig (see
   // CameraIntrinsic::pointcloud_rotate_dir).

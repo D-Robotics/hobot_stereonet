@@ -686,9 +686,10 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
 
     // ================================== Calc FOV ====================================
     if (!calc_fov_flag_) {
-      float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
-      float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
-      RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°\033[0m");
+      double hfov_deg = 0.0, vfov_deg = 0.0;
+      compute_fov_deg(camera_intrinsic_->rectify_model, camera_intrinsic_->fx, camera_intrinsic_->fy,
+                      model_input_w, model_input_h, hfov_deg, vfov_deg);
+      RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> HFOV: " << hfov_deg << "°, VFOV: " << vfov_deg << "°\033[0m");
       calc_fov_flag_ = true;
     }
   }
@@ -752,9 +753,10 @@ void StereoNetNode::infer_function(const int &thread_id) {
 
         // ================================== Calc FOV ====================================
         if (!calc_fov_flag_) {
-          float HFOV = 2 * atan(model_input_w / (2 * camera_intrinsic_->fx)) * 180 / M_PI;
-          float VFOV = 2 * atan(model_input_h / (2 * camera_intrinsic_->fy)) * 180 / M_PI;
-          RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> HFOV: " << HFOV << "°, VFOV: " << VFOV << "°\033[0m");
+          double hfov_deg = 0.0, vfov_deg = 0.0;
+          compute_fov_deg(camera_intrinsic_->rectify_model, camera_intrinsic_->fx, camera_intrinsic_->fy,
+                          model_input_w, model_input_h, hfov_deg, vfov_deg);
+          RCLCPP_WARN_STREAM(this->get_logger(), "\033[31m=> HFOV: " << hfov_deg << "°, VFOV: " << vfov_deg << "°\033[0m");
           calc_fov_flag_ = true;
         }
 
@@ -1400,45 +1402,57 @@ void StereoNetNode::build_pointcloud(const cv::Mat &disp, const cv::Mat &depth, 
   size_t est_points_per_thread = (rows / step) * (cols / step) / num_threads;
   for (auto &v : thread_points) v.reserve(est_points_per_thread);
 
-  const bool is_longlati = (camera_intrinsic_->rectify_model == "RECTIFY_LONGLATI");
-  // longlati spherical triangulation params (match the Python reconstruction)
+  const bool is_angular = (camera_intrinsic_->rectify_model == "RECTIFY_LONGLATI" ||
+                           camera_intrinsic_->rectify_model == "RECTIFY_CYLINDRICAL");
+  const bool is_cylindrical = (camera_intrinsic_->rectify_model == "RECTIFY_CYLINDRICAL");
+  // angular triangulation params (match the map builder's angular focal)
   const double bl = camera_intrinsic_->baseline; // meters
-  const double pi_w = (cols > 1) ? (M_PI / (cols - 1)) : 0.0;
-  const double pi_h = (rows > 1) ? (M_PI / (rows - 1)) : 0.0;
-  // Python longlati FOV (colatitude) threshold: drop rays beyond 0.75 * (pi/2)
-  const double colat_thr = 0.75 * (M_PI / 2.0);
+  const double inv_fx = 1.0 / static_cast<double>(fx); // radians per pixel (azimuth)
+  const double inv_fy = 1.0 / static_cast<double>(fy); // radians per pixel (elevation)
+  const double ang_cx = cx;
+  const double ang_cy = cy;
+  // angular FOV (colatitude) threshold: drop rays beyond 0.75 * (pi/2)
+  const double cos_colat = std::cos(0.75 * (M_PI / 2.0));
 
 #pragma omp parallel for schedule(static)
   for (int v = 0; v < rows; v += step) {
     int tid = omp_get_thread_num();
     std::vector<pcl::PointXYZRGB> &local_points = thread_points[tid];
     const cv::Vec3b *bgr_row = left_bgr.ptr<cv::Vec3b>(v);
-    const float *disp_row = is_longlati ? disp.ptr<float>(v) : nullptr;
-    const uint16_t *depth_row = is_longlati ? nullptr : depth.ptr<uint16_t>(v);
-    const double pp = is_longlati ? (static_cast<double>(v) * pi_h - M_PI / 2.0) : 0.0;
-    const double sin_pp = is_longlati ? std::sin(pp) : 0.0;
-    const double cos_pp = is_longlati ? std::cos(pp) : 1.0;
+    const float *disp_row = is_angular ? disp.ptr<float>(v) : nullptr;
+    const uint16_t *depth_row = is_angular ? nullptr : depth.ptr<uint16_t>(v);
+    // angular elevation (lambda) terms for this row
+    double sin_lam = 0.0, cos_lam = 1.0;
+    if (is_angular) {
+      const double yn = (static_cast<double>(v) - ang_cy) * inv_fy; // (v - cy)/fy
+      if (is_cylindrical) {
+        const double inv = 1.0 / std::sqrt(1.0 + yn * yn);
+        cos_lam = inv;
+        sin_lam = yn * inv;
+      } else {
+        sin_lam = std::sin(yn);
+        cos_lam = std::cos(yn);
+      }
+    }
     for (int u = 0; u < cols; u += step) {
       float X, Y, Z; // camera frame: +Z forward, +Y down
-      if (is_longlati) {
+      if (is_angular) {
         const float d = disp_row[u];
         if (d <= 0.0f) continue;
-        const double diff = pi_w * d;
-        const double sin_diff = std::sin(diff);
-        if (sin_diff <= 1e-12) continue;
-        const double col_angle = static_cast<double>(u) * pi_w; // u*PI/(cols-1)
-        const double mgnt = bl * std::sin(col_angle - diff) / sin_diff; // radial distance (m)
-        if (!std::isfinite(mgnt) || mgnt <= 0.0) continue;
-        const double tt = col_angle - M_PI / 2.0; // longitude (u/(W-1)-0.5)*PI
-        const double sin_tt = std::sin(tt);
-        const double cos_tt = std::cos(tt);
-        // unit sphere ray (+Z forward): (sin(tt), cos(tt)*sin(pp), cos(tt)*cos(pp))
-        // FOV (colatitude) filter, matching the Python write_ply
-        const double cz_ray = cos_tt * cos_pp;
-        if (std::acos(std::max(-1.0, std::min(1.0, cz_ray))) > colat_thr) continue;
-        X = static_cast<float>(sin_tt * mgnt);
-        Y = static_cast<float>(cos_tt * sin_pp * mgnt);
-        Z = static_cast<float>(cz_ray * mgnt);
+        const double phi_l = (static_cast<double>(u) - ang_cx) * inv_fx; // (u - cx)/fx
+        const double cos_phi = std::cos(phi_l);
+        if (std::abs(cos_phi) < 1e-6) continue;
+        const double phi_r = phi_l - d * inv_fx; // angular disparity d/fx
+        const double denom = std::tan(phi_l) - std::tan(phi_r);
+        if (denom <= 1e-9) continue;
+        const double Zf = bl / denom; // forward depth (m)
+        if (!std::isfinite(Zf) || Zf <= 0.0) continue;
+        // FOV (colatitude) filter, matching the Python reconstruction
+        const double cz_ray = cos_lam * cos_phi;
+        if (cz_ray < cos_colat) continue;
+        X = static_cast<float>(Zf * std::tan(phi_l));
+        Y = static_cast<float>(Zf * sin_lam / cos_lam / cos_phi); // Z * tan_lam / cos_phi
+        Z = static_cast<float>(Zf);
       } else {
         Z = depth_row[u] * 0.001f; // mm to m
         if (Z <= 0) continue;
