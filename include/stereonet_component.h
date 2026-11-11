@@ -229,6 +229,14 @@ private:
   void publish_visual_image(const std::shared_ptr<PubData> &pub_data);
 
   /**
+   * @brief Per-pixel temporal (EMA) smoothing of the disparity map, used to
+   *        suppress frame-to-frame pixel jitter in the visual.
+   * @param disp Disparity map (CV_32FC1), smoothed in place
+   * @param alpha EMA blend factor in (0,1); smaller = smoother = more lag
+   */
+  void temporal_smooth_disparity(cv::Mat &disp, double alpha);
+
+  /**
    * @brief Publish the epipolar aligned image
    * @param pub_data The processed data containing the disparity map and metadata
    */
@@ -398,6 +406,10 @@ private:
   int distance_frame_cnt_ = 0;
   cv::Mat visual_lut_;
   int visual_lut_variant_ = -1;
+
+  // per-pixel temporal smoothing of the disparity visual
+  double disp_temporal_alpha_ = 0.0;
+  cv::Mat prev_disp_smooth_;
 
   // measure mode
   bool measure_mode_ = false;

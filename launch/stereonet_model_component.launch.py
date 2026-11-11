@@ -76,6 +76,7 @@ def generate_launch_description():
         {'name':'render_max_disp', 'default_value':'80', 'description': 'render_max_disp'},
         {'name':'render_z_near', 'default_value':'-1.0', 'description': 'render_z_near'},
         {'name':'render_z_range', 'default_value':'3.0', 'description': 'render_z_range'},
+        {'name':'disp_temporal_alpha', 'default_value':'0.0', 'description': 'disp_temporal_alpha'},
 
         {'name':'pointcloud_downsample_step', 'default_value':'2', 'description': 'pointcloud_downsample_step'},
         {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},
@@ -136,15 +137,15 @@ def generate_launch_description():
         {'name':'ground_angle_enable', 'default_value':'False', 'description': 'ground_angle_enable'},
         {'name':'ground_roi_center_x', 'default_value':'-1', 'description': 'ground_roi_center_x'},
         {'name':'ground_roi_center_y', 'default_value':'-1', 'description': 'ground_roi_center_y'},
-        {'name':'ground_roi_width', 'default_value':'80', 'description': 'ground_roi_width'},
-        {'name':'ground_roi_height', 'default_value':'40', 'description': 'ground_roi_height'},
+        {'name':'ground_roi_width', 'default_value':'160', 'description': 'ground_roi_width'},
+        {'name':'ground_roi_height', 'default_value':'80', 'description': 'ground_roi_height'},
         {'name':'ground_roi_min_valid_points', 'default_value':'100', 'description': 'ground_roi_min_valid_points'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},
         {'name':'max_save_task', 'default_value':'50', 'description': 'max_save_task'},
 
-        {'name':'post_version', 'default_value':'auto', 'description': 'post_version'},
+        {'name':'post_version', 'default_value':'auto', 'description':'post_version'},
     ]
 
     launch = declare_configurable_parameters(node_params)

@@ -291,6 +291,11 @@ void StereoNetNode::set_node_params() {
   render_z_range_ = this->get_parameter("render_z_range").as_double();
   if (render_z_range_ < 0.0) render_z_range_ = 3.0;
 
+  this->declare_parameter<double>("disp_temporal_alpha", 0.0);
+  disp_temporal_alpha_ = this->get_parameter("disp_temporal_alpha").as_double();
+  if (disp_temporal_alpha_ < 0.0) disp_temporal_alpha_ = 0.0;
+  if (disp_temporal_alpha_ > 0.99) disp_temporal_alpha_ = 0.99;
+
   this->declare_parameter<bool>("epipolar_mode", false);
   epipolar_mode_ = this->get_parameter("epipolar_mode").as_bool();
   this->declare_parameter<int>("chessboard_per_rows", 20);
@@ -364,9 +369,10 @@ void StereoNetNode::set_node_params() {
           << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
           << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
           << ", " << grid_min_point_count_ << "]" << std::endl
-          << "[render_type, render_perf, depth_decimal_num, render_max_disp, render_z_near, render_z_range]: ["
+          << "[render_type, render_perf, depth_decimal_num, render_max_disp, render_z_near, render_z_range, "
+             "disp_temporal_alpha]: ["
           << render_type_ << ", " << render_perf_ << ", " << depth_decimal_num_ << ", " << render_max_disp_ << ", "
-          << render_z_near_ << "(m), " << render_z_range_ << "(m)]" << std::endl
+          << render_z_near_ << "(m), " << render_z_range_ << "(m), " << disp_temporal_alpha_ << "]" << std::endl
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
           << "(mm)]" << std::endl
@@ -1865,9 +1871,45 @@ static bool compute_ground_xz_angle(const cv::Mat &depth, const CameraIntrinsic 
   return true;
 }
 
+void StereoNetNode::temporal_smooth_disparity(cv::Mat &disp, double alpha) {
+  if (alpha <= 0.0 || alpha >= 1.0 || disp.empty() || disp.type() != CV_32FC1) return;
+
+  // First frame (or a resolution change): no history to blend against, so just
+  // seed the filter and leave the current disparity untouched.
+  if (prev_disp_smooth_.empty() || prev_disp_smooth_.size() != disp.size()) {
+    prev_disp_smooth_ = disp.clone();
+    return;
+  }
+
+  const float a = static_cast<float>(alpha);
+  const float b = 1.0f - a;
+  const int rows = disp.rows;
+  const int cols = disp.cols;
+
+#pragma omp parallel for schedule(static)
+  for (int y = 0; y < rows; ++y) {
+    float *d = disp.ptr<float>(y);
+    float *p = prev_disp_smooth_.ptr<float>(y);
+    for (int x = 0; x < cols; ++x) {
+      const float cur = d[x];
+      const float prev = p[x];
+      if (cur > 0.0f && prev > 0.0f) {
+        d[x] = a * cur + b * prev;
+      } else if (cur <= 0.0f) {
+        d[x] = 0.0f;
+      }
+      // cur > 0 && prev <= 0: newly-valid pixel, keep `cur` (no stale blending).
+      p[x] = d[x];
+    }
+  }
+}
+
 void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_data) {
   if (visual_image_pub_->get_subscription_count() == 0 && !save_result_flag_ && !do_save_result_once_) return;
   // ===================================== render visual image ==============================================
+  if (disp_temporal_alpha_ > 0.0) {
+    temporal_smooth_disparity(pub_data->disp, disp_temporal_alpha_);
+  }
   int width = pub_data->disp.cols;
   int height = pub_data->disp.rows;
   cv::Mat left_bgr = pub_data->left_bgr;
