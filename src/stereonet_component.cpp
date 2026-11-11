@@ -245,12 +245,23 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<std::string>("render_type", "indoor");
   render_type_ = this->get_parameter("render_type").as_string();
   auto is_valid_render_type = [](const std::string &render_type) {
-    return render_type == "indoor" || render_type == "outdoor" || render_type == "indoor-reverse" ||
-           render_type == "outdoor-reverse" || render_type == "distance" || render_type == "distance-reverse";
+    // Format: <base>[-reverse][-turbo], suffixes in any order (e.g. distance-turbo).
+    std::string base = render_type.substr(0, render_type.find('-'));
+    if (base != "indoor" && base != "outdoor" && base != "distance") return false;
+    size_t pos = base.size();
+    while (pos < render_type.size()) {
+      if (render_type.compare(pos, 8, "-reverse") == 0)
+        pos += 8;
+      else if (render_type.compare(pos, 6, "-turbo") == 0)
+        pos += 6;
+      else
+        return false;
+    }
+    return true;
   };
   if (!is_valid_render_type(render_type_)) {
-    RCLCPP_ERROR(this->get_logger(), "\033[31m=> render_type parameter invalid, should be one of [indoor, outdoor, "
-                                     "indoor-reverse, outdoor-reverse, distance, distance-reverse]\033[0m");
+    RCLCPP_ERROR(this->get_logger(), "\033[31m=> render_type parameter invalid, should be <base>[-reverse][-turbo], "
+                                     "base in [indoor, outdoor, distance]\033[0m");
     rclcpp::shutdown();
   }
 
@@ -1689,6 +1700,9 @@ static double compute_near_depth_percentile(const cv::Mat &depth, double percent
   size_t total = 0;
   for (auto &v : locals) total += v.size();
   if (total == 0) return -1;
+  // A mostly-invalid frame (error burst) has too few valid depths for a stable
+  // percentile; report "no estimate" so the caller holds its previous EMA value.
+  if (total * 50 < static_cast<size_t>(depth.total())) return -1;  // < 2% valid
 
   std::vector<uint16_t> valid;
   valid.reserve(total);
@@ -2020,10 +2034,22 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
       if (frame_cnt++ % interval == 0) {
         double z_near = compute_near_depth_percentile(pub_data->depth, 0.02);
         if (z_near > 0) {
-          if (z_near_ema_mm < 0)
+          if (z_near_ema_mm < 0) {
             z_near_ema_mm = z_near;
-          else
-            z_near_ema_mm = 0.05 * z_near + 0.95 * z_near_ema_mm;
+          } else {
+            // Robust near-depth tracking: slow EMA + slew-rate clamp.  Depth
+            // errors (spurious "near" points in textureless / reflective areas)
+            // make the raw 2% percentile jump frame to frame; without a clamp
+            // those jumps rescale d_min/d_max each update and the whole color
+            // map flickers globally.  Bound each update to +-15% of the current
+            // estimate so the mapping only ever drifts smoothly.
+            const double kEmaAlpha = 0.02;
+            const double kMaxSlew = 0.15;
+            double ema = kEmaAlpha * z_near + (1.0 - kEmaAlpha) * z_near_ema_mm;
+            double lo = z_near_ema_mm * (1.0 - kMaxSlew);
+            double hi = z_near_ema_mm * (1.0 + kMaxSlew);
+            z_near_ema_mm = std::max(lo, std::min(hi, ema));
+          }
         }
       }
     }
@@ -2087,14 +2113,19 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   }
 
   static cv::Mat lut;
-  if (lut.empty()) {
+  static int lut_variant = -1;
+  const bool reverse = render_type_.find("reverse") != std::string::npos;
+  const bool turbo = render_type_.find("turbo") != std::string::npos;
+  const int variant = (reverse ? 1 : 0) | (turbo ? 2 : 0);
+  if (lut.empty() || lut_variant != variant) {
     cv::Mat tmp(1, 256, CV_8UC1);
-    if (render_type_.find("reverse") != std::string::npos) {
+    if (reverse) {
       for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = 255 - i;
     } else {
       for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = i;
     }
-    cv::applyColorMap(tmp, lut, cv::COLORMAP_JET);
+    cv::applyColorMap(tmp, lut, turbo ? cv::COLORMAP_TURBO : cv::COLORMAP_JET);
+    lut_variant = variant;
   }
   cv::LUT(visual_img, lut, visual_img);
   cv::Mat mask = (pub_data->disp == 0);
