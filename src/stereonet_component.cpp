@@ -2025,17 +2025,15 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     }
   } else if (render_type_.rfind("distance", 0) == 0) {
     double fb = camera_intrinsic_->baseline * camera_intrinsic_->fx;
-    static double z_near_ema_mm = -1;
-    static int frame_cnt = 0;
     int interval = use_local_image_flag_ ? 1 : 5;
     if (render_z_near_ > 0.0) {
-      z_near_ema_mm = render_z_near_ * 1000.0;
+      z_near_ema_mm_ = render_z_near_ * 1000.0;
     } else {
-      if (frame_cnt++ % interval == 0) {
+      if (distance_frame_cnt_++ % interval == 0) {
         double z_near = compute_near_depth_percentile(pub_data->depth, 0.02);
         if (z_near > 0) {
-          if (z_near_ema_mm < 0) {
-            z_near_ema_mm = z_near;
+          if (z_near_ema_mm_ < 0) {
+            z_near_ema_mm_ = z_near;
           } else {
             // Robust near-depth tracking: slow EMA + slew-rate clamp.  Depth
             // errors (spurious "near" points in textureless / reflective areas)
@@ -2045,21 +2043,21 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
             // estimate so the mapping only ever drifts smoothly.
             const double kEmaAlpha = 0.02;
             const double kMaxSlew = 0.15;
-            double ema = kEmaAlpha * z_near + (1.0 - kEmaAlpha) * z_near_ema_mm;
-            double lo = z_near_ema_mm * (1.0 - kMaxSlew);
-            double hi = z_near_ema_mm * (1.0 + kMaxSlew);
-            z_near_ema_mm = std::max(lo, std::min(hi, ema));
+            double ema = kEmaAlpha * z_near + (1.0 - kEmaAlpha) * z_near_ema_mm_;
+            double lo = z_near_ema_mm_ * (1.0 - kMaxSlew);
+            double hi = z_near_ema_mm_ * (1.0 + kMaxSlew);
+            z_near_ema_mm_ = std::max(lo, std::min(hi, ema));
           }
         }
       }
     }
-    if (z_near_ema_mm <= 0) {
+    if (z_near_ema_mm_ <= 0) {
       // No valid depth yet (disparity is all zero): render disparity directly
       // instead of a garbage mapping from a negative near depth.
       pub_data->disp.convertTo(visual_img, CV_8UC1, 255.0 / render_max_disp_);
     } else {
-      double z_far = z_near_ema_mm + render_z_range_ * 1000.0;
-      int d_max = static_cast<int>(fb / (z_near_ema_mm / 1000.0) - camera_intrinsic_->doffs);
+      double z_far = z_near_ema_mm_ + render_z_range_ * 1000.0;
+      int d_max = static_cast<int>(fb / (z_near_ema_mm_ / 1000.0) - camera_intrinsic_->doffs);
       int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
 
       float32x4_t v_dmin = vdupq_n_f32(d_min);
@@ -2112,22 +2110,20 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
     cv::cvtColor(visual_img, visual_img, cv::COLOR_GRAY2BGR);
   }
 
-  static cv::Mat lut;
-  static int lut_variant = -1;
   const bool reverse = render_type_.find("reverse") != std::string::npos;
   const bool turbo = render_type_.find("turbo") != std::string::npos;
   const int variant = (reverse ? 1 : 0) | (turbo ? 2 : 0);
-  if (lut.empty() || lut_variant != variant) {
+  if (visual_lut_.empty() || visual_lut_variant_ != variant) {
     cv::Mat tmp(1, 256, CV_8UC1);
     if (reverse) {
       for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = 255 - i;
     } else {
       for (int i = 0; i < 256; i++) tmp.at<uchar>(i) = i;
     }
-    cv::applyColorMap(tmp, lut, turbo ? cv::COLORMAP_TURBO : cv::COLORMAP_JET);
-    lut_variant = variant;
+    cv::applyColorMap(tmp, visual_lut_, turbo ? cv::COLORMAP_TURBO : cv::COLORMAP_JET);
+    visual_lut_variant_ = variant;
   }
-  cv::LUT(visual_img, lut, visual_img);
+  cv::LUT(visual_img, visual_lut_, visual_img);
   cv::Mat mask = (pub_data->disp == 0);
   visual_img.setTo(cv::Vec3b(0, 0, 0), mask);
 

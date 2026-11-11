@@ -392,6 +392,13 @@ private:
   double render_z_near_ = -1.0;
   double render_z_range_ = 3.0;
 
+  // Per-instance state for the distance visual (kept as members so separate
+  // StereoNetNode instances don't share a single EMA / LUT cache).
+  double z_near_ema_mm_ = -1.0;
+  int distance_frame_cnt_ = 0;
+  cv::Mat visual_lut_;
+  int visual_lut_variant_ = -1;
+
   // measure mode
   bool measure_mode_ = false;
   int roi_size_ = 10;
