@@ -67,6 +67,9 @@ static int hbDNNInfer(hbDNNTaskHandle_t *taskHandle, hbDNNTensor **output, hbDNN
   // Multi-core (core_num>1) models must be submitted to specific BPU cores;
   // hbUCPSubmitTask rejects HB_UCP_BPU_CORE_ANY for them. Query the compile
   // core count and, for multi-core, OR together the required core bitmask.
+  // S100 BPU is single-core and its hb_dnn.h lacks hbDNNGetCompileBpuCoreNum,
+  // so this multi-core path is compiled for S600 only.
+#ifdef PLATFORM_S600
   int32_t bpu_core_num = 1;
   if (hbDNNGetCompileBpuCoreNum(&bpu_core_num, dnnHandle) != HB_DNN_SUCCESS) {
     bpu_core_num = 1;
@@ -80,6 +83,9 @@ static int hbDNNInfer(hbDNNTaskHandle_t *taskHandle, hbDNNTensor **output, hbDNN
   } else {
     inferCtrlParam->backend = HB_UCP_BPU_CORE_ANY;
   }
+#else  // PLATFORM_S100: single-core BPU
+  inferCtrlParam->backend = HB_UCP_BPU_CORE_ANY;
+#endif
   ret = hbUCPSubmitTask(*taskHandle, inferCtrlParam);
   if (ret != HB_DNN_SUCCESS) {
     std::cout << "hbUCPSubmitTask failed: " << ret << std::endl;
