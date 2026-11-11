@@ -399,6 +399,7 @@ private:
   int render_max_disp_ = 80;
   double render_z_near_ = -1.0;
   double render_z_range_ = 3.0;
+  int render_min_disp_window_ = 4;
 
   // Per-instance state for the distance visual (kept as members so separate
   // StereoNetNode instances don't share a single EMA / LUT cache).

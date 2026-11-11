@@ -64,6 +64,8 @@ render_perf=True
 render_max_disp=80
 render_z_near=-1.0
 render_z_range=3.0
+# min disparity window for distance grayscale mapping; bounds slope (<=1 disables)
+render_min_disp_window=4
 depth_decimal_num=2
 # disp temporal (EMA) smoothing; 0=off, only suitable for static scenes
 disp_temporal_alpha=0.0
@@ -199,6 +201,7 @@ while [[ $# -gt 0 ]]; do
     --render_max_disp) render_max_disp=$2; shift 2 ;;
     --render_z_near) render_z_near=$2; shift 2 ;;
     --render_z_range) render_z_range=$2; shift 2 ;;
+    --render_min_disp_window) render_min_disp_window=$2; shift 2 ;;
     --depth_decimal_num) depth_decimal_num=$2; shift 2 ;;
     --disp_temporal_alpha) disp_temporal_alpha=$2; shift 2 ;;
 
@@ -314,7 +317,7 @@ mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotat
 mipi_channel:=$mipi_channel mipi_channel2:=$mipi_channel2 mipi_cal_rotation:=$mipi_cal_rotation \
 calib_method:=$calib_method stereo_calib_file_path:=$stereo_calib_file_path \
 render_type:=$render_type render_perf:=$render_perf render_max_disp:=$render_max_disp render_z_near:=$render_z_near render_z_range:=$render_z_range \
-depth_decimal_num:=$depth_decimal_num disp_temporal_alpha:=$disp_temporal_alpha \
+render_min_disp_window:=$render_min_disp_window depth_decimal_num:=$depth_decimal_num disp_temporal_alpha:=$disp_temporal_alpha \
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=$pointcloud_height_min pointcloud_height_max:=$pointcloud_height_max pointcloud_depth_max:=$pointcloud_depth_max \
 pointcloud_downsample_step:=$pointcloud_downsample_step pointcloud_coord:=$pointcloud_coord \

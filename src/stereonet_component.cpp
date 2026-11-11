@@ -291,6 +291,9 @@ void StereoNetNode::set_node_params() {
   render_z_range_ = this->get_parameter("render_z_range").as_double();
   if (render_z_range_ < 0.0) render_z_range_ = 3.0;
 
+  this->declare_parameter<int>("render_min_disp_window", 4);
+  render_min_disp_window_ = this->get_parameter("render_min_disp_window").as_int();
+
   this->declare_parameter<double>("disp_temporal_alpha", 0.0);
   disp_temporal_alpha_ = this->get_parameter("disp_temporal_alpha").as_double();
   if (disp_temporal_alpha_ < 0.0) disp_temporal_alpha_ = 0.0;
@@ -370,9 +373,10 @@ void StereoNetNode::set_node_params() {
           << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
           << ", " << grid_min_point_count_ << "]" << std::endl
           << "[render_type, render_perf, depth_decimal_num, render_max_disp, render_z_near, render_z_range, "
-             "disp_temporal_alpha]: ["
+             "render_min_disp_window, disp_temporal_alpha]: ["
           << render_type_ << ", " << render_perf_ << ", " << depth_decimal_num_ << ", " << render_max_disp_ << ", "
-          << render_z_near_ << "(m), " << render_z_range_ << "(m), " << disp_temporal_alpha_ << "]" << std::endl
+          << render_z_near_ << "(m), " << render_z_range_ << "(m), " << render_min_disp_window_ << "(px), "
+          << disp_temporal_alpha_ << "]" << std::endl
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
           << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
           << "(mm)]" << std::endl
@@ -809,7 +813,7 @@ void StereoNetNode::infer_function(const int &thread_id) {
         // ================================== Postprocess ================================
         if (speckle_filter_enable_) {
           ScopeProcessTime t(this->get_logger(), "speckle_filter");
-          SpeckleFilter::filter(disp, 0.0f, 100, 1.0f);
+          SpeckleFilter::filter(disp, 0.0f, max_speckle_size_, max_disp_diff_);
           cv::Mat mask = (disp > 0);
           depth.setTo(0, ~mask);
         }
@@ -2101,6 +2105,19 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
       double z_far = z_near_ema_mm_ + render_z_range_ * 1000.0;
       int d_max = static_cast<int>(fb / (z_near_ema_mm_ / 1000.0) - camera_intrinsic_->doffs);
       int d_min = static_cast<int>(fb / (z_far / 1000.0) - camera_intrinsic_->doffs);
+
+      // Bound the grayscale mapping slope. In far scenes the natural disparity
+      // window d_max-d_min shrinks (it scales as fb*range/(z_near*z_far)), so
+      // the linear scale 255/(d_max-d_min) blows up and amplifies per-pixel
+      // disparity jitter into large brightness swings (whole-image flicker).
+      // Enforce a minimum window width so the slope stays bounded; the trade-off
+      // is lower contrast in far scenes. A value <=1 disables the clamp.
+      if (render_min_disp_window_ > 1 && d_max - d_min < render_min_disp_window_) {
+        const int center = (d_max + d_min) / 2;
+        const int half = render_min_disp_window_ / 2;
+        d_min = center - half;
+        d_max = d_min + render_min_disp_window_;
+      }
 
       float32x4_t v_dmin = vdupq_n_f32(d_min);
       float32x4_t v_zero = vdupq_n_f32(0.f);
