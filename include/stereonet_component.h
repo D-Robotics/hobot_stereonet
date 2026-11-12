@@ -15,6 +15,7 @@
 #ifndef HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
 #define HOBOT_STEREONET_INCLUDE_STEREONET_COMPONENT_H_
 
+#include <array>
 #include <filesystem>
 #include <sstream>
 #include <mutex>
@@ -421,6 +422,11 @@ private:
   // per-pixel temporal smoothing of the disparity visual
   double disp_temporal_alpha_ = 0.0;
   cv::Mat prev_disp_smooth_;
+
+  // Per-label temporal EMA state for the grid depth labels (6x6 grid -> 25
+  // interior intersections); 0.0 = no valid history yet. Kept per-instance so
+  // separate StereoNetNode instances don't share label history.
+  std::array<float, 25> label_depth_ema_{};
 
   // measure mode
   bool measure_mode_ = false;

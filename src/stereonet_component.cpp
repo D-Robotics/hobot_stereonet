@@ -2191,13 +2191,24 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
              cv::Scalar(255, 255, 255), 1);
   }
 
+  constexpr float kLabelAlpha = 0.3f; // per-label temporal EMA blend factor
   for (int i = 1; i < set_num; ++i) {
     for (int j = 1; j < set_num; ++j) {
       int x = i * x_step;
       int y = j * y_step;
-      float depth_value = depth_rot.at<uint16_t>(y, x) * 0.001f; // convert mm to m
+      const uint16_t depth_mm = depth_rot.at<uint16_t>(y, x); // raw single-pixel depth (mm)
+      float &ema = label_depth_ema_[(i - 1) * (set_num - 1) + (j - 1)];
       std::stringstream depth_text;
-      depth_text << std::fixed << std::setprecision(depth_decimal_num_) << depth_value << "m";
+      if (depth_mm == 0) {
+        ema = 0.0f; // invalid this frame: drop history, show N/A
+        depth_text << "N/A";
+      } else {
+        // temporal EMA: seed on first valid frame, then blend with the previous label
+        ema = (ema == 0.0f) ? static_cast<float>(depth_mm)
+                            : kLabelAlpha * static_cast<float>(depth_mm) + (1.0f - kLabelAlpha) * ema;
+        const float depth_value = ema * 0.001f; // convert mm to m
+        depth_text << std::fixed << std::setprecision(depth_decimal_num_) << depth_value << "m";
+      }
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, y - 5), cv::FONT_HERSHEY_SIMPLEX, font_scale,
                   CV_RGB(255, 255, 255), 2);
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, left_bgr.rows + y - 5), cv::FONT_HERSHEY_SIMPLEX,
