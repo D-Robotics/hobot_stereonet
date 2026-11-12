@@ -18,6 +18,9 @@ stereonet_version=v2.7_int16
 # node name
 stereo_node_name=StereoNetNode
 
+# log level
+log_level=info
+
 # uncertainty
 uncertainty_th=-0.10
 
@@ -40,6 +43,7 @@ publish_origin_enable=True
 visual_image_topic="~/stereonet_visual"
 publish_visual_enabled=True
 stereonet_frame_id="camera_link"
+stereonet_frame_id_right="camera_link_right"
 
 # mipi cam
 use_mipi_cam=True
@@ -151,6 +155,9 @@ web_server_port=8080
 max_points=40000
 max_points_explicit=False
 
+# post process
+post_version=auto
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     # stereonet version
@@ -158,6 +165,7 @@ while [[ $# -gt 0 ]]; do
 
     # node name
     --stereo_node_name) stereo_node_name=$2; shift 2 ;;
+    --log_level) log_level=$2; shift 2 ;;
 
     # uncertainty
     --uncertainty_th) uncertainty_th=$2; shift 2 ;;
@@ -181,6 +189,7 @@ while [[ $# -gt 0 ]]; do
     --visual_image_topic) visual_image_topic=$2; shift 2 ;;
     --publish_visual_enabled) publish_visual_enabled=$2; shift 2 ;;
     --stereonet_frame_id) stereonet_frame_id=$2; shift 2 ;;
+    --stereonet_frame_id_right) stereonet_frame_id_right=$2; shift 2 ;;
 
     # mipi cam
     --use_mipi_cam) use_mipi_cam=$2; shift 2 ;;
@@ -284,6 +293,9 @@ while [[ $# -gt 0 ]]; do
     --web_server_port) web_server_port=$2; shift 2 ;;
     --max_points) max_points=$2; max_points_explicit=True; shift 2 ;;
 
+    # post process
+    --post_version) post_version=$2; shift 2 ;;
+
     *) echo "unknown param: $1"; exit 1 ;;
   esac
 done
@@ -314,7 +326,7 @@ if [[ -n "$web_image_topic2" ]]; then
 fi
 
 ros2 launch hobot_stereonet stereonet_model_web_visual_$stereonet_version.launch.py \
-stereo_node_name:=$stereo_node_name \
+stereo_node_name:=$stereo_node_name log_level:=$log_level \
 uncertainty_th:=$uncertainty_th \
 stereo_image_topic:=$stereo_image_topic camera_info_topic:=$camera_info_topic left_camera_info_topic:=$left_camera_info_topic \
 depth_image_topic:=$depth_image_topic depth_camera_info_topic:=$depth_camera_info_topic \
@@ -323,6 +335,7 @@ pointcloud2_topic:=$pointcloud2_topic publish_pcd_enabled:=$publish_pcd_enabled 
 rectify_left_image_topic:=$rectify_left_image_topic rectify_right_image_topic:=$rectify_right_image_topic publish_rectify_bgr:=$publish_rectify_bgr \
 origin_left_image_topic:=$origin_left_image_topic origin_right_image_topic:=$origin_right_image_topic publish_origin_enable:=$publish_origin_enable \
 visual_image_topic:=$visual_image_topic publish_visual_enabled:=$publish_visual_enabled \
+stereonet_frame_id:=$stereonet_frame_id stereonet_frame_id_right:=$stereonet_frame_id_right \
 use_mipi_cam:=$use_mipi_cam mipi_image_width:=$mipi_image_width mipi_image_height:=$mipi_image_height \
 mipi_image_framerate:=$mipi_image_framerate mipi_frame_ts_type:=$mipi_frame_ts_type \
 mipi_gdc_enable:=$mipi_gdc_enable mipi_lpwm_enable:=$mipi_lpwm_enable mipi_rotation:=$mipi_rotation \
@@ -351,7 +364,7 @@ chessboard_per_rows:=$chessboard_per_rows chessboard_per_cols:=$chessboard_per_c
 feature_epipolar_mode:=$feature_epipolar_mode \
 enable_web_viewer:=$enable_web_viewer web_pointcloud_topic:=$web_pointcloud_topic \
 web_image_topic:=$web_image_topic $web_image_topic2_arg web_image_layout:=$web_image_layout web_server_port:=$web_server_port \
-max_points:=$max_points
+post_version:=$post_version max_points:=$max_points
 
 
 # ------------------------------------ save once ------------------------------------

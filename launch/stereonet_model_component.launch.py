@@ -125,16 +125,10 @@ def generate_launch_description():
         {'name':'max_speckle_size', 'default_value':'100', 'description': 'max_speckle_size'},
         {'name':'max_disp_diff', 'default_value':'1.0', 'description': 'max_speckle_size'},
         {'name':'pcl_filter_enable', 'default_value':'False', 'description': 'pcl_filter_enable'},
-        # {'name':'voxel_leaf_size', 'default_value':'0.05', 'description': 'voxel_leaf_size'},
-        # {'name':'mean_k', 'default_value':'10', 'description': 'mean_k'},
-        # {'name':'std_thresh', 'default_value':'1.0', 'description': 'std_dev_mul_thresh'},
         {'name':'grid_size', 'default_value':'0.10', 'description': 'grid_size'},
         {'name':'grid_min_point_count', 'default_value':'5', 'description': 'grid_min_point_count'},
 
         {'name':'left_img_mask_enable', 'default_value':'False', 'description': 'left_img_mask_enable'},
-        {'name':'measure_mode', 'default_value':'False', 'description': 'measure_mode'},
-        {'name':'roi_size', 'default_value':'10', 'description': 'roi_size'},
-        {'name':'gt_depth', 'default_value':'0.0', 'description': 'gt_depth'},
 
         {'name':'epipolar_mode', 'default_value':'False', 'description': 'epipolar_mode'},
         {'name':'epipolar_img', 'default_value':'rect', 'description': 'epipolar_img'},

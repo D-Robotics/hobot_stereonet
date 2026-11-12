@@ -229,12 +229,6 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<bool>("pcl_filter_enable", false);
   pcl_filter_enable_ = this->get_parameter("pcl_filter_enable").as_bool();
-  // this->declare_parameter<float>("voxel_leaf_size", 0.05f);
-  // voxel_leaf_size_ = this->get_parameter("voxel_leaf_size").as_double();
-  // this->declare_parameter<int>("mean_k", 10);
-  // mean_k_ = this->get_parameter("mean_k").as_int();
-  // this->declare_parameter<double>("std_thresh", 1.0);
-  // std_thresh_ = this->get_parameter("std_thresh").as_double();
   this->declare_parameter<float>("grid_size", 0.05f);
   grid_size_ = this->get_parameter("grid_size").as_double();
   this->declare_parameter<int>("grid_min_point_count", 5);
@@ -288,14 +282,6 @@ void StereoNetNode::set_node_params() {
 
   this->declare_parameter<bool>("left_img_mask_enable", false);
   left_img_mask_enable_ = this->get_parameter("left_img_mask_enable").as_bool();
-
-  this->declare_parameter<bool>("measure_mode", false);
-  measure_mode_ = this->get_parameter("measure_mode").as_bool();
-  this->declare_parameter<int>("roi_size", 10);
-  roi_size_ = this->get_parameter("roi_size").as_int();
-  if (roi_size_ <= 0) roi_size_ = 10;
-  this->declare_parameter<double>("gt_depth", 0.0);
-  gt_depth_ = this->get_parameter("gt_depth").as_double();
 
   this->declare_parameter<int>("depth_decimal_num", 2);
   depth_decimal_num_ = this->get_parameter("depth_decimal_num").as_int();
@@ -388,8 +374,6 @@ void StereoNetNode::set_node_params() {
           << render_z_near_ << "(m), " << render_z_range_ << "(m), " << render_min_disp_window_ << "(px), "
           << disp_temporal_alpha_ << "]" << std::endl
           << "left_img_mask_enable: " << left_img_mask_enable_ << std::endl
-          << "[measure_mode, roi_size, gt_depth]: [" << measure_mode_ << ", " << roi_size_ << ", " << gt_depth_
-          << "(mm)]" << std::endl
           << "[epipolar_mode, feature_epipolar_mode, epipolar_img, chessboard_per_rows, chessboard_per_cols, "
              "chessboard_square_size]: ["
           << epipolar_mode_ << ", " << feature_epipolar_mode_ << ", " << epipolar_img_ << ", " << chessboard_per_rows_
@@ -1396,8 +1380,6 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr final_cloud = pcl_cloud;
   if (pcl_filter_enable_) {
     ScopeProcessTime t(this->get_logger(), "pcl filter");
-    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
-    // PCLFilterUtils::statisticalOutlierRemoval(pcl_cloud, voxel_leaf_size_, mean_k_, std_thresh_);
     final_cloud = PCLFilterUtils::gridBasedOutlierRemoval(pcl_cloud, grid_size_, grid_min_point_count_);
   }
 
@@ -1740,101 +1722,6 @@ static double compute_near_depth_percentile(const cv::Mat &depth, double percent
   size_t k = static_cast<size_t>(percentile * valid.size());
   std::nth_element(valid.begin(), valid.begin() + k, valid.end());
   return valid[k];
-}
-
-/**
- * @brief Extract center ROI from depth image
- * @param depth The depth image
- * @param cx The center x coordinate
- * @param cy The center y coordinate
- * @return The extracted ROI
- */
-static RoiVec extract_center_roi(const cv::Mat &depth, int cx, int cy, int roi_size) {
-  RoiVec out;
-  if (depth.empty() || depth.type() != CV_16UC1) return out;
-
-  int x0 = cx - roi_size / 2;
-  int y0 = cy - roi_size / 2;
-
-  // clamp
-  x0 = std::max(0, std::min(x0, depth.cols - roi_size));
-  y0 = std::max(0, std::min(y0, depth.rows - roi_size));
-
-  out.reserve(roi_size * roi_size);
-  for (int r = 0; r < roi_size; ++r) {
-    const uint16_t *rowPtr = depth.ptr<uint16_t>(y0 + r);
-    for (int c = 0; c < roi_size; ++c) {
-      out.push_back(rowPtr[x0 + c]);
-    }
-  }
-  return out;
-}
-
-/**
- * @brief Merge buffer frames into a single vector and filter out invalid (zero) depths
- * @param buf The buffer frames
- * @return The merged and filtered vector
- */
-static std::vector<uint16_t> merge_and_filter_valid(const std::deque<RoiVec> &buf) {
-  size_t total = 0;
-  for (const auto &rv : buf) total += rv.size();
-  std::vector<uint16_t> merged;
-  merged.reserve(total);
-
-  for (const auto &rv : buf) {
-    for (uint16_t v : rv) {
-      if (v != 0) merged.push_back(v); // drop 0 as invalid
-    }
-  }
-  return merged;
-}
-
-/**
- * @brief Compute trimmed mean and ranges after removing lowest k and highest k elements
- * Returns tuple(mean_mm, neg_range_mm, pos_range_mm, trimmed_count)
- * @param vals The vector of depth values
- * @param trim_ratio The ratio of trimming
- * @return The trimmed mean, negative range, positive range, and trimmed count
- */
-static std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vector<uint16_t> &vals,
-                                                                        double trim_ratio) {
-  // Remove invalid early
-  if (vals.empty()) return {0.0, 0.0, 0.0, 0};
-
-  std::sort(vals.begin(), vals.end());
-  size_t N = vals.size();
-  size_t k = static_cast<size_t>(floor(N * trim_ratio));
-
-  // ensure we keep at least 1 element
-  if (N <= 2 * k) {
-    // reduce k so at least 1 element remains
-    if (N > 1)
-      k = (N - 1) / 2;
-    else
-      k = 0;
-  }
-
-  size_t start = k;
-  size_t end = N - k; // exclusive
-  if (start >= end) {
-    // fallback: use entire range
-    start = 0;
-    end = N;
-  }
-
-  // accumulate mean
-  double sum = 0.0;
-  for (size_t i = start; i < end; ++i) sum += static_cast<double>(vals[i]);
-  size_t count = end - start;
-  double mean = (count > 0) ? (sum / static_cast<double>(count)) : 0.0;
-
-  double min_trim = (count > 0) ? static_cast<double>(vals[start]) : 0.0;
-  double max_trim = (count > 0) ? static_cast<double>(vals[end - 1]) : 0.0;
-
-  double neg_range = mean - min_trim; // >=0
-  double pos_range = max_trim - mean; // >=0
-
-  return {mean, neg_range, pos_range, count};
 }
 
 void StereoNetNode::temporal_smooth_disparity(cv::Mat &disp, double alpha) {
@@ -2213,61 +2100,6 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                   CV_RGB(255, 255, 255), 2);
       cv::putText(visual_img, depth_text.str(), cv::Point(x + 5, left_bgr.rows + y - 5), cv::FONT_HERSHEY_SIMPLEX,
                   font_scale, CV_RGB(255, 255, 255), 2);
-      if (measure_mode_) {
-        if (i == set_num / 2 && j == set_num / 2) {
-          RoiVec roi = extract_center_roi(depth_rot, x, y, roi_size_);
-          roi_buffer.push_back(roi);
-          if (roi_buffer.size() > 10) roi_buffer.pop_front();
-          std::vector<uint16_t> merged = merge_and_filter_valid(roi_buffer);
-          if (!merged.empty()) {
-            auto temp = merged;
-            double mean = 0.0, neg_range = 0.0, pos_range = 0.0, err_percent = 0.0;
-            size_t cnt;
-            double trim_ratio = 0.05;
-            std::tie(mean, neg_range, pos_range, cnt) = compute_trimmed_stats(temp, trim_ratio);
-            mean = std::round(mean);
-            neg_range = std::round(neg_range);
-            pos_range = std::round(pos_range);
-            // double max_dev = std::max(neg_range, pos_range);
-            // if (mean > 0.0) err_percent = 100.0 * max_dev / mean;
-            if (gt_depth_ > 0.0) err_percent = 100.0 * std::abs(mean - gt_depth_) / gt_depth_;
-
-            char buf[256];
-            std::vector<std::string> lines;
-            // GT (m)
-            snprintf(buf, sizeof(buf), "GT: %.3f m", gt_depth_ / 1000.0);
-            lines.push_back(std::string(buf));
-            // mean (m)
-            snprintf(buf, sizeof(buf), "Mean: %.3f m", mean / 1000.0);
-            lines.push_back(std::string(buf));
-            // +/- ranges (m)
-            snprintf(buf, sizeof(buf), "Range: +%.3f / -%.3f m", pos_range / 1000.0, neg_range / 1000.0);
-            lines.push_back(std::string(buf));
-            // percent error
-            snprintf(buf, sizeof(buf), "Err[ (Mean-GT)/GT ]: %.3f %%", err_percent);
-            lines.push_back(std::string(buf));
-
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                                 "=> GT: %.3f m, mean: %.3f m, range: "
-                                 "+%.3f / -%.3f m, "
-                                 "err[ (Mean-GT)/GT ]: "
-                                 "%.3f %%",
-                                 gt_depth_ / 1000.0, mean / 1000.0, pos_range / 1000.0, neg_range / 1000.0,
-                                 err_percent);
-
-            for (size_t i = 0; i < lines.size(); ++i)
-              cv::putText(visual_img, lines[i],
-                          cv::Point(x - roi_size_ * 2, y - (lines.size() - i) * roi_size_ * 3 + left_bgr.rows),
-                          cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 0, 255), 2);
-
-            cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2),
-                          cv::Point(x + roi_size_ / 2, y + roi_size_ / 2), cv::Scalar(0, 0, 255), 2);
-            cv::rectangle(visual_img, cv::Point(x - roi_size_ / 2, y - roi_size_ / 2 + left_bgr.rows),
-                          cv::Point(x + roi_size_ / 2, y + roi_size_ / 2 + left_bgr.rows), cv::Scalar(0, 0, 255),
-                          2);
-          }
-        }
-      }
     }
   }
   // ===================================== render performance metrics =======================================

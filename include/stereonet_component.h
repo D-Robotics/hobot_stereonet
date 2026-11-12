@@ -53,8 +53,6 @@
 
 namespace fs = std::filesystem;
 
-using RoiVec = std::vector<uint16_t>;
-
 struct PreProcessData {
   PreProcessData(sensor_msgs::msg::Image::SharedPtr stereo_msg, std::vector<uint8_t> rectify_left_img_data,
                  std::vector<uint8_t> rectify_right_img_data)
@@ -358,9 +356,6 @@ private:
   bool left_img_mask_enable_ = false;
 
   bool pcl_filter_enable_ = false;
-  // float voxel_leaf_size_ = 0.05f; // m
-  // int mean_k_ = 10;
-  // double std_thresh_ = 1.0;
   float grid_size_ = 0.1f; // m
   int grid_min_point_count_ = 5;
 
@@ -427,12 +422,6 @@ private:
   // interior intersections); 0.0 = no valid history yet. Kept per-instance so
   // separate StereoNetNode instances don't share label history.
   std::array<float, 25> label_depth_ema_{};
-
-  // measure mode
-  bool measure_mode_ = false;
-  int roi_size_ = 10;
-  std::deque<RoiVec> roi_buffer;
-  double gt_depth_ = 0.0;
 
   // epipolar mode
   bool epipolar_mode_ = false;
