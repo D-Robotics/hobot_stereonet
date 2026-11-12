@@ -79,6 +79,10 @@ set(PCL_LIBRARIES
   pcl_common
   pcl_filters
   pcl_io
+  pcl_features
+  pcl_segmentation
+  pcl_search
+  pcl_kdtree
 )
 
 set(DNN_LIBS "")
@@ -123,6 +127,7 @@ add_library(stereonet_model_component SHARED
   src/speckle_filter.cpp
   src/stereo_rectify.cpp
   src/pcl_filter.cpp
+  src/ground_segmentation.cpp
   src/epipolar_align.cpp
   src/feature_epipolar_align.cpp
 )

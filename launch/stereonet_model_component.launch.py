@@ -85,6 +85,14 @@ def generate_launch_description():
         {'name':'pointcloud_depth_max', 'default_value':'5.0', 'description': 'pointcloud_depth_max'},
         {'name':'pointcloud_coord', 'default_value':'ROS', 'description': 'pointcloud_coord'},
 
+        {'name':'ground_segmentation_enable', 'default_value':'False', 'description': 'ground_segmentation_enable'},
+        {'name':'ground_voxel_size', 'default_value':'0.05', 'description': 'ground_voxel_size (m)'},
+        {'name':'ground_normal_k', 'default_value':'50', 'description': 'ground_normal_k'},
+        {'name':'ground_max_angle', 'default_value':'45.0', 'description': 'ground_max_angle (deg)'},
+        {'name':'ground_max_height', 'default_value':'0.16', 'description': 'ground_max_height (m, above-ground)'},
+        {'name':'ground_cluster_radius', 'default_value':'0.1', 'description': 'ground_cluster_radius (m)'},
+        {'name':'ground_min_cluster_size', 'default_value':'10', 'description': 'ground_min_cluster_size'},
+
         {'name':'calib_method', 'default_value':'none', 'description': '[none custom]'},
         {'name':'stereo_calib_file_path', 'default_value': '', 'description': 'stereo_calib_file_path'},
 
@@ -134,13 +142,6 @@ def generate_launch_description():
         {'name':'chessboard_per_cols', 'default_value':'11', 'description': 'chessboard_per_cols'},
         {'name':'chessboard_square_size', 'default_value':'0.06', 'description': 'chessboard_square_size'},
         {'name':'feature_epipolar_mode', 'default_value':'False', 'description': 'feature_epipolar_mode'},
-
-        {'name':'ground_angle_enable', 'default_value':'False', 'description': 'ground_angle_enable'},
-        {'name':'ground_roi_center_x', 'default_value':'-1', 'description': 'ground_roi_center_x'},
-        {'name':'ground_roi_center_y', 'default_value':'-1', 'description': 'ground_roi_center_y'},
-        {'name':'ground_roi_width', 'default_value':'160', 'description': 'ground_roi_width'},
-        {'name':'ground_roi_height', 'default_value':'80', 'description': 'ground_roi_height'},
-        {'name':'ground_roi_min_valid_points', 'default_value':'100', 'description': 'ground_roi_min_valid_points'},
 
         {'name':'infer_thread_num', 'default_value':'2', 'description': 'infer_thread_num'},
         {'name':'save_thread_num', 'default_value':'4', 'description': 'save_thread_num'},

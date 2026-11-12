@@ -242,6 +242,27 @@ void StereoNetNode::set_node_params() {
   if (grid_size_ <= 0.0f) grid_size_ = 0.05f;
   if (grid_min_point_count_ <= 0) grid_min_point_count_ = 5;
 
+  this->declare_parameter<bool>("ground_segmentation_enable", false);
+  ground_segmentation_enable_ = this->get_parameter("ground_segmentation_enable").as_bool();
+  this->declare_parameter<double>("ground_voxel_size", 0.05);
+  ground_voxel_size_ = this->get_parameter("ground_voxel_size").as_double();
+  this->declare_parameter<int>("ground_normal_k", 50);
+  ground_normal_k_ = this->get_parameter("ground_normal_k").as_int();
+  this->declare_parameter<double>("ground_max_angle", 45.0);
+  ground_max_angle_ = this->get_parameter("ground_max_angle").as_double();
+  this->declare_parameter<double>("ground_max_height", 0.16);
+  ground_max_height_ = this->get_parameter("ground_max_height").as_double();
+  this->declare_parameter<double>("ground_cluster_radius", 0.1);
+  ground_cluster_radius_ = this->get_parameter("ground_cluster_radius").as_double();
+  this->declare_parameter<int>("ground_min_cluster_size", 10);
+  ground_min_cluster_size_ = this->get_parameter("ground_min_cluster_size").as_int();
+  if (ground_voxel_size_ < 0.0) ground_voxel_size_ = 0.05;
+  if (ground_normal_k_ <= 0) ground_normal_k_ = 50;
+  if (ground_max_angle_ < 0.0 || ground_max_angle_ > 90.0) ground_max_angle_ = 45.0;
+  if (ground_max_height_ < 0.0) ground_max_height_ = 0.16;
+  if (ground_cluster_radius_ <= 0.0) ground_cluster_radius_ = 0.1;
+  if (ground_min_cluster_size_ <= 0) ground_min_cluster_size_ = 10;
+
   this->declare_parameter<std::string>("render_type", "indoor");
   render_type_ = this->get_parameter("render_type").as_string();
   auto is_valid_render_type = [](const std::string &render_type) {
@@ -316,22 +337,6 @@ void StereoNetNode::set_node_params() {
   this->declare_parameter<std::string>("post_version", "auto");
   post_version_ = this->get_parameter("post_version").as_string();
 
-  this->declare_parameter<bool>("ground_angle_enable", false);
-  this->declare_parameter<int>("ground_roi_center_x", -1);
-  this->declare_parameter<int>("ground_roi_center_y", -1);
-  this->declare_parameter<int>("ground_roi_width", 80);
-  this->declare_parameter<int>("ground_roi_height", 40);
-  this->declare_parameter<int>("ground_roi_min_valid_points", 100);
-  ground_angle_enable_ = this->get_parameter("ground_angle_enable").as_bool();
-  ground_roi_center_x_ = this->get_parameter("ground_roi_center_x").as_int();
-  ground_roi_center_y_ = this->get_parameter("ground_roi_center_y").as_int();
-  ground_roi_width_ = this->get_parameter("ground_roi_width").as_int();
-  ground_roi_height_ = this->get_parameter("ground_roi_height").as_int();
-  ground_roi_min_valid_points_ = this->get_parameter("ground_roi_min_valid_points").as_int();
-  if (ground_roi_width_ <= 0) ground_roi_width_ = 160;
-  if (ground_roi_height_ <= 0) ground_roi_height_ = 80;
-  if (ground_roi_min_valid_points_ <= 0) ground_roi_min_valid_points_ = 100;
-
   RCLCPP_WARN_STREAM(
       this->get_logger(),
       std::endl
@@ -372,6 +377,11 @@ void StereoNetNode::set_node_params() {
           << max_speckle_size_ << ", " << max_disp_diff_ << "]" << std::endl
           << "[pcl_filter_enable, grid_size, grid_min_point_count]: [" << pcl_filter_enable_ << ", " << grid_size_
           << ", " << grid_min_point_count_ << "]" << std::endl
+          << "[ground_segmentation_enable, ground_voxel_size, ground_normal_k, ground_max_angle, "
+             "ground_max_height, ground_cluster_radius, ground_min_cluster_size]: ["
+          << ground_segmentation_enable_ << ", " << ground_voxel_size_ << "(m), " << ground_normal_k_ << ", "
+          << ground_max_angle_ << "(deg), " << ground_max_height_ << "(m), " << ground_cluster_radius_ << "(m), "
+          << ground_min_cluster_size_ << "]" << std::endl
           << "[render_type, render_perf, depth_decimal_num, render_max_disp, render_z_near, render_z_range, "
              "render_min_disp_window, disp_temporal_alpha]: ["
           << render_type_ << ", " << render_perf_ << ", " << depth_decimal_num_ << ", " << render_max_disp_ << ", "
@@ -385,10 +395,6 @@ void StereoNetNode::set_node_params() {
           << epipolar_mode_ << ", " << feature_epipolar_mode_ << ", " << epipolar_img_ << ", " << chessboard_per_rows_
           << ", " << chessboard_per_cols_ << ", " << chessboard_square_size_ << "(m)]" << std::endl
           << "feature_epipolar_mode: " << feature_epipolar_mode_ << std::endl
-          << "[ground_angle_enable, ground_roi_center_x, ground_roi_center_y, ground_roi_width, ground_roi_height, "
-             "ground_roi_min_valid_points]: ["
-          << ground_angle_enable_ << ", " << ground_roi_center_x_ << ", " << ground_roi_center_y_ << ", "
-          << ground_roi_width_ << ", " << ground_roi_height_ << ", " << ground_roi_min_valid_points_ << "]" << std::endl
           << "post_version: " << post_version_ << std::endl
           << "[infer_thread_num, save_thread_num, max_save_task]: [" << infer_thread_num_ << ", " << save_thread_num_
           << ", " << max_save_task_ << "]" << std::endl
@@ -1387,19 +1393,32 @@ void StereoNetNode::publish_pointcloud2(const std::shared_ptr<PubData> &pub_data
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud;
   build_pointcloud(pub_data->disp, pub_data->depth, bgr, pcl_cloud);
 
-  sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr final_cloud = pcl_cloud;
   if (pcl_filter_enable_) {
     ScopeProcessTime t(this->get_logger(), "pcl filter");
     // pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
     // PCLFilterUtils::statisticalOutlierRemoval(pcl_cloud, voxel_leaf_size_, mean_k_, std_thresh_);
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud =
-        PCLFilterUtils::gridBasedOutlierRemoval(pcl_cloud, grid_size_, grid_min_point_count_);
-    pcl::toROSMsg(*filtered_cloud, *cloud_msg);
-    if (save_pcd_flag_ || do_save_result_once_) pub_data->pointcloud = filtered_cloud;
-  } else {
-    pcl::toROSMsg(*pcl_cloud, *cloud_msg);
-    if (save_pcd_flag_ || do_save_result_once_) pub_data->pointcloud = pcl_cloud;
+    final_cloud = PCLFilterUtils::gridBasedOutlierRemoval(pcl_cloud, grid_size_, grid_min_point_count_);
   }
+
+  if (ground_segmentation_enable_ && final_cloud && final_cloud->size() >= 3) {
+    ScopeProcessTime t(this->get_logger(), "ground segmentation");
+    Eigen::Vector3f up = (pointcloud_coord_ == "ROS") ? Eigen::Vector3f(0.0f, 0.0f, 1.0f)
+                                                      : Eigen::Vector3f(0.0f, -1.0f, 0.0f);
+    std::vector<int> ground_indices;
+    if (segment_ground(final_cloud, up, ground_voxel_size_, ground_normal_k_, ground_max_angle_, ground_max_height_,
+                       ground_cluster_radius_, ground_min_cluster_size_, ground_indices)) {
+      for (int idx : ground_indices) {
+        final_cloud->points[idx].r = 255;
+        final_cloud->points[idx].g = 0;
+        final_cloud->points[idx].b = 0;
+      }
+    }
+  }
+
+  sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  pcl::toROSMsg(*final_cloud, *cloud_msg);
+  if (save_pcd_flag_ || do_save_result_once_) pub_data->pointcloud = final_cloud;
   cloud_msg->header = pub_data->header;
   cloud_msg->header.frame_id = stereonet_frame_id_;
   cloud_msg->is_dense = false;
@@ -1818,63 +1837,6 @@ static std::tuple<double, double, double, size_t> compute_trimmed_stats(std::vec
   return {mean, neg_range, pos_range, count};
 }
 
-/**
- * @brief Compute the ground angle based on the depth image
- * @param depth The depth image
- * @param intr The camera intrinsic
- * @param roi The ROI
- * @param min_valid_points The minimum valid points
- * @param angle_deg The output ground angle
- * @return true if the ground angle is valid
- */
-static bool compute_ground_xz_angle(const cv::Mat &depth, const CameraIntrinsic &intr, const cv::Rect &roi,
-                                    int min_valid_points, double &angle_deg) {
-  if (depth.empty() || depth.type() != CV_16UC1) return false;
-  if (intr.fx <= 0 || intr.fy <= 0) return false;
-
-  std::vector<cv::Point3d> pts;
-  pts.reserve(roi.width * roi.height);
-
-  for (int v = roi.y; v < roi.y + roi.height; ++v) {
-    const uint16_t *row = depth.ptr<uint16_t>(v);
-    for (int u = roi.x; u < roi.x + roi.width; ++u) {
-      uint16_t d_mm = row[u];
-      if (d_mm == 0) continue;
-
-      double z = d_mm * 0.001; // mm -> m
-      double x = (static_cast<double>(u) - intr.cx) * z / intr.fx;
-      double y = (static_cast<double>(v) - intr.cy) * z / intr.fy;
-
-      pts.emplace_back(x, y, z);
-    }
-  }
-
-  if (static_cast<int>(pts.size()) < min_valid_points) return false;
-
-  // Fit plane as: y = a * x + b * z + c
-  cv::Mat A(static_cast<int>(pts.size()), 3, CV_64F);
-  cv::Mat B(static_cast<int>(pts.size()), 1, CV_64F);
-
-  for (int i = 0; i < static_cast<int>(pts.size()); ++i) {
-    A.at<double>(i, 0) = pts[i].x;
-    A.at<double>(i, 1) = pts[i].z;
-    A.at<double>(i, 2) = 1.0;
-    B.at<double>(i, 0) = pts[i].y;
-  }
-
-  cv::Mat X;
-  if (!cv::solve(A, B, X, cv::DECOMP_SVD)) return false;
-
-  double a = X.at<double>(0, 0);
-  double b = X.at<double>(1, 0);
-
-  // Plane normal is [-a, 1, -b].
-  // XZ plane normal is [0, 1, 0].
-  // Angle between ground plane and XZ plane.
-  angle_deg = std::atan(std::sqrt(a * a + b * b)) * 180.0 / M_PI;
-  return true;
-}
-
 void StereoNetNode::temporal_smooth_disparity(cv::Mat &disp, double alpha) {
   if (alpha <= 0.0 || alpha >= 1.0 || disp.empty() || disp.type() != CV_32FC1) return;
 
@@ -2190,7 +2152,7 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
   // the left image and the disparity visual 90 deg so the composite is upright,
   // then draw all text/overlays below on the rotated image so the text stays
   // horizontal. The depth map and intrinsic are rotated identically so the
-  // depth-sampling overlays (grid depth, measure ROI, ground angle) stay
+  // depth-sampling overlays (grid depth, measure ROI) stay
   // consistent with what is shown.
   const int rotate_dir = camera_intrinsic_->pointcloud_rotate_dir;
   cv::Mat depth_rot = pub_data->depth;
@@ -2332,50 +2294,6 @@ void StereoNetNode::publish_visual_image(const std::shared_ptr<PubData> &pub_dat
                   2);
     }
   }
-  // ===================================== render ground angle ===============================================
-  if (ground_angle_enable_) {
-    int cx = ground_roi_center_x_;
-    int cy = ground_roi_center_y_;
-
-    // Default ROI: image center x, lower area y.
-    if (cx < 0) cx = width / 2;
-    if (cy < 0) cy = height - (ground_roi_height_ / 2) - 5;
-
-    int roi_w = std::min(ground_roi_width_, width);
-    int roi_h = std::min(ground_roi_height_, height);
-
-    int x0 = cx - roi_w / 2;
-    int y0 = cy - roi_h / 2;
-
-    x0 = std::max(0, std::min(x0, width - roi_w));
-    y0 = std::max(0, std::min(y0, height - roi_h));
-
-    cv::Rect ground_roi(x0, y0, roi_w, roi_h);
-
-    double ground_angle_deg = 0.0;
-    bool ok = compute_ground_xz_angle(depth_rot, intr_rot, ground_roi, ground_roi_min_valid_points_,
-                                      ground_angle_deg);
-
-    // Draw ROI on upper left image and lower depth visualization.
-    cv::rectangle(visual_img, ground_roi, CV_RGB(0, 255, 0), 2);
-
-    cv::Rect ground_roi_bottom(ground_roi.x, ground_roi.y + left_bgr.rows, ground_roi.width, ground_roi.height);
-    cv::rectangle(visual_img, ground_roi_bottom, CV_RGB(0, 255, 0), 2);
-
-    std::stringstream ss;
-    if (ok) {
-      ss << "Ground-XZ angle: " << std::fixed << std::setprecision(2) << ground_angle_deg << " deg";
-    } else {
-      ss << "Ground-XZ angle: invalid";
-    }
-
-    int text_y = std::max(30, ground_roi.y - 10);
-    cv::putText(visual_img, ss.str(), cv::Point(ground_roi.x, text_y), cv::FONT_HERSHEY_SIMPLEX, font_scale,
-                CV_RGB(0, 255, 0), 2);
-    cv::putText(visual_img, ss.str(), cv::Point(ground_roi_bottom.x, ground_roi_bottom.y - 10),
-                cv::FONT_HERSHEY_SIMPLEX, font_scale, CV_RGB(0, 255, 0), 2);
-  }
-
   // ===================================== publish visual image ============================================
   pub_data->visual_img = visual_img;
   // Convert cv::Mat to sensor_msgs::msg::Image

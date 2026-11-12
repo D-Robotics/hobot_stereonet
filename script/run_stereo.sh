@@ -81,6 +81,18 @@ pointcloud_height_max=5.0
 pointcloud_depth_max=5.0
 pointcloud_downsample_step=2
 pointcloud_coord=ROS
+# track whether the pointcloud filter was set explicitly on the command line, so the
+# ground-segmentation default below can leave an explicit override alone
+pointcloud_height_min_explicit=False
+pointcloud_height_max_explicit=False
+pointcloud_depth_max_explicit=False
+ground_segmentation_enable=False
+ground_voxel_size=0.05
+ground_normal_k=50
+ground_max_angle=45.0
+ground_max_height=0.16
+ground_cluster_radius=0.1
+ground_min_cluster_size=10
 
 # pcl filter
 pcl_filter_enable=False
@@ -128,14 +140,6 @@ chessboard_per_rows=20
 chessboard_per_cols=11
 chessboard_square_size=0.06
 feature_epipolar_mode=False
-
-# angle calc
-ground_angle_enable=False
-ground_roi_center_x=-1
-ground_roi_center_y=-1
-ground_roi_width=80
-ground_roi_height=40
-ground_roi_min_valid_points=100
 
 # web viewer (pointcloud_web_viewer)
 enable_web_viewer=True
@@ -211,11 +215,18 @@ while [[ $# -gt 0 ]]; do
     --max_disp_diff) max_disp_diff=$2; shift 2 ;;
 
     # pointcloud
-    --pointcloud_height_min) pointcloud_height_min=$2; shift 2 ;;
-    --pointcloud_height_max) pointcloud_height_max=$2; shift 2 ;;
-    --pointcloud_depth_max) pointcloud_depth_max=$2; shift 2 ;;
+    --pointcloud_height_min) pointcloud_height_min=$2; pointcloud_height_min_explicit=True; shift 2 ;;
+    --pointcloud_height_max) pointcloud_height_max=$2; pointcloud_height_max_explicit=True; shift 2 ;;
+    --pointcloud_depth_max) pointcloud_depth_max=$2; pointcloud_depth_max_explicit=True; shift 2 ;;
     --pointcloud_downsample_step) pointcloud_downsample_step=$2; shift 2 ;;
     --pointcloud_coord) pointcloud_coord=$2; shift 2 ;;
+    --ground_segmentation_enable) ground_segmentation_enable=$2; shift 2 ;;
+    --ground_voxel_size) ground_voxel_size=$2; shift 2 ;;
+    --ground_normal_k) ground_normal_k=$2; shift 2 ;;
+    --ground_max_angle) ground_max_angle=$2; shift 2 ;;
+    --ground_max_height) ground_max_height=$2; shift 2 ;;
+    --ground_cluster_radius) ground_cluster_radius=$2; shift 2 ;;
+    --ground_min_cluster_size) ground_min_cluster_size=$2; shift 2 ;;
 
     # pcl filter
     --pcl_filter_enable) pcl_filter_enable=$2; shift 2 ;;
@@ -264,14 +275,6 @@ while [[ $# -gt 0 ]]; do
     --chessboard_square_size) chessboard_square_size=$2; shift 2 ;;
     --feature_epipolar_mode) feature_epipolar_mode=$2; shift 2 ;;
 
-    # angle calc
-    --ground_angle_enable) ground_angle_enable=$2; shift 2 ;;
-    --ground_roi_center_x) ground_roi_center_x=$2; shift 2 ;;
-    --ground_roi_center_y) ground_roi_center_y=$2; shift 2 ;;
-    --ground_roi_width) ground_roi_width=$2; shift 2 ;;
-    --ground_roi_height) ground_roi_height=$2; shift 2 ;;
-    --ground_roi_min_valid_points) ground_roi_min_valid_points=$2; shift 2 ;;
-
     # web viewer
     --enable_web_viewer) enable_web_viewer=$2; shift 2 ;;
     --web_pointcloud_topic) web_pointcloud_topic=$2; shift 2 ;;
@@ -284,6 +287,15 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown param: $1"; exit 1 ;;
   esac
 done
+
+# when ground segmentation is enabled, default to a tighter pointcloud filter that
+# keeps only the region at/below the sensor (the floor), unless the user explicitly
+# set those pointcloud params on the command line
+if [[ "$ground_segmentation_enable" == "True" ]]; then
+  [[ "$pointcloud_depth_max_explicit" != "True" ]] && pointcloud_depth_max=3.0
+  [[ "$pointcloud_height_min_explicit" != "True" ]] && pointcloud_height_min=-1.0
+  [[ "$pointcloud_height_max_explicit" != "True" ]] && pointcloud_height_max=0.0
+fi
 
 # web viewer default topics (follow stereo_node_name)
 if [[ -z "$web_pointcloud_topic" ]]; then web_pointcloud_topic=/$stereo_node_name/stereonet_pointcloud2; fi
@@ -321,6 +333,10 @@ render_min_disp_window:=$render_min_disp_window depth_decimal_num:=$depth_decima
 speckle_filter_enable:=$speckle_filter_enable max_speckle_size:=$max_speckle_size max_disp_diff:=$max_disp_diff \
 pointcloud_height_min:=$pointcloud_height_min pointcloud_height_max:=$pointcloud_height_max pointcloud_depth_max:=$pointcloud_depth_max \
 pointcloud_downsample_step:=$pointcloud_downsample_step pointcloud_coord:=$pointcloud_coord \
+ground_segmentation_enable:=$ground_segmentation_enable ground_voxel_size:=$ground_voxel_size \
+ground_normal_k:=$ground_normal_k ground_max_angle:=$ground_max_angle \
+ground_max_height:=$ground_max_height ground_cluster_radius:=$ground_cluster_radius \
+ground_min_cluster_size:=$ground_min_cluster_size \
 pcl_filter_enable:=$pcl_filter_enable grid_size:=$grid_size grid_min_point_count:=$grid_min_point_count \
 infer_thread_num:=$infer_thread_num save_thread_num:=$save_thread_num max_save_task:=$max_save_task \
 use_local_image_flag:=$use_local_image_flag local_image_dir:=$local_image_dir image_sleep:=$image_sleep \
@@ -333,8 +349,6 @@ left_img_mask_enable:=$left_img_mask_enable \
 epipolar_mode:=$epipolar_mode epipolar_img:=$epipolar_img \
 chessboard_per_rows:=$chessboard_per_rows chessboard_per_cols:=$chessboard_per_cols chessboard_square_size:=$chessboard_square_size \
 feature_epipolar_mode:=$feature_epipolar_mode \
-ground_angle_enable:=$ground_angle_enable ground_roi_center_x:=$ground_roi_center_x ground_roi_center_y:=$ground_roi_center_y \
-ground_roi_width:=$ground_roi_width ground_roi_height:=$ground_roi_height ground_roi_min_valid_points:=$ground_roi_min_valid_points \
 enable_web_viewer:=$enable_web_viewer web_pointcloud_topic:=$web_pointcloud_topic \
 web_image_topic:=$web_image_topic $web_image_topic2_arg web_image_layout:=$web_image_layout web_server_port:=$web_server_port \
 max_points:=$max_points

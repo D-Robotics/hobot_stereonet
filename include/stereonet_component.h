@@ -44,6 +44,7 @@
 #include "speckle_filter.h"
 #include "stereo_rectify.h"
 #include "pcl_filter.h"
+#include "ground_segmentation.h"
 #include "camera_intrinsic.h"
 #include "pub_data.h"
 #include "epipolar_align.h"
@@ -362,6 +363,15 @@ private:
   float grid_size_ = 0.1f; // m
   int grid_min_point_count_ = 5;
 
+  // ground segmentation (rtabmap normal-based)
+  bool ground_segmentation_enable_ = false;
+  double ground_voxel_size_ = 0.05; // m; <=0 = no downsample
+  int ground_normal_k_ = 50;
+  double ground_max_angle_ = 45.0;
+  double ground_max_height_ = 0.16; // m; above-ground anchor, <=0 = disabled
+  double ground_cluster_radius_ = 0.1;
+  int ground_min_cluster_size_ = 10;
+
   // offline infer
   bool use_local_image_flag_ = false;
   std::string local_image_dir_ = "./offline_image";
@@ -425,14 +435,6 @@ private:
   int chessboard_per_cols_ = 11;
   double chessboard_square_size_ = 0.06;
   bool feature_epipolar_mode_ = false;
-
-  // angle calc
-  bool ground_angle_enable_ = false;
-  int ground_roi_center_x_ = -1;
-  int ground_roi_center_y_ = -1;
-  int ground_roi_width_ = 160;
-  int ground_roi_height_ = 80;
-  int ground_roi_min_valid_points_ = 100;
 
   // thread
   moodycamel::BlockingConcurrentQueue<sensor_msgs::msg::Image::SharedPtr> input_image_queue_;
