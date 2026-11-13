@@ -77,7 +77,6 @@ def generate_launch_description():
         {'name':'render_z_near', 'default_value':'-1.0', 'description': 'render_z_near'},
         {'name':'render_z_range', 'default_value':'3.0', 'description': 'render_z_range'},
         {'name':'render_min_disp_window', 'default_value':'4', 'description': 'render_min_disp_window'},
-        {'name':'disp_temporal_alpha', 'default_value':'0.0', 'description': 'disp_temporal_alpha'},
 
         {'name':'pointcloud_downsample_step', 'default_value':'2', 'description': 'pointcloud_downsample_step'},
         {'name':'pointcloud_height_min', 'default_value':'-5.0', 'description': 'pointcloud_height_min'},
