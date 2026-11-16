@@ -702,6 +702,15 @@ void StereoNetNode::stereo_image_callback(const sensor_msgs::msg::Image::SharedP
 }
 
 void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
+  // Keep the subscription alive for the node's lifetime and re-apply the
+  // intrinsics whenever the published camera_info actually changes (e.g.
+  // online_cam_calib republishes a new rectified CameraInfo after its
+  // optimization step, so both the pre- and post-optimization calibration are
+  // reflected here). Identical re-publications are ignored.
+  if (origin_camera_info_ != nullptr && origin_camera_info_->width == msg->width &&
+      origin_camera_info_->height == msg->height && origin_camera_info_->p == msg->p) {
+    return;
+  }
   origin_camera_info_ = msg;
 
   int model_input_w = 0, model_input_h = 0;
@@ -712,7 +721,6 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
     scale_h = model_input_h / static_cast<double>(msg->height);
   }
 
-  // only subscribe once
   camera_intrinsic_->fx = msg->p[0] * scale_w;
   camera_intrinsic_->fy = msg->p[5] * scale_h;
   camera_intrinsic_->cx = msg->p[2] * scale_w;
@@ -728,8 +736,6 @@ void StereoNetNode::camera_info_callback(const sensor_msgs::msg::CameraInfo::Sha
               "\033[31m=> sub rectified [fx, fy, cx, cy, baseline(m), doffs] : [%f, %f, %f, %f, %f, %f]\033[0m",
               camera_intrinsic_->fx, camera_intrinsic_->fy, camera_intrinsic_->cx, camera_intrinsic_->cy,
               camera_intrinsic_->baseline, camera_intrinsic_->doffs);
-  // only subscribe once
-  camera_info_sub_.reset();
 }
 
 void StereoNetNode::left_camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
